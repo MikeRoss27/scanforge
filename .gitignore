@@ -1,0 +1,15 @@
+bin/
+runs/*
+!runs/.gitkeep
+
+*.log
+.env
+.env.*
+scanforge.yaml
+scope.txt
+
+.DS_Store
+Thumbs.db
+
+/runs
+runs
