@@ -7,7 +7,7 @@ It orchestrates them in a clean, reproducible pipeline and stores every run in a
 
 ## Status
 
-Early development.
+**v0.0.1 released**
 
 Current features:
 
@@ -18,9 +18,11 @@ Current features:
 - Manifest generation
 - Command logging
 - Modular scan architecture
-- `subfinder` module
-- `httpx` module
-- `nuclei` module
+- YAML configuration (`scanforge.yaml`)
+- `scanforge init` for local setup
+- `scanforge doctor` for dependency checks
+- `scanforge version` with build metadata
+- `subfinder`, `httpx`, and `nuclei` modules
 - Parser tests for normalized outputs
 
 ## Philosophy
@@ -49,6 +51,8 @@ subfinder -> httpx -> nuclei
 
 ## Install
 
+### From source
+
 Clone the repository:
 
 ```bash
@@ -74,25 +78,41 @@ On Windows PowerShell:
 go run ./cmd/scanforge --help
 ```
 
-## Usage
+### From GitHub Release
 
-Create a scope file:
+Download the archive for your platform from the [latest release](https://github.com/MikeRoss27/scanforge/releases/latest):
 
-```txt
-example.com
-*.example.com
+- Linux: `scanforge_0.0.1_linux_amd64.tar.gz` or `scanforge_0.0.1_linux_arm64.tar.gz`
+- macOS: `scanforge_0.0.1_darwin_amd64.tar.gz` or `scanforge_0.0.1_darwin_arm64.tar.gz`
+- Windows: `scanforge_0.0.1_windows_amd64.zip`
+
+Verify checksums using the bundled `.sha256` file or `checksums.txt` from the release page.
+
+## Quick start
+
+Initialize local files:
+
+```bash
+scanforge init
+```
+
+Edit `scope.txt` with your authorized targets, then verify your environment:
+
+```bash
+scanforge doctor
+scanforge doctor --profile web
 ```
 
 Run a dry-run scan:
 
 ```bash
-go run ./cmd/scanforge run example.com --scope scope.example.txt --profile passive --dry-run
+scanforge run example.com --scope scope.txt --profile passive --dry-run
 ```
 
 Run the web profile in dry-run mode:
 
 ```bash
-go run ./cmd/scanforge run example.com --scope scope.example.txt --profile web --dry-run
+scanforge run example.com --scope scope.txt --profile web --dry-run
 ```
 
 Example output:
@@ -101,7 +121,7 @@ Example output:
 ScanForge run
 Target:  example.com
 Profile: web
-Scope:   scope.example.txt
+Scope:   scope.txt
 Dry run: true
 Output:  runs/example.com/2026-06-28_20-11-34
 
@@ -111,6 +131,40 @@ $ nuclei -l runs/example.com/2026-06-28_20-11-34/02_http/alive.txt -severity low
 
 Done.
 ```
+
+## Configuration
+
+ScanForge loads configuration from (in order):
+
+1. `--config /path/to/scanforge.yaml`
+2. `SCANFORGE_CONFIG` environment variable
+3. `./scanforge.yaml` in the current directory
+4. Built-in defaults if no file is found
+
+Example `scanforge.yaml`:
+
+```yaml
+config_version: 1
+workspace: runs
+default_profile: passive
+default_scope: scope.txt
+
+tools:
+  subfinder: subfinder
+  httpx: httpx
+  nuclei: nuclei
+
+profiles:
+  passive:
+    - subfinder
+    - httpx
+  web:
+    - subfinder
+    - httpx
+    - nuclei
+```
+
+Run `scanforge init` to generate this file locally.
 
 ## Run output structure
 
@@ -145,11 +199,14 @@ runs/
 cmd/scanforge
   -> internal/cli
   -> internal/app
+  -> internal/config
   -> internal/scope
   -> internal/storage
   -> internal/orchestrator
   -> internal/modules
   -> internal/runner
+  -> internal/doctor
+  -> internal/initcmd
 ```
 
 Main packages:
@@ -157,11 +214,14 @@ Main packages:
 ```txt
 internal/cli           CLI commands
 internal/app           Application layer
+internal/config        YAML configuration
 internal/scope         Scope parser and matcher
 internal/storage       Run directory and manifest management
 internal/orchestrator  Profile resolution and module execution
 internal/modules       Tool modules
 internal/runner        External command execution
+internal/doctor        Dependency and environment checks
+internal/initcmd       Local project initialization
 ```
 
 ## Safety
@@ -170,7 +230,7 @@ ScanForge is intended only for authorized testing.
 
 Built-in safety rules:
 
-- Scope file is required.
+- Scope file is required (via `--scope` or config default).
 - Targets outside the scope are rejected.
 - Dry-run mode is supported.
 - Commands are logged for traceability.
@@ -204,8 +264,6 @@ Short-term:
 - Markdown report generation
 - `nmap` module
 - `ffuf` module
-- `doctor` command
-- Config file support
 - Better terminal output
 - More parser tests
 
@@ -219,4 +277,4 @@ Later:
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

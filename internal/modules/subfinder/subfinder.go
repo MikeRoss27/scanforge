@@ -10,10 +10,15 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/storage"
 )
 
-type Module struct{}
+type Module struct {
+	binary string
+}
 
-func New() *Module {
-	return &Module{}
+func New(binary string) *Module {
+	if binary == "" {
+		binary = "subfinder"
+	}
+	return &Module{binary: binary}
 }
 
 func (m *Module) Name() string {
@@ -22,7 +27,7 @@ func (m *Module) Name() string {
 
 func (m *Module) Run(ctx context.Context, scanRun *storage.Run, executor runner.Executor, target string) (*modules.Result, error) {
 	cmd := runner.Command{
-		Name:       "subfinder",
+		Name:       m.binary,
 		Args:       []string{"-d", target, "-silent"},
 		Timeout:    10 * time.Minute,
 		StdoutFile: scanRun.Path("01_subdomains", "subfinder.txt"),

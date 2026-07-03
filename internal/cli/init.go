@@ -6,13 +6,19 @@ import (
 )
 
 func NewInitCommand(application *app.App) *cobra.Command {
+	var force bool
+
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Create default ScanForge config files",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return application.Init(cmd.Context())
+			return application.Init(cmd.Context(), app.InitOptions{
+				Force: force,
+			})
 		},
 	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files")
 
 	return cmd
 }

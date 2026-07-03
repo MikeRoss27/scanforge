@@ -26,8 +26,8 @@ func NewRunCommand(application *app.App) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&profile, "profile", "p", "passive", "Scan profile to run")
-	cmd.Flags().StringVarP(&scopeFile, "scope", "s", "", "Scope file")
+	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan profile to run (default from config)")
+	cmd.Flags().StringVarP(&scopeFile, "scope", "s", "", "Scope file (default from config)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print commands without executing them")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 

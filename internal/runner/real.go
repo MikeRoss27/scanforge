@@ -2,15 +2,18 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"time"
 )
 
-type RealExecutor struct{}
+type RealExecutor struct {
+	verbose bool
+}
 
-func NewRealExecutor() *RealExecutor {
-	return &RealExecutor{}
+func NewRealExecutor(verbose bool) *RealExecutor {
+	return &RealExecutor{verbose: verbose}
 }
 
 func (e *RealExecutor) Run(ctx context.Context, command Command) (*CommandResult, error) {
@@ -61,6 +64,15 @@ func (e *RealExecutor) Run(ctx context.Context, command Command) (*CommandResult
 			exitCode = exitErr.ExitCode()
 		} else {
 			return nil, err
+		}
+	}
+
+	if e.verbose {
+		if command.StdoutFile != "" {
+			fmt.Println("stdout:", command.StdoutFile)
+		}
+		if command.StderrFile != "" {
+			fmt.Println("stderr:", command.StderrFile)
 		}
 	}
 

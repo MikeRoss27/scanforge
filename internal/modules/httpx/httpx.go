@@ -11,10 +11,15 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/storage"
 )
 
-type Module struct{}
+type Module struct {
+	binary string
+}
 
-func New() *Module {
-	return &Module{}
+func New(binary string) *Module {
+	if binary == "" {
+		binary = "httpx"
+	}
+	return &Module{binary: binary}
 }
 
 func (m *Module) Name() string {
@@ -28,7 +33,7 @@ func (m *Module) Run(ctx context.Context, scanRun *storage.Run, executor runner.
 	stderrFile := scanRun.Path("00_meta", "httpx.stderr.log")
 
 	cmd := runner.Command{
-		Name: "httpx",
+		Name: m.binary,
 		Args: []string{
 			"-l", inputFile,
 			"-silent",
