@@ -22,8 +22,8 @@ func TestDefault(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(modules) != 3 {
-		t.Fatalf("expected 3 modules for web profile, got %d", len(modules))
+	if len(modules) != 7 {
+		t.Fatalf("expected 7 modules for web profile, got %d", len(modules))
 	}
 }
 

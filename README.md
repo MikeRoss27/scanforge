@@ -1,280 +1,119 @@
+<p align="center">
+  <video src="public/SCANFORGE.mp4" width="100%" autoplay loop muted></video>
+</p>
+
 # ScanForge
 
-ScanForge is a simple Go CLI for authorized pentest and recon workflows.
+**ScanForge** est un outil en ligne de commande (CLI) écrit en Go, conçu pour orchestrer de manière sécurisée et structurée vos flux de travail de test d'intrusion et de reconnaissance (recon). 
 
-It does not replace tools like `subfinder`, `httpx`, `nuclei`, `nmap`, or `ffuf`.
-It orchestrates them in a clean, reproducible pipeline and stores every run in an organized folder.
+Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intelligemment les outils de sécurité reconnus du marché tout en appliquant des règles de validation de scope extrêmement strictes pour éviter tout scan non autorisé.
 
-## Status
+---
 
-**v0.0.1 released**
+## 🚀 Fonctionnalités Clés
 
-Current features:
+- **Pipeline orienté Artefacts** : Les modules communiquent via des artefacts de manière ordonnée (ex: la sortie de `subfinder` alimente automatiquement `dnsx` et `httpx`).
+- **Validation de Scope Stricte** : Impossible de scanner un domaine ou une IP qui ne figure pas explicitement dans votre fichier de scope (`scope.txt`).
+- **Mode Dry-Run** : Visualisez les commandes qui vont être lancées et les fichiers générés avant de faire la moindre requête réseau.
+- **Outil de Diagnostic (Doctor)** : Vérifiez instantanément si vos dépendances locales sont installées et configurées pour le profil sélectionné.
+- **Rapports consolidés** : Génère automatiquement un modèle de risque unifié en formats `report.json` et `report.md`.
 
-- Go CLI with Cobra
-- Scope validation
-- Dry-run mode
-- Timestamped run directories
-- Manifest generation
-- Command logging
-- Modular scan architecture
-- YAML configuration (`scanforge.yaml`)
-- `scanforge init` for local setup
-- `scanforge doctor` for dependency checks
-- `scanforge version` with build metadata
-- `subfinder`, `httpx`, and `nuclei` modules
-- Parser tests for normalized outputs
+---
 
-## Philosophy
+## 🛠️ Outils Supportés
 
-ScanForge is built around a simple idea:
+ScanForge centralise et orchestre 10 outils de sécurité indispensables :
 
-> Keep the scanner logic modular, keep the workflow reproducible, and keep the output readable.
+1. **subfinder** (Découverte de sous-domaines)
+2. **dnsx** (Résolution DNS active)
+3. **httpx** (Sondage HTTP et détection de technologies)
+4. **naabu** (Scanner de ports ultra-rapide)
+5. **nmap** (Scan de ports et détection de services précis)
+6. **whatweb** (Reconnaissance des technologies web)
+7. **wafw00f** (Détection de Web Application Firewall)
+8. **katana** (Crawl de ressources web)
+9. **ffuf** (Fuzzing de répertoires et fichiers)
+10. **nuclei** (Scanner de vulnérabilités basé sur des modèles)
 
-Each module wraps one external tool.
-The orchestrator decides which modules run for a given profile.
-The runner executes commands with support for dry-run, timeout, stdout files, and stderr files.
+---
 
-## Current profiles
+## 📦 Installation Simple (Sans prise de tête)
 
-### passive
+ScanForge dépend d'outils externes. Nous avons automatisé leur installation pour vous faciliter la vie.
 
-```txt
-subfinder -> httpx
-```
+### Option 1 : Scripts automatisés (Recommandé)
 
-### web
-
-```txt
-subfinder -> httpx -> nuclei
-```
-
-## Install
-
-### From source
-
-Clone the repository:
-
-```bash
-git clone https://github.com/MikeRoss27/scanforge.git
-cd scanforge
-```
-
-Build:
-
-```bash
-go build -o bin/scanforge ./cmd/scanforge
-```
-
-Run:
-
-```bash
-./bin/scanforge --help
-```
-
-On Windows PowerShell:
-
+**Sur Windows (PowerShell) :**
+Lisez et exécutez le script d'installation pour configurer l'environnement :
 ```powershell
-go run ./cmd/scanforge --help
+.\install.ps1
 ```
 
-### From GitHub Release
+**Sur Linux / macOS (Bash) :**
+```bash
+chmod +x install.sh
+./install.sh
+```
 
-Download the archive for your platform from the [latest release](https://github.com/MikeRoss27/scanforge/releases/latest):
+### Option 2 : Docker (Zéro installation locale)
 
-- Linux: `scanforge_0.0.1_linux_amd64.tar.gz` or `scanforge_0.0.1_linux_arm64.tar.gz`
-- macOS: `scanforge_0.0.1_darwin_amd64.tar.gz` or `scanforge_0.0.1_darwin_arm64.tar.gz`
-- Windows: `scanforge_0.0.1_windows_amd64.zip`
+Si vous ne souhaitez pas installer Go ou les autres outils sur votre système hôte, utilisez Docker. Tout est pré-configuré dans l'image !
 
-Verify checksums using the bundled `.sha256` file or `checksums.txt` from the release page.
+```bash
+# Avec docker-compose
+docker-compose run scanforge run target.com --profile web
 
-## Quick start
+# Manuellement avec Docker
+docker build -t scanforge .
+docker run -v $(pwd):/workspace scanforge run target.com --profile web
+```
 
-Initialize local files:
+---
 
+## 🚦 Guide de Démarrage Rapide
+
+### 1. Initialiser le projet
+Générez les fichiers de configuration par défaut dans votre répertoire actuel :
 ```bash
 scanforge init
 ```
+Cela crée :
+- `scanforge.yaml` : Permet de configurer les chemins des outils et de modifier/définir des profils.
+- `scope.txt` : Fichier de scope obligatoire où vous devez lister vos cibles autorisées (ex: `example.com`, `*.example.com`, `192.168.1.0/24`).
 
-Edit `scope.txt` with your authorized targets, then verify your environment:
-
+### 2. Valider l'environnement
+Vérifiez que tous les outils requis pour votre profil de scan sont bien installés et accessibles :
 ```bash
-scanforge doctor
 scanforge doctor --profile web
 ```
 
-Run a dry-run scan:
-
+### 3. Lancer un Scan
+Assurez-vous que votre cible est autorisée dans `scope.txt`, puis lancez :
 ```bash
-scanforge run example.com --scope scope.txt --profile passive --dry-run
+scanforge run example.com --profile web
 ```
 
-Run the web profile in dry-run mode:
-
+Pour tester sans envoyer de requêtes :
 ```bash
-scanforge run example.com --scope scope.txt --profile web --dry-run
+scanforge run example.com --profile web --dry-run
 ```
 
-Example output:
+---
 
-```txt
-ScanForge run
-Target:  example.com
-Profile: web
-Scope:   scope.txt
-Dry run: true
-Output:  runs/example.com/2026-06-28_20-11-34
+## 📊 Profils de Scan Intégrés
 
-$ subfinder -d example.com -silent
-$ httpx -l runs/example.com/2026-06-28_20-11-34/01_subdomains/subfinder.txt -silent -json -status-code -title -tech-detect
-$ nuclei -l runs/example.com/2026-06-28_20-11-34/02_http/alive.txt -severity low,medium,high,critical -rate-limit 10 -jsonl
+| Profil | Outils inclus | Description |
+|---|---|---|
+| `passive` | `subfinder`, `dnsx`, `httpx` | Reconnaissance passive et sondage HTTP de base. |
+| `ports` | `subfinder`, `dnsx`, `naabu`, `nmap` | Cartographie des ports ouverts et détection de services. |
+| `web` | `subfinder`, `dnsx`, `httpx`, `whatweb`, `wafw00f`, `katana`, `nuclei` | Analyse applicative complète, crawling et scan de vulnérabilités. |
+| `full` | **Tous les outils** | Suite complète de reconnaissance, fuzzing et détection de failles. |
 
-Done.
-```
+---
 
-## Configuration
+## 📂 Structure du Rapport Final
 
-ScanForge loads configuration from (in order):
-
-1. `--config /path/to/scanforge.yaml`
-2. `SCANFORGE_CONFIG` environment variable
-3. `./scanforge.yaml` in the current directory
-4. Built-in defaults if no file is found
-
-Example `scanforge.yaml`:
-
-```yaml
-config_version: 1
-workspace: runs
-default_profile: passive
-default_scope: scope.txt
-
-tools:
-  subfinder: subfinder
-  httpx: httpx
-  nuclei: nuclei
-
-profiles:
-  passive:
-    - subfinder
-    - httpx
-  web:
-    - subfinder
-    - httpx
-    - nuclei
-```
-
-Run `scanforge init` to generate this file locally.
-
-## Run output structure
-
-Each scan creates a timestamped directory:
-
-```txt
-runs/
-└── example.com/
-    └── 2026-06-28_20-11-34/
-        ├── 00_meta/
-        │   ├── commands.log
-        │   ├── manifest.json
-        │   ├── subfinder.stderr.log
-        │   ├── httpx.stderr.log
-        │   └── nuclei.stderr.log
-        ├── 01_subdomains/
-        │   └── subfinder.txt
-        ├── 02_http/
-        │   ├── httpx.jsonl
-        │   └── alive.txt
-        ├── 03_ports/
-        ├── 04_web/
-        ├── 05_content/
-        └── 06_vulns/
-            ├── nuclei.jsonl
-            └── findings.json
-```
-
-## Architecture
-
-```txt
-cmd/scanforge
-  -> internal/cli
-  -> internal/app
-  -> internal/config
-  -> internal/scope
-  -> internal/storage
-  -> internal/orchestrator
-  -> internal/modules
-  -> internal/runner
-  -> internal/doctor
-  -> internal/initcmd
-```
-
-Main packages:
-
-```txt
-internal/cli           CLI commands
-internal/app           Application layer
-internal/config        YAML configuration
-internal/scope         Scope parser and matcher
-internal/storage       Run directory and manifest management
-internal/orchestrator  Profile resolution and module execution
-internal/modules       Tool modules
-internal/runner        External command execution
-internal/doctor        Dependency and environment checks
-internal/initcmd       Local project initialization
-```
-
-## Safety
-
-ScanForge is intended only for authorized testing.
-
-Built-in safety rules:
-
-- Scope file is required (via `--scope` or config default).
-- Targets outside the scope are rejected.
-- Dry-run mode is supported.
-- Commands are logged for traceability.
-- Outputs are stored per run.
-- Aggressive scanning is not enabled by default.
-
-## Development
-
-Format:
-
-```bash
-gofmt -w cmd internal
-```
-
-Run tests:
-
-```bash
-go test ./...
-```
-
-Run dry-run example:
-
-```bash
-go run ./cmd/scanforge run example.com --scope scope.example.txt --profile web --dry-run
-```
-
-## Roadmap
-
-Short-term:
-
-- Markdown report generation
-- `nmap` module
-- `ffuf` module
-- Better terminal output
-- More parser tests
-
-Later:
-
-- HTML reports
-- SQLite run index
-- Diff between runs
-- Plugin system
-- TUI mode
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+À la fin de chaque scan, un dossier horodaté est créé sous `./runs/`. En plus des fichiers de logs bruts de chaque outil, ScanForge génère :
+- `report.json` : Modèle de données structuré regroupant les actifs, ports ouverts, technologies détectées et vulnérabilités trouvées.
+- `report.md` : Rapport humainement lisible et synthétisé du scan.
+- `manifest.json` : Suivi complet de l'exécution (statut de chaque outil, durée, commande exacte lancée).

@@ -4,11 +4,26 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/doctor"
 	"github.com/MikeRoss27/scanforge/internal/initcmd"
+	"github.com/MikeRoss27/scanforge/internal/modules"
+	"github.com/MikeRoss27/scanforge/internal/modules/dnsx"
+	"github.com/MikeRoss27/scanforge/internal/modules/ffuf"
+	"github.com/MikeRoss27/scanforge/internal/modules/httpx"
+	"github.com/MikeRoss27/scanforge/internal/modules/katana"
+	"github.com/MikeRoss27/scanforge/internal/modules/naabu"
+	"github.com/MikeRoss27/scanforge/internal/modules/nmap"
+	"github.com/MikeRoss27/scanforge/internal/modules/nuclei"
+	"github.com/MikeRoss27/scanforge/internal/modules/subfinder"
+	"github.com/MikeRoss27/scanforge/internal/modules/wafw00f"
+	"github.com/MikeRoss27/scanforge/internal/modules/whatweb"
 	"github.com/MikeRoss27/scanforge/internal/orchestrator"
+	"github.com/MikeRoss27/scanforge/internal/report"
+	"github.com/MikeRoss27/scanforge/internal/ascii"
 	"github.com/MikeRoss27/scanforge/internal/runner"
 	"github.com/MikeRoss27/scanforge/internal/scope"
 	"github.com/MikeRoss27/scanforge/internal/storage"
@@ -87,6 +102,7 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to create run directory: %w", err)
 	}
+	scanRun.Manifest.Profile = profile
 
 	var executor runner.Executor
 
@@ -96,6 +112,8 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 		executor = runner.NewRealExecutor(opts.Verbose)
 	}
 
+	ascii.PrintBanner()
+
 	fmt.Println("ScanForge run")
 	fmt.Println("Target: ", opts.Target)
 	fmt.Println("Profile:", profile)
@@ -104,33 +122,67 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	fmt.Println("Output: ", scanRun.RootDir)
 	fmt.Println()
 
-	orch := orchestrator.New(executor)
+	registry := modules.NewRegistry()
+	registry.Register(subfinder.New(cfg.ToolPath("subfinder")))
+	registry.Register(dnsx.New(cfg.ToolPath("dnsx")))
+	registry.Register(httpx.New(cfg.ToolPath("httpx")))
+	registry.Register(naabu.New(cfg.ToolPath("naabu")))
+	registry.Register(nmap.New(cfg.ToolPath("nmap")))
+	registry.Register(whatweb.New(cfg.ToolPath("whatweb")))
+	registry.Register(wafw00f.New(cfg.ToolPath("wafw00f")))
+	registry.Register(katana.New(cfg.ToolPath("katana")))
+	registry.Register(ffuf.New(cfg.ToolPath("ffuf")))
+	registry.Register(nuclei.New(cfg.ToolPath("nuclei")))
+
+	orch := orchestrator.New(executor, registry)
 
 	results, err := orch.Run(ctx, scanRun, orchestrator.Options{
 		Target:  opts.Target,
 		Profile: profile,
 		Config:  cfg,
+		DryRun:  opts.DryRun,
 		Verbose: opts.Verbose,
 	})
+
+	scanRun.Manifest.CompletedAt = time.Now().Format(time.RFC3339)
 	if err != nil {
 		scanRun.Manifest.Status = "failed"
-		_ = scanRun.WriteManifest()
-		return err
+	} else {
+		scanRun.Manifest.Status = "completed"
 	}
 
-	scanRun.Manifest.Status = "completed"
-
 	for _, result := range results {
+		scanRun.Manifest.Modules = append(scanRun.Manifest.Modules, storage.ModuleResult{
+			Name:   result.Name,
+			Status: result.Status,
+		})
 		for key, value := range result.OutputFiles {
 			scanRun.Manifest.Outputs[key] = value
 		}
 	}
 
-	if err := scanRun.WriteManifest(); err != nil {
-		return fmt.Errorf("failed to write manifest: %w", err)
+	if writeErr := scanRun.WriteManifest(); writeErr != nil {
+		return fmt.Errorf("failed to write manifest: %v (run error: %v)", writeErr, err)
+	}
+
+	if err != nil {
+		return err
 	}
 
 	fmt.Println()
+	fmt.Println("Generating report...")
+	rep, err := report.GenerateReport(scanRun.RootDir, &scanRun.Manifest)
+	if err != nil {
+		fmt.Printf("Warning: failed to generate report: %v\n", err)
+	} else {
+		jsonPath := filepath.Join(scanRun.RootDir, "report.json")
+		mdPath := filepath.Join(scanRun.RootDir, "report.md")
+		_ = rep.WriteJSON(jsonPath)
+		_ = rep.WriteMarkdown(mdPath)
+		fmt.Println("Report JSON:", jsonPath)
+		fmt.Println("Report Markdown:", mdPath)
+	}
+
 	fmt.Println("Done.")
 	fmt.Println("Run directory:", scanRun.RootDir)
 

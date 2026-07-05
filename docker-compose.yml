@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  scanforge:
+    build: .
+    image: scanforge:latest
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    # Exemple de commande: docker-compose run scanforge run example.com --profile web

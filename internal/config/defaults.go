@@ -16,12 +16,16 @@ func Default() *Config {
 		DefaultScope:   DefaultScope,
 		Tools: Tools{
 			Subfinder: "subfinder",
+			Dnsx:      "dnsx",
 			Httpx:     "httpx",
+			Naabu:     "naabu",
+			Nmap:      "nmap",
+			Whatweb:   "whatweb",
+			Wafw00f:   "wafw00f",
+			Katana:    "katana",
+			Ffuf:      "ffuf",
 			Nuclei:    "nuclei",
 		},
-		Profiles: map[string][]string{
-			"passive": {"subfinder", "httpx"},
-			"web":     {"subfinder", "httpx", "nuclei"},
-		},
+		Profiles: map[string][]string{},
 	}
 }

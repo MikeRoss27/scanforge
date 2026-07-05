@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/MikeRoss27/scanforge/internal/profile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -19,7 +20,14 @@ type Config struct {
 
 type Tools struct {
 	Subfinder string `yaml:"subfinder"`
+	Dnsx      string `yaml:"dnsx"`
 	Httpx     string `yaml:"httpx"`
+	Naabu     string `yaml:"naabu"`
+	Nmap      string `yaml:"nmap"`
+	Whatweb   string `yaml:"whatweb"`
+	Wafw00f   string `yaml:"wafw00f"`
+	Katana    string `yaml:"katana"`
+	Ffuf      string `yaml:"ffuf"`
 	Nuclei    string `yaml:"nuclei"`
 }
 
@@ -79,9 +87,37 @@ func (c *Config) ToolPath(name string) string {
 		if c.Tools.Subfinder != "" {
 			return c.Tools.Subfinder
 		}
+	case "dnsx":
+		if c.Tools.Dnsx != "" {
+			return c.Tools.Dnsx
+		}
 	case "httpx":
 		if c.Tools.Httpx != "" {
 			return c.Tools.Httpx
+		}
+	case "naabu":
+		if c.Tools.Naabu != "" {
+			return c.Tools.Naabu
+		}
+	case "nmap":
+		if c.Tools.Nmap != "" {
+			return c.Tools.Nmap
+		}
+	case "whatweb":
+		if c.Tools.Whatweb != "" {
+			return c.Tools.Whatweb
+		}
+	case "wafw00f":
+		if c.Tools.Wafw00f != "" {
+			return c.Tools.Wafw00f
+		}
+	case "katana":
+		if c.Tools.Katana != "" {
+			return c.Tools.Katana
+		}
+	case "ffuf":
+		if c.Tools.Ffuf != "" {
+			return c.Tools.Ffuf
 		}
 	case "nuclei":
 		if c.Tools.Nuclei != "" {
@@ -92,13 +128,8 @@ func (c *Config) ToolPath(name string) string {
 	return name
 }
 
-func (c *Config) ProfileModules(profile string) ([]string, error) {
-	modules, ok := c.Profiles[profile]
-	if !ok || len(modules) == 0 {
-		return nil, fmt.Errorf("unknown profile %q", profile)
-	}
-
-	return modules, nil
+func (c *Config) ProfileModules(profileName string) ([]string, error) {
+	return profile.Resolve(profileName, c.Profiles)
 }
 
 func (c *Config) YAMLTemplate() string {
@@ -109,17 +140,21 @@ default_scope: %s
 
 tools:
   subfinder: subfinder
+  dnsx: dnsx
   httpx: httpx
+  naabu: naabu
+  nmap: nmap
+  whatweb: whatweb
+  wafw00f: wafw00f
+  katana: katana
+  ffuf: ffuf
   nuclei: nuclei
 
-profiles:
-  passive:
-    - subfinder
-    - httpx
-  web:
-    - subfinder
-    - httpx
-    - nuclei
+# overrides for built-in profiles (passive, web, ports, full)
+# profiles:
+#   passive:
+#     - subfinder
+#     - httpx
 `, DefaultConfigVersion, DefaultWorkspace, DefaultProfile, DefaultScope)
 }
 
@@ -139,8 +174,29 @@ func mergeDefaults(base, parsed *Config) {
 	if parsed.Tools.Subfinder == "" {
 		parsed.Tools.Subfinder = base.Tools.Subfinder
 	}
+	if parsed.Tools.Dnsx == "" {
+		parsed.Tools.Dnsx = base.Tools.Dnsx
+	}
 	if parsed.Tools.Httpx == "" {
 		parsed.Tools.Httpx = base.Tools.Httpx
+	}
+	if parsed.Tools.Naabu == "" {
+		parsed.Tools.Naabu = base.Tools.Naabu
+	}
+	if parsed.Tools.Nmap == "" {
+		parsed.Tools.Nmap = base.Tools.Nmap
+	}
+	if parsed.Tools.Whatweb == "" {
+		parsed.Tools.Whatweb = base.Tools.Whatweb
+	}
+	if parsed.Tools.Wafw00f == "" {
+		parsed.Tools.Wafw00f = base.Tools.Wafw00f
+	}
+	if parsed.Tools.Katana == "" {
+		parsed.Tools.Katana = base.Tools.Katana
+	}
+	if parsed.Tools.Ffuf == "" {
+		parsed.Tools.Ffuf = base.Tools.Ffuf
 	}
 	if parsed.Tools.Nuclei == "" {
 		parsed.Tools.Nuclei = base.Tools.Nuclei

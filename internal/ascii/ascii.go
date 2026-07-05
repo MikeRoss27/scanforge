@@ -1,0 +1,81 @@
+package ascii
+
+import (
+	"fmt"
+	"math/rand"
+	"strings"
+	"time"
+)
+
+// Bannières disponibles
+const (
+	// Style 1 : Blocs Unicode gras (issu de ascii.txt)
+	BannerBlocks = `
+   ▄████████  ▄████████    ▄████████ ███▄▄▄▄      ▄████████  ▄██████▄     ▄████████    ▄██████▄     ▄████████
+  ███    ███ ███    ███   ███    ███ ███▀▀▀██▄   ███    ███ ███    ███   ███    ███   ███    ███   ███    ███
+  ███    █▀  ███    █▀    ███    ███ ███   ███   ███    █▀  ███    ███   ███    ███   ███    █▀    ███    █▀
+  ███        ███          ███    ███ ███   ███  ▄███▄▄▄     ███    ███  ▄███▄▄▄▄██▀  ▄███         ▄███▄▄▄
+▀███████████ ███        ▀███████████ ███   ███ ▀▀███▀▀▀     ███    ███ ▀▀███▀▀▀▀▀   ▀▀███ ████▄  ▀▀███▀▀▀
+         ███ ███    █▄    ███    ███ ███   ███   ███        ███    ███ ▀███████████   ███    ███   ███    █▄
+   ▄█    ███ ███    ███   ███    ███ ███   ███   ███        ███    ███   ███    ███   ███    ███   ███    ███
+ ▄████████▀  ████████▀    ███    █▀   ▀█   █▀    ███         ▀██████▀    ███    ███   ████████▀    ██████████
+                                                                         ███    ███`
+
+	// Style 2 : Classic Slant très lisible
+	BannerClassic = `
+   _____                 ______                       
+  / ___/_________ _____ / ____/___  _________ ____  
+  \__ \/ ___/ __ '/ __ \/ /_  / __ \/ ___/ __ '/ _ \ 
+ ___/ / /__/ /_/ / / / / __/ / /_/ / /  / /_/ /  __/ 
+/____/\___/\__,_/_/ /_/_/    \____/_/   \__, /\___/  
+                                       /____/       `
+
+	// Style 3 : 3D Ombré (issu de ascii.txt)
+	BannerSlanted = `
+  ______    ______    ______   __    __  ________  ______   _______    ______   ________
+ /      \  /      \  /      \ /  \  /  |/        |/      \ /       \  /      \ /        |
+/$$$$$$  |/$$$$$$  |/$$$$$$  |$$  \ $$ |$$$$$$$$//$$$$$$  |$$$$$$$  |/$$$$$$  |$$$$$$$$/
+$$ \__$$/ $$ |  $$/ $$ |__$$ |$$$  \$$ |$$ |__   $$ |  $$ |$$ |__$$ |$$ | _$$/ $$ |__
+$$      \ $$ |      $$    $$ |$$$$  $$ |$$    |  $$ |  $$ |$$    $$< $$ |/    |$$    |
+ $$$$$$  |$$ |   __ $$$$$$$$ |$$ $$ $$ |$$$$$/   $$ |  $$ |$$$$$$$  |$$ |$$$$ |$$$$$/
+/  \__$$ |$$ \__/  |$$ |  $$ |$$ |$$$$ |$$ |     $$ \__$$ |$$ |  $$ |$$ \__$$ |$$ |_____
+$$    $$/ $$    $$/ $$ |  $$ |$$ | $$$ |$$ |     $$    $$/ $$ |  $$ |$$    $$/ $$       |
+ $$$$$$/   $$$$$$/  $$/   $$/ $$/   $$/ $$/       $$$$$$/  $$/   $$/  $$$$$$/  $$$$$$$$/`
+)
+
+// ANSI Color Codes
+const (
+	Reset     = "\033[0m"
+	Cyan      = "\033[36m"
+	Blue      = "\033[34m"
+	Magenta   = "\033[35m"
+	Red       = "\033[31m"
+	Yellow    = "\033[33m"
+	Bold      = "\033[1m"
+)
+
+// PrintBanner affiche une des bannières aléatoirement ou par sélection avec un beau dégradé
+func PrintBanner() {
+	rand.Seed(time.Now().UnixNano())
+	banners := []string{BannerBlocks, BannerClassic, BannerSlanted}
+	selected := banners[rand.Intn(len(banners))]
+
+	// Liste des dégradés de couleurs à appliquer par ligne
+	gradients := [][]string{
+		{Cyan, Blue, Magenta},
+		{Red, Yellow},
+		{Blue, Cyan},
+	}
+	selectedGradient := gradients[rand.Intn(len(gradients))]
+
+	lines := strings.Split(selected, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		// Alternance ou interpolation simple de couleur sur la ligne
+		color := selectedGradient[i%len(selectedGradient)]
+		fmt.Printf("%s%s%s\n", color, line, Reset)
+	}
+	fmt.Println()
+}

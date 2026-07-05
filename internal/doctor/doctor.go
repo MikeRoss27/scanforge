@@ -98,18 +98,34 @@ func (r *Runner) Run(ctx context.Context, opts Options) ([]Check, int, error) {
 
 	checks := make([]Check, 0, 8)
 
+	moduleNames, err := cfg.ProfileModules(profile)
+	if err != nil {
+		// fallback to empty set if profile is unknown
+		moduleNames = []string{}
+	}
+	moduleSet := make(map[string]bool)
+	for _, m := range moduleNames {
+		moduleSet[m] = true
+	}
+
 	requiredTools := []struct {
-		name    string
-		binary  string
-		profile string
+		name   string
+		binary string
 	}{
-		{name: "subfinder", binary: cfg.ToolPath("subfinder"), profile: ""},
-		{name: "httpx", binary: cfg.ToolPath("httpx"), profile: ""},
-		{name: "nuclei", binary: cfg.ToolPath("nuclei"), profile: "web"},
+		{name: "subfinder", binary: cfg.ToolPath("subfinder")},
+		{name: "dnsx", binary: cfg.ToolPath("dnsx")},
+		{name: "httpx", binary: cfg.ToolPath("httpx")},
+		{name: "naabu", binary: cfg.ToolPath("naabu")},
+		{name: "nmap", binary: cfg.ToolPath("nmap")},
+		{name: "whatweb", binary: cfg.ToolPath("whatweb")},
+		{name: "wafw00f", binary: cfg.ToolPath("wafw00f")},
+		{name: "katana", binary: cfg.ToolPath("katana")},
+		{name: "ffuf", binary: cfg.ToolPath("ffuf")},
+		{name: "nuclei", binary: cfg.ToolPath("nuclei")},
 	}
 
 	for _, tool := range requiredTools {
-		if tool.profile != "" && profile != tool.profile {
+		if len(moduleSet) > 0 && !moduleSet[tool.name] {
 			continue
 		}
 
@@ -243,19 +259,19 @@ func FormatChecks(checks []Check) string {
 		label := string(check.Status)
 		switch check.Status {
 		case SeverityOK:
-			label = "ok"
+			label = "✓"
 			passed++
 		case SeverityWarn:
-			label = "warn"
+			label = "!"
 			warned++
 		case SeverityFail:
-			label = "fail"
+			label = "✗"
 			if check.Required {
 				failed++
 			}
 		}
 
-		fmt.Fprintf(&b, "[%s]   %-10s %s\n", label, check.Name, check.Message)
+		fmt.Fprintf(&b, "  [%s] %-10s %s\n", label, check.Name, check.Message)
 	}
 
 	fmt.Fprintf(&b, "\n%d passed", passed)

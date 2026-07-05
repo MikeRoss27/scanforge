@@ -13,12 +13,21 @@ type RunStore struct {
 	Workspace string
 }
 
+type ModuleResult struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
 type RunManifest struct {
-	ID        string            `json:"id"`
-	Target    string            `json:"target"`
-	StartedAt string            `json:"started_at"`
-	Status    string            `json:"status"`
-	Outputs   map[string]string `json:"outputs"`
+	ID          string            `json:"id"`
+	Target      string            `json:"target"`
+	Profile     string            `json:"profile"`
+	StartedAt   string            `json:"started_at"`
+	CompletedAt string            `json:"completed_at,omitempty"`
+	Status      string            `json:"status"`
+	Modules     []ModuleResult    `json:"modules,omitempty"`
+	Outputs     map[string]string `json:"outputs"`
+	Artifacts   map[string]string `json:"artifacts,omitempty"`
 }
 
 type Run struct {
