@@ -1,4 +1,4 @@
-![](public/SCANFORGE.mp4)
+<video src="https://github.com/MikeRoss27/scanforge/raw/main/public/SCANFORGE.mp4" width="100%" controls autoplay loop muted></video>
 
 
 # ScanForge
