@@ -1,6 +1,5 @@
-<p align="center">
-  <video src="public/SCANFORGE.mp4" width="100%" autoplay loop muted></video>
-</p>
+![](public/SCANFORGE.mp4)
+
 
 # ScanForge
 
