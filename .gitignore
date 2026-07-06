@@ -1,4 +1,6 @@
 bin/
+scanforge
+scanforge.exe
 runs/*
 !runs/.gitkeep
 

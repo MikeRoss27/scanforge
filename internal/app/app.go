@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
+	"github.com/pterm/pterm"
 	"github.com/MikeRoss27/scanforge/internal/doctor"
 	"github.com/MikeRoss27/scanforge/internal/initcmd"
 	"github.com/MikeRoss27/scanforge/internal/modules"
@@ -114,13 +115,13 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 
 	ascii.PrintBanner()
 
-	fmt.Println("ScanForge run")
-	fmt.Println("Target: ", opts.Target)
-	fmt.Println("Profile:", profile)
-	fmt.Println("Scope:  ", scopeFile)
-	fmt.Println("Dry run:", opts.DryRun)
-	fmt.Println("Output: ", scanRun.RootDir)
-	fmt.Println()
+	pterm.DefaultHeader.WithFullWidth().WithBackgroundStyle(pterm.NewStyle(pterm.BgCyan)).WithTextStyle(pterm.NewStyle(pterm.FgBlack)).Println("ScanForge Run Started")
+	
+	pterm.Info.Printfln("Target:  %s", opts.Target)
+	pterm.Info.Printfln("Profile: %s", profile)
+	pterm.Info.Printfln("Scope:   %s", scopeFile)
+	pterm.Info.Printfln("Dry run: %v", opts.DryRun)
+	pterm.Info.Printfln("Output:  %s\n", scanRun.RootDir)
 
 	registry := modules.NewRegistry()
 	registry.Register(subfinder.New(cfg.ToolPath("subfinder")))
@@ -169,23 +170,22 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 		return err
 	}
 
-	fmt.Println()
-	fmt.Println("Generating report...")
+	pterm.Println()
+	spinner, _ := pterm.DefaultSpinner.Start("Generating report...")
 	rep, err := report.GenerateReport(scanRun.RootDir, &scanRun.Manifest)
 	if err != nil {
-		fmt.Printf("Warning: failed to generate report: %v\n", err)
+		spinner.Warning(fmt.Sprintf("Failed to generate report: %v", err))
 	} else {
 		jsonPath := filepath.Join(scanRun.RootDir, "report.json")
 		mdPath := filepath.Join(scanRun.RootDir, "report.md")
 		_ = rep.WriteJSON(jsonPath)
 		_ = rep.WriteMarkdown(mdPath)
 		
-		// Print colorful summary to the terminal
+		spinner.Success("Report generated successfully")
 		report.PrintTerminalSummary(rep)
 	}
 
-	fmt.Println("Done.")
-	fmt.Println("Run directory:", scanRun.RootDir)
+	pterm.Success.Printfln("Run completed. Directory: %s", scanRun.RootDir)
 
 	return nil
 }
@@ -229,27 +229,28 @@ func (a *App) Init(ctx context.Context, opts InitOptions) error {
 	result, err := initcmd.Run(initcmd.Options{Force: opts.Force})
 	if err != nil {
 		for _, path := range result.Created {
-			fmt.Println("Created:", path)
+			pterm.Success.Printfln("Created: %s", path)
 		}
 		for _, path := range result.Skipped {
-			fmt.Println("Skipped:", path)
+			pterm.Info.Printfln("Skipped: %s", path)
 		}
 		return err
 	}
 
 	for _, path := range result.Created {
-		fmt.Println("Created:", path)
+		pterm.Success.Printfln("Created: %s", path)
 	}
 	for _, path := range result.Skipped {
-		fmt.Println("Skipped:", path)
+		pterm.Info.Printfln("Skipped: %s", path)
 	}
 
-	fmt.Println()
-	fmt.Println("Initialization complete.")
-	fmt.Println("Next steps:")
-	fmt.Println("  1. Edit scope.txt with your authorized targets")
-	fmt.Println("  2. Run: scanforge doctor")
-	fmt.Println("  3. Run: scanforge run example.com --dry-run")
+	pterm.Println()
+	pterm.DefaultHeader.WithFullWidth().WithBackgroundStyle(pterm.NewStyle(pterm.BgGreen)).WithTextStyle(pterm.NewStyle(pterm.FgBlack)).Println("Initialization Complete")
+	
+	pterm.Info.Println("Next steps:")
+	pterm.Println("  1. Edit scope.txt with your authorized targets")
+	pterm.Println("  2. Run: scanforge doctor")
+	pterm.Println("  3. Run: scanforge run example.com --dry-run")
 
 	return nil
 }

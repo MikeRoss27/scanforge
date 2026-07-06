@@ -35,18 +35,22 @@ func TestOrchestratorMissingArtifact(t *testing.T) {
 
 	orch := New(runner.NewDryRunExecutor(false), reg)
 
-	_, err := orch.Run(context.Background(), nil, Options{
+	results, err := orch.Run(context.Background(), nil, Options{
 		Target:  "example.com",
 		Profile: "test",
 		Config:  cfg,
 	})
 
-	if err == nil {
-		t.Fatal("expected error due to missing artifact")
+	if err != nil {
+		t.Fatalf("expected no error, but got: %v", err)
 	}
 
-	if err.Error() != `deadlock detected: unable to satisfy dependencies for remaining modules` {
-		t.Fatalf("unexpected error message: %v", err)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	if results[0].Status != "skipped" {
+		t.Fatalf("expected module status to be skipped, got %s", results[0].Status)
 	}
 }
 

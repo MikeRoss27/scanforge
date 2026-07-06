@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
+	"github.com/pterm/pterm"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/runner"
 	"github.com/MikeRoss27/scanforge/internal/storage"
@@ -66,9 +67,25 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 		readyModules := dag.NextReady(completed, availableArtifacts)
 		
 		if len(readyModules) == 0 {
-			// This means we have a deadlock: not all modules are completed but none are ready.
-			// It implies missing artifacts that no un-run module produces.
-			return results, fmt.Errorf("deadlock detected: unable to satisfy dependencies for remaining modules")
+			// This means we have a deadlock or unreachable modules due to failed dependencies.
+			// Instead of returning an error, we mark the remaining modules as "skipped"
+			// and gracefully finish the orchestration.
+			if opts.Verbose {
+				pterm.Warning.Println("No more modules can be run (dependencies missing). Marking remaining as skipped.")
+			}
+			for _, m := range selectedModules {
+				if !completed[m.Name()] {
+					results = append(results, &modules.Result{
+						Name:   m.Name(),
+						Status: "skipped",
+						OutputFiles: map[string]string{
+							"reason": "dependencies not met (upstream failure)",
+						},
+					})
+					completed[m.Name()] = true
+				}
+			}
+			break
 		}
 
 		if opts.Verbose {
@@ -76,7 +93,7 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 			for _, m := range readyModules {
 				names = append(names, m.Name())
 			}
-			fmt.Printf("Starting parallel wave: %v\n", names)
+			pterm.Info.Printfln("Starting parallel wave: %v", names)
 		}
 
 		var wg sync.WaitGroup
@@ -90,16 +107,28 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 				start := time.Now()
 				
 				if opts.Verbose {
-					fmt.Printf("Running module %q...\n", m.Name())
+					pterm.Info.Printfln("Running module %q...", m.Name())
 				}
 
 				result, err := m.Run(ctx, runCtx, o.executor)
 				
 				if opts.Verbose {
-					fmt.Printf("Module %q done (%s)\n", m.Name(), time.Since(start).Round(time.Millisecond))
+					if err != nil {
+						pterm.Error.Printfln("Module %q failed (%s)", m.Name(), time.Since(start).Round(time.Millisecond))
+					} else {
+						pterm.Success.Printfln("Module %q done (%s)", m.Name(), time.Since(start).Round(time.Millisecond))
+					}
 				}
 
 				if err != nil {
+					// Even if it failed, we want to record the result as failed
+					waveResults <- &modules.Result{
+						Name:   m.Name(),
+						Status: "failed",
+						OutputFiles: map[string]string{
+							"error": err.Error(),
+						},
+					}
 					waveErrors <- fmt.Errorf("module %q failed: %w", m.Name(), err)
 					return
 				}
@@ -112,9 +141,18 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 		close(waveResults)
 		close(waveErrors)
 
-		// Check for errors in the wave
-		if err := <-waveErrors; err != nil {
-			return results, err
+		// Check for errors in the wave but do not abort immediately
+		var waveErrs []error
+		for err := range waveErrors {
+			waveErrs = append(waveErrs, err)
+		}
+
+		if len(waveErrs) > 0 {
+			if opts.Verbose {
+				for _, e := range waveErrs {
+					pterm.Error.Printfln("Error in wave: %v", e)
+				}
+			}
 		}
 
 		// Process results
@@ -122,12 +160,14 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 			results = append(results, res)
 			completed[res.Name] = true
 			
-			// Get the module to see what it produced
-			m, _ := o.registry.Get(res.Name)
-			for _, prod := range m.Produces() {
-				mu.Lock()
-				availableArtifacts[prod] = true
-				mu.Unlock()
+			// Only add artifacts if the module completed successfully
+			if res.Status == "completed" {
+				m, _ := o.registry.Get(res.Name)
+				for _, prod := range m.Produces() {
+					mu.Lock()
+					availableArtifacts[prod] = true
+					mu.Unlock()
+				}
 			}
 		}
 	}
