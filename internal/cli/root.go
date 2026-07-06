@@ -24,6 +24,7 @@ for authorized pentest and recon workflows.`,
 	cmd.AddCommand(NewRunCommand(application))
 	cmd.AddCommand(NewDoctorCommand(application))
 	cmd.AddCommand(NewInitCommand(application))
+	cmd.AddCommand(NewAuthCommand(application))
 	cmd.AddCommand(NewVersionCommand())
 
 	return cmd

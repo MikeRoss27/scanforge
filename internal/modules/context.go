@@ -3,6 +3,7 @@ package modules
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/MikeRoss27/scanforge/internal/storage"
 )
@@ -19,6 +20,7 @@ type RunContext struct {
 	DryRun    bool
 	Run       *storage.Run
 	Artifacts map[string]Artifact
+	mu        sync.RWMutex
 }
 
 func NewRunContext(target, profile string, dryRun bool, run *storage.Run) *RunContext {
@@ -32,15 +34,21 @@ func NewRunContext(target, profile string, dryRun bool, run *storage.Run) *RunCo
 }
 
 func (c *RunContext) AddArtifact(name string, artifact Artifact) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.Artifacts[name] = artifact
 }
 
 func (c *RunContext) GetArtifact(name string) (Artifact, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	art, ok := c.Artifacts[name]
 	return art, ok
 }
 
 func (c *RunContext) MustArtifact(name string) (Artifact, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if art, ok := c.Artifacts[name]; ok {
 		return art, nil
 	}

@@ -45,7 +45,7 @@ func TestOrchestratorMissingArtifact(t *testing.T) {
 		t.Fatal("expected error due to missing artifact")
 	}
 
-	if err.Error() != `module "needs_missing" requires missing artifact "missing_artifact"` {
+	if err.Error() != `deadlock detected: unable to satisfy dependencies for remaining modules` {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }

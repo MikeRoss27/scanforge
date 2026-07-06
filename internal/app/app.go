@@ -179,8 +179,9 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 		mdPath := filepath.Join(scanRun.RootDir, "report.md")
 		_ = rep.WriteJSON(jsonPath)
 		_ = rep.WriteMarkdown(mdPath)
-		fmt.Println("Report JSON:", jsonPath)
-		fmt.Println("Report Markdown:", mdPath)
+		
+		// Print colorful summary to the terminal
+		report.PrintTerminalSummary(rep)
 	}
 
 	fmt.Println("Done.")

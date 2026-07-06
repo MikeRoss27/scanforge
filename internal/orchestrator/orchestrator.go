@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
@@ -47,30 +48,88 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	}
 
 	runCtx := modules.NewRunContext(opts.Target, opts.Profile, opts.DryRun, scanRun)
-	results := make([]*modules.Result, 0, len(selectedModules))
 
-	for _, module := range selectedModules {
-		for _, req := range module.Requires() {
-			if _, ok := runCtx.GetArtifact(req); !ok {
-				return results, fmt.Errorf("module %q requires missing artifact %q", module.Name(), req)
+	dag, err := BuildDAG(selectedModules)
+	if err != nil {
+		return nil, err
+	}
+
+	completed := make(map[string]bool)
+	availableArtifacts := make(map[string]bool)
+	var results []*modules.Result
+	var mu sync.Mutex
+
+	totalModules := len(selectedModules)
+
+	// Loop until all modules are completed
+	for len(completed) < totalModules {
+		readyModules := dag.NextReady(completed, availableArtifacts)
+		
+		if len(readyModules) == 0 {
+			// This means we have a deadlock: not all modules are completed but none are ready.
+			// It implies missing artifacts that no un-run module produces.
+			return results, fmt.Errorf("deadlock detected: unable to satisfy dependencies for remaining modules")
+		}
+
+		if opts.Verbose {
+			names := []string{}
+			for _, m := range readyModules {
+				names = append(names, m.Name())
+			}
+			fmt.Printf("Starting parallel wave: %v\n", names)
+		}
+
+		var wg sync.WaitGroup
+		waveResults := make(chan *modules.Result, len(readyModules))
+		waveErrors := make(chan error, len(readyModules))
+
+		for _, module := range readyModules {
+			wg.Add(1)
+			go func(m modules.Module) {
+				defer wg.Done()
+				start := time.Now()
+				
+				if opts.Verbose {
+					fmt.Printf("Running module %q...\n", m.Name())
+				}
+
+				result, err := m.Run(ctx, runCtx, o.executor)
+				
+				if opts.Verbose {
+					fmt.Printf("Module %q done (%s)\n", m.Name(), time.Since(start).Round(time.Millisecond))
+				}
+
+				if err != nil {
+					waveErrors <- fmt.Errorf("module %q failed: %w", m.Name(), err)
+					return
+				}
+				waveResults <- result
+			}(module)
+		}
+
+		// Wait for all modules in this wave to finish
+		wg.Wait()
+		close(waveResults)
+		close(waveErrors)
+
+		// Check for errors in the wave
+		if err := <-waveErrors; err != nil {
+			return results, err
+		}
+
+		// Process results
+		for res := range waveResults {
+			results = append(results, res)
+			completed[res.Name] = true
+			
+			// Get the module to see what it produced
+			m, _ := o.registry.Get(res.Name)
+			for _, prod := range m.Produces() {
+				mu.Lock()
+				availableArtifacts[prod] = true
+				mu.Unlock()
 			}
 		}
-
-		if opts.Verbose {
-			fmt.Printf("Running module %q...\n", module.Name())
-		}
-
-		start := time.Now()
-		result, err := module.Run(ctx, runCtx, o.executor)
-		if err != nil {
-			return results, fmt.Errorf("module %q failed: %w", module.Name(), err)
-		}
-
-		if opts.Verbose {
-			fmt.Printf("Module %q done (%s)\n", module.Name(), time.Since(start).Round(time.Millisecond))
-		}
-
-		results = append(results, result)
 	}
 
 	return results, nil
