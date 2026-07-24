@@ -22,6 +22,7 @@ for authorized pentest and recon workflows.`,
 	cmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to scanforge.yaml (overrides SCANFORGE_CONFIG and ./scanforge.yaml)")
 
 	cmd.AddCommand(NewRunCommand(application))
+	cmd.AddCommand(NewPlanCommand(application))
 	cmd.AddCommand(NewDoctorCommand(application))
 	cmd.AddCommand(NewInitCommand(application))
 	cmd.AddCommand(NewAuthCommand(application))

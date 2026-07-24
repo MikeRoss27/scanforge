@@ -1,2 +1,10 @@
+# Domaine racine et sous-domaines autorisés
 example.com
 *.example.com
+
+# Les exclusions sont prioritaires
+!admin.example.com
+!*.legacy.example.com
+
+# Réseau ajouté explicitement
+192.0.2.0/24

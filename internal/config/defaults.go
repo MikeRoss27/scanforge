@@ -25,6 +25,8 @@ func Default() *Config {
 			Katana:    "katana",
 			Ffuf:      "ffuf",
 			Nuclei:    "nuclei",
+			Gau:       "gau",
+			Tlsx:      "tlsx",
 		},
 		Profiles: map[string][]string{},
 	}

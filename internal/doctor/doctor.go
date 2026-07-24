@@ -122,6 +122,8 @@ func (r *Runner) Run(ctx context.Context, opts Options) ([]Check, int, error) {
 		{name: "katana", binary: cfg.ToolPath("katana")},
 		{name: "ffuf", binary: cfg.ToolPath("ffuf")},
 		{name: "nuclei", binary: cfg.ToolPath("nuclei")},
+		{name: "gau", binary: cfg.ToolPath("gau")},
+		{name: "tlsx", binary: cfg.ToolPath("tlsx")},
 	}
 
 	for _, tool := range requiredTools {

@@ -1,8 +1,15 @@
 package nmap
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
@@ -20,60 +27,194 @@ func New(binary string) *Module {
 	return &Module{binary: binary}
 }
 
-func (m *Module) Name() string { return "nmap" }
+func (m *Module) Name() string        { return "nmap" }
 func (m *Module) Description() string { return "Network exploration tool and security / port scanner" }
-func (m *Module) Requires() []string { return nil } // Falls back to target
-func (m *Module) Produces() []string { return []string{"nmap_xml"} }
+func (m *Module) Requires() []string  { return []string{"open_ports"} }
+func (m *Module) Produces() []string  { return []string{"nmap_xml"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
-	var inputArgs []string
-
-	if inputArt, ok := runCtx.GetArtifact("open_ports"); ok {
-		inputArgs = []string{"-iL", runCtx.Run.Path(inputArt.Path)}
-	} else {
-		inputArgs = []string{runCtx.Target}
-	}
-
-	xmlOutputFile := runCtx.Run.Path("03_ports", "nmap.xml")
-	txtOutputFile := runCtx.Run.Path("03_ports", "nmap.txt")
-	stderrFile := runCtx.Run.Path("00_meta", "nmap.stderr.log")
-
-	args := append(inputArgs, "-oX", xmlOutputFile, "-oN", txtOutputFile, "-sV", "-T4")
-
-	cmd := runner.Command{
-		Name:       m.binary,
-		Args:       args,
-		Timeout:    1 * time.Hour,
-		StderrFile: stderrFile,
-	}
-
-	if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, cmd); err != nil {
-		return nil, fmt.Errorf("failed to write commands log: %w", err)
-	}
-
-	res, err := executor.Run(ctx, cmd)
+	inputArt, err := runCtx.MustArtifact("open_ports")
 	if err != nil {
-		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
+		return nil, err
 	}
 
-	runCtx.AddArtifact("nmap_xml", modules.Artifact{
-		Name: "nmap_xml",
-		Type: "xml",
-		Path: "03_ports/nmap.xml",
-	})
+	targets, err := readOpenPorts(runCtx.Run.Path(inputArt.Path))
+	if err != nil {
+		if runCtx.DryRun && os.IsNotExist(err) {
+			addArtifact(runCtx)
+			return completedResult(m.Name()), nil
+		}
+		return nil, fmt.Errorf("failed to parse open ports: %w", err)
+	}
+
+	outputDir := runCtx.Run.Path("03_ports", "nmap")
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create nmap output directory: %w", err)
+	}
 
 	status := "completed"
-	if res.ExitCode != 0 {
-		status = fmt.Sprintf("failed (exit code %d)", res.ExitCode)
+	for i, target := range targets {
+		base := fmt.Sprintf("host-%04d", i+1)
+		cmd := runner.Command{
+			Name: m.binary,
+			Args: []string{
+				"-p", joinPorts(target.Ports),
+				"-oX", filepath.Join(outputDir, base+".xml"),
+				"-oN", filepath.Join(outputDir, base+".txt"),
+				"-sV",
+				"-T4",
+			},
+			Timeout:    1 * time.Hour,
+			StderrFile: filepath.Join(outputDir, base+".stderr.log"),
+		}
+		if ip := net.ParseIP(target.Host); ip != nil && ip.To4() == nil {
+			cmd.Args = append(cmd.Args, "-6")
+		}
+		cmd.Args = append(cmd.Args, target.Host)
+
+		if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, cmd); err != nil {
+			return nil, fmt.Errorf("failed to write commands log: %w", err)
+		}
+
+		res, err := executor.Run(ctx, cmd)
+		if err != nil {
+			return nil, fmt.Errorf("failed to run command %q for host %q: %w", cmd.Name, target.Host, err)
+		}
+		if res.ExitCode != 0 {
+			status = fmt.Sprintf("failed (exit code %d)", res.ExitCode)
+		}
 	}
+
+	addArtifact(runCtx)
 
 	return &modules.Result{
 		Name:   m.Name(),
 		Status: status,
 		OutputFiles: map[string]string{
-			"nmap_xml":    "03_ports/nmap.xml",
-			"nmap_txt":    "03_ports/nmap.txt",
-			"nmap_stderr": "00_meta/nmap.stderr.log",
+			"nmap_xml": "03_ports/nmap",
 		},
 	}, nil
+}
+
+func addArtifact(runCtx *modules.RunContext) {
+	runCtx.AddArtifact("nmap_xml", modules.Artifact{
+		Name: "nmap_xml",
+		Type: "xml_collection",
+		Path: "03_ports/nmap",
+	})
+}
+
+type hostPorts struct {
+	Host  string
+	Ports []int
+}
+
+func readOpenPorts(path string) ([]hostPorts, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	portsByHost := make(map[string]map[int]struct{})
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		host, port, err := parseHostPort(line)
+		if err != nil {
+			return nil, err
+		}
+		if portsByHost[host] == nil {
+			portsByHost[host] = make(map[int]struct{})
+		}
+		portsByHost[host][port] = struct{}{}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	hosts := make([]string, 0, len(portsByHost))
+	for host := range portsByHost {
+		hosts = append(hosts, host)
+	}
+	sort.Strings(hosts)
+
+	targets := make([]hostPorts, 0, len(hosts))
+	for _, host := range hosts {
+		ports := make([]int, 0, len(portsByHost[host]))
+		for port := range portsByHost[host] {
+			ports = append(ports, port)
+		}
+		sort.Ints(ports)
+		targets = append(targets, hostPorts{Host: host, Ports: ports})
+	}
+	return targets, nil
+}
+
+func parseHostPort(value string) (string, int, error) {
+	host, portText, err := net.SplitHostPort(value)
+	if err != nil {
+		lastColon := strings.LastIndexByte(value, ':')
+		if lastColon < 1 {
+			return "", 0, fmt.Errorf("invalid naabu entry %q: expected host:port", value)
+		}
+		host, portText = value[:lastColon], value[lastColon+1:]
+		if strings.Contains(host, ":") && net.ParseIP(host) == nil {
+			return "", 0, fmt.Errorf("invalid naabu entry %q: IPv6 addresses must be valid", value)
+		}
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" {
+		return "", 0, fmt.Errorf("invalid naabu entry %q: host is empty", value)
+	}
+	if net.ParseIP(host) == nil && !validHostname(host) {
+		return "", 0, fmt.Errorf("invalid naabu entry %q: invalid host", value)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("invalid naabu entry %q: port must be between 1 and 65535", value)
+	}
+	return host, port, nil
+}
+
+func validHostname(host string) bool {
+	if len(host) > 253 {
+		return false
+	}
+	host = strings.TrimSuffix(host, ".")
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, char := range label {
+			if (char < 'a' || char > 'z') &&
+				(char < 'A' || char > 'Z') &&
+				(char < '0' || char > '9') &&
+				char != '-' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func joinPorts(ports []int) string {
+	values := make([]string, len(ports))
+	for i, port := range ports {
+		values[i] = strconv.Itoa(port)
+	}
+	return strings.Join(values, ",")
+}
+
+func completedResult(name string) *modules.Result {
+	return &modules.Result{
+		Name:   name,
+		Status: "completed",
+		OutputFiles: map[string]string{
+			"nmap_xml": "03_ports/nmap",
+		},
+	}
 }

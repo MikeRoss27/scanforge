@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Optional implicit scope generation with `exact` and `domain` modes
+- Repeatable `--scope-add` and `--exclude` rules
+- `scanforge plan` for read-only scope and DAG inspection
+- `safe`, `recon`, `vuln`, and `deep` presets
+- `gau` and `tlsx` modules
+- Effective-scope archive and JSONL rejection journal
+- Dedicated usage, scope, and architecture documentation
+
+### Changed
+
+- Scope confirmation is required only when authorization is inferred
+- Artifact filtering is enforced centrally before downstream consumption
+- Nmap consumes Naabu's host/port results and restricts scans accordingly
+- Reports include richer DNS, HTTP, port, TLS, and historical URL data
+
+### Fixed
+
+- DAG validation for missing producers, duplicate producers, and cycles
+- Root target continuity in exact scope mode
+- Run status propagation for partial and failed module executions
+
 ## [0.0.1] - 2026-07-04
 
 ### Added

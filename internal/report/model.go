@@ -16,28 +16,64 @@ type Report struct {
 
 // Asset represents a single host or subdomain discovered during the scan.
 type Asset struct {
-	Name            string            `json:"name"`             // e.g., "sub.example.com"
-	IPs             []string          `json:"ips,omitempty"`
-	Ports           map[int]*Port     `json:"ports,omitempty"`  // Key is port number
-	Technologies    []string          `json:"technologies,omitempty"`
-	WAFs            []string          `json:"wafs,omitempty"`
-	Vulnerabilities []*Vulnerability  `json:"vulnerabilities,omitempty"`
-	Paths           []string          `json:"paths,omitempty"`
+	Name            string           `json:"name"`
+	IPs             []string         `json:"ips,omitempty"`
+	CNAMEs          []string         `json:"cnames,omitempty"`
+	ASN             []string         `json:"asn,omitempty"`
+	CDN             []string         `json:"cdn,omitempty"`
+	Ports           map[int]*Port    `json:"ports,omitempty"`
+	HTTP            []HTTPService    `json:"http,omitempty"`
+	TLS             []TLSService     `json:"tls,omitempty"`
+	Technologies    []string         `json:"technologies,omitempty"`
+	WAFs            []string         `json:"wafs,omitempty"`
+	Vulnerabilities []*Vulnerability `json:"vulnerabilities,omitempty"`
+	Paths           []string         `json:"paths,omitempty"`
 }
 
-// Port represents an open port on an asset.
 type Port struct {
-	Number  int      `json:"number"`
-	Service string   `json:"service,omitempty"` // e.g., "http", "ssh"
+	Number   int    `json:"number"`
+	Protocol string `json:"protocol,omitempty"`
+	Service  string `json:"service,omitempty"`
+	Product  string `json:"product,omitempty"`
+	Version  string `json:"version,omitempty"`
+}
+
+type HTTPService struct {
+	URL           string `json:"url"`
+	StatusCode    int    `json:"status_code,omitempty"`
+	Title         string `json:"title,omitempty"`
+	WebServer     string `json:"web_server,omitempty"`
+	ContentType   string `json:"content_type,omitempty"`
+	ContentLength int64  `json:"content_length,omitempty"`
+	Location      string `json:"location,omitempty"`
+	ResponseTime  string `json:"response_time,omitempty"`
+	Favicon       string `json:"favicon,omitempty"`
+}
+
+type TLSService struct {
+	Port       int      `json:"port,omitempty"`
+	Version    string   `json:"version,omitempty"`
+	Cipher     string   `json:"cipher,omitempty"`
+	CommonName string   `json:"common_name,omitempty"`
+	Issuer     string   `json:"issuer,omitempty"`
+	SANs       []string `json:"sans,omitempty"`
+	NotBefore  string   `json:"not_before,omitempty"`
+	NotAfter   string   `json:"not_after,omitempty"`
+	Expired    bool     `json:"expired,omitempty"`
+	SelfSigned bool     `json:"self_signed,omitempty"`
 }
 
 // Vulnerability represents a security finding.
 type Vulnerability struct {
-	Source     string `json:"source"`
-	TemplateID string `json:"template_id"`
-	Title      string `json:"title"`
-	Severity   string `json:"severity"`
-	MatchedAt  string `json:"matched_at"`
+	Source     string   `json:"source"`
+	TemplateID string   `json:"template_id"`
+	Title      string   `json:"title"`
+	Severity   string   `json:"severity"`
+	MatchedAt  string   `json:"matched_at"`
+	Tags       []string `json:"tags,omitempty"`
+	CVEs       []string `json:"cves,omitempty"`
+	CWEs       []string `json:"cwes,omitempty"`
+	References []string `json:"references,omitempty"`
 }
 
 func NewReport(target, profile string) *Report {

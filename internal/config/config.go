@@ -29,6 +29,8 @@ type Tools struct {
 	Katana    string `yaml:"katana"`
 	Ffuf      string `yaml:"ffuf"`
 	Nuclei    string `yaml:"nuclei"`
+	Gau       string `yaml:"gau"`
+	Tlsx      string `yaml:"tlsx"`
 }
 
 func ResolvePath(explicitPath string) string {
@@ -123,6 +125,14 @@ func (c *Config) ToolPath(name string) string {
 		if c.Tools.Nuclei != "" {
 			return c.Tools.Nuclei
 		}
+	case "gau":
+		if c.Tools.Gau != "" {
+			return c.Tools.Gau
+		}
+	case "tlsx":
+		if c.Tools.Tlsx != "" {
+			return c.Tools.Tlsx
+		}
 	}
 
 	return name
@@ -149,8 +159,10 @@ tools:
   katana: katana
   ffuf: ffuf
   nuclei: nuclei
+  gau: gau
+  tlsx: tlsx
 
-# overrides for built-in profiles (passive, web, ports, full)
+# overrides for built-in profiles (safe, recon, web, ports, vuln, deep, full)
 # profiles:
 #   passive:
 #     - subfinder
@@ -200,6 +212,12 @@ func mergeDefaults(base, parsed *Config) {
 	}
 	if parsed.Tools.Nuclei == "" {
 		parsed.Tools.Nuclei = base.Tools.Nuclei
+	}
+	if parsed.Tools.Gau == "" {
+		parsed.Tools.Gau = base.Tools.Gau
+	}
+	if parsed.Tools.Tlsx == "" {
+		parsed.Tools.Tlsx = base.Tools.Tlsx
 	}
 	if len(parsed.Profiles) == 0 {
 		parsed.Profiles = base.Profiles

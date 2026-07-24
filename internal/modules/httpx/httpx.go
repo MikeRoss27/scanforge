@@ -32,7 +32,7 @@ func (m *Module) Description() string {
 }
 
 func (m *Module) Requires() []string {
-	return []string{"subdomains"} // We will fall back gracefully in Run
+	return []string{"resolved_hosts"}
 }
 
 func (m *Module) Produces() []string {
@@ -40,14 +40,9 @@ func (m *Module) Produces() []string {
 }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
-	// Try resolved_hosts first, fallback to subdomains
-	inputArt, ok := runCtx.GetArtifact("resolved_hosts")
-	if !ok {
-		var err error
-		inputArt, err = runCtx.MustArtifact("subdomains")
-		if err != nil {
-			return nil, err
-		}
+	inputArt, err := runCtx.MustArtifact("resolved_hosts")
+	if err != nil {
+		return nil, err
 	}
 	inputFile := runCtx.Run.Path(inputArt.Path)
 
@@ -64,6 +59,15 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			"-status-code",
 			"-title",
 			"-tech-detect",
+			"-server",
+			"-ip",
+			"-cname",
+			"-cdn",
+			"-location",
+			"-content-type",
+			"-content-length",
+			"-favicon",
+			"-response-time",
 		},
 		Timeout:    10 * time.Minute,
 		StdoutFile: rawOutputFile,
@@ -87,16 +91,20 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		}
 	}
 
-	runCtx.AddArtifact("httpx_raw", modules.Artifact{
+	if err := runCtx.AddArtifact("httpx_raw", modules.Artifact{
 		Name: "httpx_raw",
 		Type: "jsonl",
 		Path: "02_http/httpx.jsonl",
-	})
-	runCtx.AddArtifact("alive_urls", modules.Artifact{
+	}); err != nil {
+		return nil, fmt.Errorf("failed to publish HTTP results: %w", err)
+	}
+	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{
 		Name: "alive_urls",
 		Type: "text",
 		Path: "02_http/alive.txt",
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("failed to publish alive URLs: %w", err)
+	}
 
 	status := "completed"
 	if res.ExitCode != 0 {
@@ -119,11 +127,11 @@ func writeAliveURLs(inputPath, outputPath string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	lines := strings.Split(string(data), "\n")
 	var urls []string
 	seen := make(map[string]bool)
-	
+
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -138,6 +146,6 @@ func writeAliveURLs(inputPath, outputPath string) error {
 			}
 		}
 	}
-	
+
 	return os.WriteFile(outputPath, []byte(strings.Join(urls, "\n")+"\n"), 0644)
 }

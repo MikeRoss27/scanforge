@@ -1,8 +1,13 @@
 package subfinder
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"net"
+	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
@@ -39,10 +44,14 @@ func (m *Module) Produces() []string {
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	outputFile := runCtx.Run.Path("01_subdomains", "subfinder.txt")
 	stderrFile := runCtx.Run.Path("00_meta", "subfinder.stderr.log")
+	target, err := enumerationTarget(runCtx.Target)
+	if err != nil {
+		return nil, err
+	}
 
 	cmd := runner.Command{
 		Name:       m.binary,
-		Args:       []string{"-d", runCtx.Target, "-silent"},
+		Args:       []string{"-d", target, "-silent"},
 		Timeout:    10 * time.Minute,
 		StdoutFile: outputFile,
 		StderrFile: stderrFile,
@@ -57,11 +66,19 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
 	}
 
-	runCtx.AddArtifact("subdomains", modules.Artifact{
+	if !runCtx.DryRun {
+		if err := ensureTargetInOutput(outputFile, target); err != nil {
+			return nil, fmt.Errorf("include root target in subfinder output: %w", err)
+		}
+	}
+
+	if err := runCtx.AddArtifact("subdomains", modules.Artifact{
 		Name: "subdomains",
 		Type: "text",
 		Path: "01_subdomains/subfinder.txt",
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("publish subdomains artifact: %w", err)
+	}
 
 	status := "completed"
 	if res.ExitCode != 0 {
@@ -76,4 +93,63 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			"subfinder_stderr": "00_meta/subfinder.stderr.log",
 		},
 	}, nil
+}
+
+func enumerationTarget(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", fmt.Errorf("subfinder target is empty")
+	}
+
+	if strings.Contains(value, "://") {
+		parsed, err := url.Parse(value)
+		if err != nil || parsed.Hostname() == "" {
+			return "", fmt.Errorf("invalid subfinder target %q", raw)
+		}
+		value = parsed.Hostname()
+	} else if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	}
+
+	value = strings.Trim(strings.TrimSuffix(value, "."), "[]")
+	if value == "" || strings.ContainsAny(value, "/?#") {
+		return "", fmt.Errorf("invalid subfinder target %q", raw)
+	}
+	return strings.ToLower(value), nil
+}
+
+func ensureTargetInOutput(path, target string) error {
+	input, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+
+	scanner := bufio.NewScanner(input)
+	hasTarget := false
+	hasContent := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			hasContent = true
+		}
+		if strings.EqualFold(line, target) {
+			hasTarget = true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if hasTarget {
+		return nil
+	}
+	if _, err := input.Seek(0, 2); err != nil {
+		return err
+	}
+	prefix := ""
+	if hasContent {
+		prefix = "\n"
+	}
+	_, err = input.WriteString(prefix + target + "\n")
+	return err
 }
