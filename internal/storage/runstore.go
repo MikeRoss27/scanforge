@@ -22,6 +22,9 @@ type RunManifest struct {
 	ID          string            `json:"id"`
 	Target      string            `json:"target"`
 	Profile     string            `json:"profile"`
+	ScopePath   string            `json:"scope_path,omitempty"`
+	ScopeSource string            `json:"scope_source,omitempty"`
+	ScopeMode   string            `json:"scope_mode,omitempty"`
 	StartedAt   string            `json:"started_at"`
 	CompletedAt string            `json:"completed_at,omitempty"`
 	Status      string            `json:"status"`

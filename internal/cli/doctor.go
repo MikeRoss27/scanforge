@@ -22,7 +22,7 @@ func NewDoctorCommand(application *app.App) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Profile to validate tools for (passive or web)")
+	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Profile or preset whose tools should be validated")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output results as JSON")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed tool version output")
 

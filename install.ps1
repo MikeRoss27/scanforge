@@ -32,6 +32,8 @@ $goTools = @(
     "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest",
     "github.com/projectdiscovery/katana/cmd/katana@latest",
     "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+    "github.com/projectdiscovery/tlsx/cmd/tlsx@latest",
+    "github.com/lc/gau/v2/cmd/gau@latest",
     "github.com/ffuf/ffuf/v2@latest"
 )
 

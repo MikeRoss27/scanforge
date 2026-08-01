@@ -21,10 +21,10 @@ func New(binary string) *Module {
 	return &Module{binary: binary}
 }
 
-func (m *Module) Name() string { return "ffuf" }
+func (m *Module) Name() string        { return "ffuf" }
 func (m *Module) Description() string { return "Fast web fuzzer written in Go" }
-func (m *Module) Requires() []string { return []string{"alive_urls"} }
-func (m *Module) Produces() []string { return []string{"discovered_paths"} }
+func (m *Module) Requires() []string  { return []string{"alive_urls"} }
+func (m *Module) Produces() []string  { return []string{"discovered_paths"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	inputArt, err := runCtx.MustArtifact("alive_urls")
@@ -52,6 +52,8 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		"-of", "json",
 		"-mc", "200,301,302,403",
 	}
+	args = append(args, runCtx.ProxyArgs("-x")...)
+	args = append(args, runCtx.HeaderArgs("-H")...)
 
 	cmd := runner.Command{
 		Name:       m.binary,
@@ -69,11 +71,13 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
 	}
 
-	runCtx.AddArtifact("discovered_paths", modules.Artifact{
+	if err := runCtx.AddArtifact("discovered_paths", modules.Artifact{
 		Name: "discovered_paths",
 		Type: "json",
 		Path: "05_content/ffuf.json",
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("failed to publish discovered paths: %w", err)
+	}
 
 	status := "completed"
 	if res.ExitCode != 0 {

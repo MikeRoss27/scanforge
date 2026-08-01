@@ -2,49 +2,72 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/MikeRoss27/scanforge/internal/ascii"
 	"github.com/MikeRoss27/scanforge/internal/config"
-	"github.com/pterm/pterm"
 	"github.com/MikeRoss27/scanforge/internal/doctor"
 	"github.com/MikeRoss27/scanforge/internal/initcmd"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/modules/dnsx"
 	"github.com/MikeRoss27/scanforge/internal/modules/ffuf"
+	"github.com/MikeRoss27/scanforge/internal/modules/gau"
 	"github.com/MikeRoss27/scanforge/internal/modules/httpx"
+	"github.com/MikeRoss27/scanforge/internal/modules/jssecrets"
 	"github.com/MikeRoss27/scanforge/internal/modules/katana"
 	"github.com/MikeRoss27/scanforge/internal/modules/naabu"
 	"github.com/MikeRoss27/scanforge/internal/modules/nmap"
 	"github.com/MikeRoss27/scanforge/internal/modules/nuclei"
 	"github.com/MikeRoss27/scanforge/internal/modules/subfinder"
+	"github.com/MikeRoss27/scanforge/internal/modules/tlsx"
 	"github.com/MikeRoss27/scanforge/internal/modules/wafw00f"
 	"github.com/MikeRoss27/scanforge/internal/modules/whatweb"
 	"github.com/MikeRoss27/scanforge/internal/orchestrator"
 	"github.com/MikeRoss27/scanforge/internal/report"
-	"github.com/MikeRoss27/scanforge/internal/ascii"
 	"github.com/MikeRoss27/scanforge/internal/runner"
-	"github.com/MikeRoss27/scanforge/internal/scope"
 	"github.com/MikeRoss27/scanforge/internal/storage"
 	"github.com/MikeRoss27/scanforge/internal/version"
+	"github.com/pterm/pterm"
 )
 
 type App struct {
-	ConfigPath string
+	ConfigPath    string
+	ScopePrompter ScopePrompter
 }
 
 func New(configPath string) *App {
-	return &App{ConfigPath: configPath}
+	return &App{
+		ConfigPath:    configPath,
+		ScopePrompter: newTerminalScopePrompter(),
+	}
 }
 
 type RunOptions struct {
-	Target  string
-	Profile string
-	Scope   string
-	DryRun  bool
-	Verbose bool
+	Target       string
+	Profile      string
+	Scope        string
+	ScopeMode    string
+	ScopeAdd     []string
+	Exclusions   []string
+	ConfirmScope bool
+	DryRun       bool
+	Verbose      bool
+
+	// Proxy routes HTTP-capable modules through an intercepting proxy such
+	// as Caido or Burp Suite (e.g. http://127.0.0.1:8080).
+	Proxy string
+	// Headers are applied to every outgoing HTTP request, for example to
+	// carry an authenticated session (Cookie/Authorization).
+	Headers []string
+	// Nuclei carries nuclei-specific tuning (severity, tags, rate limiting).
+	Nuclei modules.NucleiOptions
+	// NmapConcurrency bounds how many nmap processes run at once.
+	NmapConcurrency int
 }
 
 type DoctorOptions struct {
@@ -71,30 +94,30 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 		return fmt.Errorf("target is required")
 	}
 
-	scopeFile := opts.Scope
-	if scopeFile == "" {
-		scopeFile = cfg.DefaultScope
-	}
-	if scopeFile == "" {
-		return fmt.Errorf("scope file is required (use --scope or set default_scope in scanforge.yaml)")
-	}
-
 	profile := opts.Profile
 	if profile == "" {
 		profile = cfg.DefaultProfile
 	}
 
-	loadedScope, err := scope.LoadFromFile(scopeFile)
+	effective, err := resolveScope(
+		cfg,
+		opts.Target,
+		opts.Scope,
+		opts.ScopeMode,
+		opts.ScopeAdd,
+		opts.Exclusions,
+	)
 	if err != nil {
 		return err
 	}
 
-	if !loadedScope.IsAllowed(opts.Target) {
-		return fmt.Errorf("target %q is not allowed by scope file %q", opts.Target, scopeFile)
-	}
-
 	if _, err := cfg.ProfileModules(profile); err != nil {
 		return err
+	}
+	if effective.proposal.Source == scopeSourceImplicit {
+		if err := a.confirmScope(effective.proposal, opts.ConfirmScope); err != nil {
+			return err
+		}
 	}
 
 	store := storage.NewRunStore(config.WorkspaceDir(cfg))
@@ -104,6 +127,17 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 		return fmt.Errorf("failed to create run directory: %w", err)
 	}
 	scanRun.Manifest.Profile = profile
+	effectiveScopePath := scanRun.Path("00_meta", "effective-scope.txt")
+	if err := effective.value.WriteFile(effectiveScopePath); err != nil {
+		return fmt.Errorf("failed to persist effective scope: %w", err)
+	}
+	scanRun.Manifest.ScopePath = "00_meta/effective-scope.txt"
+	scanRun.Manifest.ScopeSource = effective.proposal.Source
+	scanRun.Manifest.ScopeMode = effective.proposal.Mode
+	scanRun.Manifest.Outputs["effective_scope"] = scanRun.Manifest.ScopePath
+	if err := scanRun.WriteManifest(); err != nil {
+		return fmt.Errorf("failed to record effective scope in manifest: %w", err)
+	}
 
 	var executor runner.Executor
 
@@ -116,40 +150,44 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	ascii.PrintBanner()
 
 	pterm.DefaultHeader.WithFullWidth().WithBackgroundStyle(pterm.NewStyle(pterm.BgCyan)).WithTextStyle(pterm.NewStyle(pterm.FgBlack)).Println("ScanForge Run Started")
-	
+
 	pterm.Info.Printfln("Target:  %s", opts.Target)
 	pterm.Info.Printfln("Profile: %s", profile)
-	pterm.Info.Printfln("Scope:   %s", scopeFile)
+	pterm.Info.Printfln("Scope:   %s (%s, mode %s)", scanRun.Manifest.ScopePath, effective.proposal.Source, effective.proposal.Mode)
 	pterm.Info.Printfln("Dry run: %v", opts.DryRun)
 	pterm.Info.Printfln("Output:  %s\n", scanRun.RootDir)
 
-	registry := modules.NewRegistry()
-	registry.Register(subfinder.New(cfg.ToolPath("subfinder")))
-	registry.Register(dnsx.New(cfg.ToolPath("dnsx")))
-	registry.Register(httpx.New(cfg.ToolPath("httpx")))
-	registry.Register(naabu.New(cfg.ToolPath("naabu")))
-	registry.Register(nmap.New(cfg.ToolPath("nmap")))
-	registry.Register(whatweb.New(cfg.ToolPath("whatweb")))
-	registry.Register(wafw00f.New(cfg.ToolPath("wafw00f")))
-	registry.Register(katana.New(cfg.ToolPath("katana")))
-	registry.Register(ffuf.New(cfg.ToolPath("ffuf")))
-	registry.Register(nuclei.New(cfg.ToolPath("nuclei")))
+	registry := buildRegistry(cfg)
 
 	orch := orchestrator.New(executor, registry)
 
-	results, err := orch.Run(ctx, scanRun, orchestrator.Options{
-		Target:  opts.Target,
-		Profile: profile,
-		Config:  cfg,
-		DryRun:  opts.DryRun,
-		Verbose: opts.Verbose,
+	results, runErr := orch.Run(ctx, scanRun, orchestrator.Options{
+		Target:          opts.Target,
+		Profile:         profile,
+		Config:          cfg,
+		DryRun:          opts.DryRun,
+		Verbose:         opts.Verbose,
+		Scope:           effective.value,
+		Proxy:           opts.Proxy,
+		Headers:         opts.Headers,
+		Nuclei:          opts.Nuclei,
+		NmapConcurrency: opts.NmapConcurrency,
 	})
 
 	scanRun.Manifest.CompletedAt = time.Now().Format(time.RFC3339)
-	if err != nil {
-		scanRun.Manifest.Status = "failed"
-	} else {
+	completedModules := 0
+	for _, result := range results {
+		if result.Status == "completed" {
+			completedModules++
+		}
+	}
+	switch {
+	case runErr == nil && completedModules == len(results):
 		scanRun.Manifest.Status = "completed"
+	case completedModules == 0:
+		scanRun.Manifest.Status = "failed"
+	default:
+		scanRun.Manifest.Status = "partial"
 	}
 
 	for _, result := range results {
@@ -163,31 +201,132 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	}
 
 	if writeErr := scanRun.WriteManifest(); writeErr != nil {
-		return fmt.Errorf("failed to write manifest: %v (run error: %v)", writeErr, err)
-	}
-
-	if err != nil {
-		return err
+		return fmt.Errorf("failed to write manifest: %v (run error: %v)", writeErr, runErr)
 	}
 
 	pterm.Println()
-	spinner, _ := pterm.DefaultSpinner.Start("Generating report...")
-	rep, err := report.GenerateReport(scanRun.RootDir, &scanRun.Manifest)
-	if err != nil {
-		spinner.Warning(fmt.Sprintf("Failed to generate report: %v", err))
+	pterm.Info.Println("Generating report...")
+	rep, reportErr := report.GenerateReport(scanRun.RootDir, &scanRun.Manifest)
+	if reportErr != nil {
+		pterm.Warning.Printfln("Failed to generate report: %v", reportErr)
 	} else {
 		jsonPath := filepath.Join(scanRun.RootDir, "report.json")
 		mdPath := filepath.Join(scanRun.RootDir, "report.md")
-		_ = rep.WriteJSON(jsonPath)
-		_ = rep.WriteMarkdown(mdPath)
-		
-		spinner.Success("Report generated successfully")
-		report.PrintTerminalSummary(rep)
+		reportErr = errors.Join(rep.WriteJSON(jsonPath), rep.WriteMarkdown(mdPath))
+		if reportErr != nil {
+			pterm.Warning.Printfln("Failed to write report: %v", reportErr)
+		} else {
+			report.PrintTerminalSummary(rep)
+		}
 	}
 
-	pterm.Success.Printfln("Run completed. Directory: %s", scanRun.RootDir)
+	printRunSummaryBox(scanRun, results, rep)
 
-	return nil
+	return errors.Join(runErr, reportErr)
+}
+
+// printRunSummaryBox renders a single, hard-to-miss closing panel. Unlike
+// the mid-scroll module log and report.PrintTerminalSummary (which only
+// prints when report generation succeeds), this always renders so a run
+// never ends in just one easy-to-miss text line.
+func printRunSummaryBox(scanRun *storage.Run, results []*modules.Result, rep *report.Report) {
+	duration := "unknown"
+	if started, err := time.Parse(time.RFC3339, scanRun.Manifest.StartedAt); err == nil {
+		if completed, err := time.Parse(time.RFC3339, scanRun.Manifest.CompletedAt); err == nil {
+			duration = completed.Sub(started).Round(time.Second).String()
+		}
+	}
+
+	completedCount := 0
+	var failedModules []string
+	for _, res := range results {
+		if res.Status == "completed" {
+			completedCount++
+		} else {
+			failedModules = append(failedModules, fmt.Sprintf("%s (%s)", res.Name, res.Status))
+		}
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n", statusLine(scanRun.Manifest.Status))
+	fmt.Fprintf(&b, "Duration:  %s\n", duration)
+	fmt.Fprintf(&b, "Modules:   %d/%d completed\n", completedCount, len(results))
+	if len(failedModules) > 0 {
+		fmt.Fprintf(&b, "Failed:    %s\n", strings.Join(failedModules, ", "))
+	}
+	fmt.Fprintf(&b, "Findings:  %s\n", formatSeverityCounts(countBySeverity(rep)))
+	fmt.Fprintf(&b, "Output:    %s", scanRun.RootDir)
+
+	pterm.DefaultBox.WithTitle("Scan Summary").WithTitleTopCenter().Println(b.String())
+}
+
+func statusLine(status string) string {
+	text := "Status:    " + status
+	switch status {
+	case "completed":
+		return pterm.FgGreen.Sprint(text)
+	case "partial":
+		return pterm.FgYellow.Sprint(text)
+	default:
+		return pterm.FgRed.Sprint(text)
+	}
+}
+
+func countBySeverity(rep *report.Report) map[string]int {
+	counts := make(map[string]int)
+	if rep == nil {
+		return counts
+	}
+	for _, asset := range rep.Assets {
+		for _, vuln := range asset.Vulnerabilities {
+			counts[strings.ToLower(vuln.Severity)]++
+		}
+	}
+	return counts
+}
+
+func formatSeverityCounts(counts map[string]int) string {
+	levels := []struct {
+		key   string
+		color pterm.Color
+	}{
+		{"critical", pterm.FgRed},
+		{"high", pterm.FgRed},
+		{"medium", pterm.FgYellow},
+		{"low", pterm.FgCyan},
+		{"info", pterm.FgGray},
+	}
+
+	var parts []string
+	total := 0
+	for _, level := range levels {
+		if n := counts[level.key]; n > 0 {
+			parts = append(parts, level.color.Sprintf("%d %s", n, level.key))
+			total += n
+		}
+	}
+	if total == 0 {
+		return pterm.FgGreen.Sprint("none")
+	}
+	return strings.Join(parts, ", ")
+}
+
+func buildRegistry(cfg *config.Config) *modules.Registry {
+	registry := modules.NewRegistry()
+	registry.Register(subfinder.New(cfg.ToolPath("subfinder")))
+	registry.Register(dnsx.New(cfg.ToolPath("dnsx")))
+	registry.Register(httpx.New(cfg.ToolPath("httpx")))
+	registry.Register(naabu.New(cfg.ToolPath("naabu")))
+	registry.Register(nmap.New(cfg.ToolPath("nmap")))
+	registry.Register(whatweb.New(cfg.ToolPath("whatweb")))
+	registry.Register(wafw00f.New(cfg.ToolPath("wafw00f")))
+	registry.Register(katana.New(cfg.ToolPath("katana")))
+	registry.Register(jssecrets.New())
+	registry.Register(ffuf.New(cfg.ToolPath("ffuf")))
+	registry.Register(nuclei.New(cfg.ToolPath("nuclei")))
+	registry.Register(gau.New(cfg.ToolPath("gau")))
+	registry.Register(tlsx.New(cfg.ToolPath("tlsx")))
+	return registry
 }
 
 func (a *App) Doctor(ctx context.Context, opts DoctorOptions) error {
@@ -246,11 +385,12 @@ func (a *App) Init(ctx context.Context, opts InitOptions) error {
 
 	pterm.Println()
 	pterm.DefaultHeader.WithFullWidth().WithBackgroundStyle(pterm.NewStyle(pterm.BgGreen)).WithTextStyle(pterm.NewStyle(pterm.FgBlack)).Println("Initialization Complete")
-	
+
 	pterm.Info.Println("Next steps:")
-	pterm.Println("  1. Edit scope.txt with your authorized targets")
+	pterm.Println("  1. Optionally edit scope.txt with your authorized targets")
 	pterm.Println("  2. Run: scanforge doctor")
-	pterm.Println("  3. Run: scanforge run example.com --dry-run")
+	pterm.Println("  3. Review: scanforge plan example.com")
+	pterm.Println("  4. Run: scanforge run example.com --dry-run")
 
 	return nil
 }

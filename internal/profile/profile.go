@@ -2,9 +2,23 @@ package profile
 
 import (
 	"fmt"
+	"sort"
 )
 
 var builtins = map[string][]string{
+	"safe": {
+		"subfinder",
+		"dnsx",
+		"httpx",
+		"tlsx",
+	},
+	"recon": {
+		"subfinder",
+		"gau",
+		"dnsx",
+		"httpx",
+		"tlsx",
+	},
 	"passive": {
 		"subfinder",
 		"dnsx",
@@ -17,6 +31,7 @@ var builtins = map[string][]string{
 		"whatweb",
 		"wafw00f",
 		"katana",
+		"jssecrets",
 		"nuclei",
 	},
 	"ports": {
@@ -25,8 +40,31 @@ var builtins = map[string][]string{
 		"naabu",
 		"nmap",
 	},
+	"vuln": {
+		"subfinder",
+		"dnsx",
+		"httpx",
+		"tlsx",
+		"nuclei",
+	},
+	"deep": {
+		"subfinder",
+		"gau",
+		"dnsx",
+		"httpx",
+		"naabu",
+		"nmap",
+		"tlsx",
+		"whatweb",
+		"wafw00f",
+		"katana",
+		"jssecrets",
+		"ffuf",
+		"nuclei",
+	},
 	"full": {
 		"subfinder",
+		"gau",
 		"dnsx",
 		"httpx",
 		"naabu",
@@ -34,8 +72,10 @@ var builtins = map[string][]string{
 		"whatweb",
 		"wafw00f",
 		"katana",
+		"jssecrets",
 		"ffuf",
 		"nuclei",
+		"tlsx",
 	},
 }
 
@@ -58,5 +98,6 @@ func Names() []string {
 	for k := range builtins {
 		names = append(names, k)
 	}
+	sort.Strings(names)
 	return names
 }

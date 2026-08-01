@@ -20,10 +20,10 @@ func New(binary string) *Module {
 	return &Module{binary: binary}
 }
 
-func (m *Module) Name() string { return "naabu" }
+func (m *Module) Name() string        { return "naabu" }
 func (m *Module) Description() string { return "Fast port scanner" }
-func (m *Module) Requires() []string { return []string{"resolved_hosts"} }
-func (m *Module) Produces() []string { return []string{"open_ports"} }
+func (m *Module) Requires() []string  { return []string{"resolved_hosts"} }
+func (m *Module) Produces() []string  { return []string{"open_ports"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	inputArt, err := runCtx.MustArtifact("resolved_hosts")
@@ -52,11 +52,13 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
 	}
 
-	runCtx.AddArtifact("open_ports", modules.Artifact{
+	if err := runCtx.AddArtifact("open_ports", modules.Artifact{
 		Name: "open_ports",
 		Type: "text",
 		Path: "03_ports/naabu.txt",
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("failed to publish open ports: %w", err)
+	}
 
 	status := "completed"
 	if res.ExitCode != 0 {

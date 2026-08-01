@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
+	"github.com/pterm/pterm"
 )
 
 type Severity string
@@ -62,10 +63,11 @@ func (DefaultToolChecker) CheckTool(ctx context.Context, name, binary string, ve
 	}
 
 	check.Status = SeverityOK
+	version := extractVersionLine(versionOutput)
 	if verbose {
-		check.Message = fmt.Sprintf("%s (%s)", strings.TrimSpace(versionOutput), path)
+		check.Message = fmt.Sprintf("%s (%s)", version, path)
 	} else {
-		check.Message = strings.TrimSpace(versionOutput)
+		check.Message = version
 		if check.Message == "" {
 			check.Message = path
 		}
@@ -122,6 +124,8 @@ func (r *Runner) Run(ctx context.Context, opts Options) ([]Check, int, error) {
 		{name: "katana", binary: cfg.ToolPath("katana")},
 		{name: "ffuf", binary: cfg.ToolPath("ffuf")},
 		{name: "nuclei", binary: cfg.ToolPath("nuclei")},
+		{name: "gau", binary: cfg.ToolPath("gau")},
+		{name: "tlsx", binary: cfg.ToolPath("tlsx")},
 	}
 
 	for _, tool := range requiredTools {
@@ -248,32 +252,57 @@ func runVersionCommand(ctx context.Context, binary string) (string, error) {
 	return "", lastErr
 }
 
+// extractVersionLine pulls the one meaningful line out of a tool's version
+// output. Many of the wrapped binaries (projectdiscovery's tools especially)
+// print a multi-line ASCII banner before the actual version, which would
+// otherwise blow up every doctor/plan-style table row with garbage.
+func extractVersionLine(output string) string {
+	var lastNonEmpty string
+	for _, raw := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		lastNonEmpty = line
+		if strings.Contains(strings.ToLower(line), "version") {
+			return line
+		}
+	}
+	return lastNonEmpty
+}
+
 func FormatChecks(checks []Check) string {
-	var b strings.Builder
+	rows := pterm.TableData{{"", "CHECK", "DETAILS"}}
 
 	passed := 0
 	failed := 0
 	warned := 0
 
 	for _, check := range checks {
-		label := string(check.Status)
+		symbol := pterm.FgGray.Sprint(string(check.Status))
 		switch check.Status {
 		case SeverityOK:
-			label = "✓"
+			symbol = pterm.FgGreen.Sprint("✓")
 			passed++
 		case SeverityWarn:
-			label = "!"
+			symbol = pterm.FgYellow.Sprint("!")
 			warned++
 		case SeverityFail:
-			label = "✗"
+			symbol = pterm.FgRed.Sprint("✗")
 			if check.Required {
 				failed++
 			}
 		}
-
-		fmt.Fprintf(&b, "  [%s] %-10s %s\n", label, check.Name, check.Message)
+		rows = append(rows, []string{symbol, check.Name, check.Message})
 	}
 
+	table, err := pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(rows).Srender()
+	if err != nil {
+		table = ""
+	}
+
+	var b strings.Builder
+	b.WriteString(table)
 	fmt.Fprintf(&b, "\n%d passed", passed)
 	if failed > 0 {
 		fmt.Fprintf(&b, ", %d failed", failed)

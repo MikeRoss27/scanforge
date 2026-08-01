@@ -1,4 +1,4 @@
-FROM golang:1.22-bookworm
+FROM golang:1.25-bookworm
 
 # Mise à jour et installation des dépendances système
 RUN apt-get update && apt-get install -y \
@@ -20,6 +20,8 @@ RUN go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && 
     go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
     go install github.com/projectdiscovery/katana/cmd/katana@latest && \
     go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
+    go install github.com/projectdiscovery/tlsx/cmd/tlsx@latest && \
+    go install github.com/lc/gau/v2/cmd/gau@latest && \
     go install github.com/ffuf/ffuf/v2@latest
 
 # Création du répertoire de travail pour la compilation

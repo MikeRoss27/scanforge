@@ -41,6 +41,15 @@ func (r *Report) WriteMarkdown(path string) error {
 		if len(asset.IPs) > 0 {
 			b.WriteString(fmt.Sprintf("**IPs:** %s\n\n", strings.Join(asset.IPs, ", ")))
 		}
+		if len(asset.CNAMEs) > 0 {
+			b.WriteString(fmt.Sprintf("**CNAMEs:** %s\n\n", strings.Join(asset.CNAMEs, ", ")))
+		}
+		if len(asset.CDN) > 0 {
+			b.WriteString(fmt.Sprintf("**CDN:** %s\n\n", strings.Join(asset.CDN, ", ")))
+		}
+		if len(asset.WAFs) > 0 {
+			b.WriteString(fmt.Sprintf("**WAF:** %s\n\n", strings.Join(asset.WAFs, ", ")))
+		}
 
 		if len(asset.Technologies) > 0 {
 			b.WriteString(fmt.Sprintf("**Technologies:** %s\n\n", strings.Join(asset.Technologies, ", ")))
@@ -59,6 +68,30 @@ func (r *Report) WriteMarkdown(path string) error {
 			b.WriteString("\n")
 		}
 
+		if len(asset.HTTP) > 0 {
+			b.WriteString("### HTTP Services\n\n")
+			b.WriteString("| URL | Status | Title | Server |\n")
+			b.WriteString("|-----|--------|-------|--------|\n")
+			for _, service := range asset.HTTP {
+				b.WriteString(fmt.Sprintf("| %s | %d | %s | %s |\n",
+					markdownCell(service.URL), service.StatusCode,
+					markdownCell(service.Title), markdownCell(service.WebServer)))
+			}
+			b.WriteString("\n")
+		}
+
+		if len(asset.TLS) > 0 {
+			b.WriteString("### TLS\n\n")
+			b.WriteString("| Port | Version | Cipher | Common Name | Expired |\n")
+			b.WriteString("|------|---------|--------|-------------|---------|\n")
+			for _, service := range asset.TLS {
+				b.WriteString(fmt.Sprintf("| %d | %s | %s | %s | %v |\n",
+					service.Port, markdownCell(service.Version), markdownCell(service.Cipher),
+					markdownCell(service.CommonName), service.Expired))
+			}
+			b.WriteString("\n")
+		}
+
 		if len(asset.Paths) > 0 {
 			b.WriteString("### Discovered Paths\n\n")
 			for _, p := range asset.Paths {
@@ -72,11 +105,16 @@ func (r *Report) WriteMarkdown(path string) error {
 			b.WriteString("| Severity | Template | Title |\n")
 			b.WriteString("|----------|----------|-------|\n")
 			for _, v := range asset.Vulnerabilities {
-				b.WriteString(fmt.Sprintf("| %s | %s | %s |\n", v.Severity, v.TemplateID, v.Title))
+				b.WriteString(fmt.Sprintf("| %s | %s | %s |\n",
+					markdownCell(v.Severity), markdownCell(v.TemplateID), markdownCell(v.Title)))
 			}
 			b.WriteString("\n")
 		}
 	}
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
+}
+
+func markdownCell(value string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(value, "|", "\\|"), "\n", " ")
 }
