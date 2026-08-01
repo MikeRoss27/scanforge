@@ -3,6 +3,7 @@ package nmap
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -10,11 +11,18 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/runner"
 )
+
+// defaultConcurrency bounds how many nmap processes run at once when the
+// caller doesn't set RunContext.NmapConcurrency. Kept conservative: full
+// -sV scans are CPU/network heavy, and running too many in parallel makes
+// scans noisier (more simultaneous connections) than a pentester may want.
+const defaultConcurrency = 4
 
 type Module struct {
 	binary string
@@ -41,7 +49,9 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	targets, err := readOpenPorts(runCtx.Run.Path(inputArt.Path))
 	if err != nil {
 		if runCtx.DryRun && os.IsNotExist(err) {
-			addArtifact(runCtx)
+			if err := addArtifact(runCtx); err != nil {
+				return nil, fmt.Errorf("failed to publish nmap results: %w", err)
+			}
 			return completedResult(m.Name()), nil
 		}
 		return nil, fmt.Errorf("failed to parse open ports: %w", err)
@@ -52,40 +62,77 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to create nmap output directory: %w", err)
 	}
 
-	status := "completed"
-	for i, target := range targets {
-		base := fmt.Sprintf("host-%04d", i+1)
-		cmd := runner.Command{
-			Name: m.binary,
-			Args: []string{
-				"-p", joinPorts(target.Ports),
-				"-oX", filepath.Join(outputDir, base+".xml"),
-				"-oN", filepath.Join(outputDir, base+".txt"),
-				"-sV",
-				"-T4",
-			},
-			Timeout:    1 * time.Hour,
-			StderrFile: filepath.Join(outputDir, base+".stderr.log"),
-		}
-		if ip := net.ParseIP(target.Host); ip != nil && ip.To4() == nil {
-			cmd.Args = append(cmd.Args, "-6")
-		}
-		cmd.Args = append(cmd.Args, target.Host)
-
-		if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, cmd); err != nil {
-			return nil, fmt.Errorf("failed to write commands log: %w", err)
-		}
-
-		res, err := executor.Run(ctx, cmd)
-		if err != nil {
-			return nil, fmt.Errorf("failed to run command %q for host %q: %w", cmd.Name, target.Host, err)
-		}
-		if res.ExitCode != 0 {
-			status = fmt.Sprintf("failed (exit code %d)", res.ExitCode)
-		}
+	concurrency := runCtx.NmapConcurrency
+	if concurrency <= 0 {
+		concurrency = defaultConcurrency
+	}
+	if concurrency > len(targets) {
+		concurrency = len(targets)
 	}
 
-	addArtifact(runCtx)
+	var (
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+		status   = "completed"
+		scanErrs []error
+	)
+	sem := make(chan struct{}, concurrency)
+
+	for i, target := range targets {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, target hostPorts) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			base := fmt.Sprintf("host-%04d", i+1)
+			cmd := runner.Command{
+				Name: m.binary,
+				Args: []string{
+					"-p", joinPorts(target.Ports),
+					"-oX", filepath.Join(outputDir, base+".xml"),
+					"-oN", filepath.Join(outputDir, base+".txt"),
+					"-sV",
+					"-T4",
+				},
+				Timeout:    1 * time.Hour,
+				StderrFile: filepath.Join(outputDir, base+".stderr.log"),
+			}
+			if ip := net.ParseIP(target.Host); ip != nil && ip.To4() == nil {
+				cmd.Args = append(cmd.Args, "-6")
+			}
+			cmd.Args = append(cmd.Args, target.Host)
+
+			if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, cmd); err != nil {
+				mu.Lock()
+				scanErrs = append(scanErrs, fmt.Errorf("failed to write commands log for host %q: %w", target.Host, err))
+				mu.Unlock()
+				return
+			}
+
+			res, err := executor.Run(ctx, cmd)
+			if err != nil {
+				mu.Lock()
+				scanErrs = append(scanErrs, fmt.Errorf("failed to run command %q for host %q: %w", cmd.Name, target.Host, err))
+				mu.Unlock()
+				return
+			}
+			if res.ExitCode != 0 {
+				mu.Lock()
+				status = fmt.Sprintf("failed (exit code %d)", res.ExitCode)
+				mu.Unlock()
+			}
+		}(i, target)
+	}
+	wg.Wait()
+
+	if len(scanErrs) > 0 {
+		return nil, errors.Join(scanErrs...)
+	}
+
+	if err := addArtifact(runCtx); err != nil {
+		return nil, fmt.Errorf("failed to publish nmap results: %w", err)
+	}
 
 	return &modules.Result{
 		Name:   m.Name(),
@@ -96,8 +143,8 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}, nil
 }
 
-func addArtifact(runCtx *modules.RunContext) {
-	runCtx.AddArtifact("nmap_xml", modules.Artifact{
+func addArtifact(runCtx *modules.RunContext) error {
+	return runCtx.AddArtifact("nmap_xml", modules.Artifact{
 		Name: "nmap_xml",
 		Type: "xml_collection",
 		Path: "03_ports/nmap",

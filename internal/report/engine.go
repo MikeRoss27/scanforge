@@ -64,6 +64,10 @@ func GenerateReport(runDir string, manifest *storage.RunManifest) (*Report, erro
 			if err := ParseKatana(absPath, rep); err != nil {
 				return nil, fmt.Errorf("failed to parse katana: %w", err)
 			}
+		case "js_secrets":
+			if err := ParseJSSecrets(absPath, rep); err != nil {
+				return nil, fmt.Errorf("failed to parse JS secrets: %w", err)
+			}
 		case "nuclei_raw":
 			if err := ParseNuclei(absPath, rep); err != nil {
 				return nil, fmt.Errorf("failed to parse nuclei: %w", err)

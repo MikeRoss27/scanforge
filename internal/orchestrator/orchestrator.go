@@ -22,6 +22,17 @@ type Options struct {
 	DryRun  bool
 	Verbose bool
 	Scope   *scanScope.Scope
+
+	// Proxy routes HTTP-capable modules through an intercepting proxy such
+	// as Caido or Burp Suite (e.g. http://127.0.0.1:8080).
+	Proxy string
+	// Headers are applied to every outgoing HTTP request, for example to
+	// carry an authenticated session (Cookie/Authorization).
+	Headers []string
+	// Nuclei carries nuclei-specific tuning (severity, tags, rate limiting).
+	Nuclei modules.NucleiOptions
+	// NmapConcurrency bounds how many nmap processes run at once.
+	NmapConcurrency int
 }
 
 type Orchestrator struct {
@@ -52,6 +63,10 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	}
 
 	runCtx := modules.NewRunContext(opts.Target, opts.Profile, opts.DryRun, scanRun, opts.Scope)
+	runCtx.Proxy = opts.Proxy
+	runCtx.Headers = opts.Headers
+	runCtx.Nuclei = opts.Nuclei
+	runCtx.NmapConcurrency = opts.NmapConcurrency
 
 	dag, err := BuildDAG(selectedModules)
 	if err != nil {
@@ -64,18 +79,19 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	var runErrors []error
 
 	totalModules := len(selectedModules)
+	progress := newReporter(opts.Verbose, opts.DryRun)
+	wave := 0
 
 	// Loop until all modules are completed
 	for len(completed) < totalModules {
+		wave++
 		readyModules := dag.NextReady(completed, availableArtifacts)
 
 		if len(readyModules) == 0 {
 			// This means we have a deadlock or unreachable modules due to failed dependencies.
 			// Instead of returning an error, we mark the remaining modules as "skipped"
 			// and gracefully finish the orchestration.
-			if opts.Verbose {
-				pterm.Warning.Println("No more modules can be run (dependencies missing). Marking remaining as skipped.")
-			}
+			progress.deadlock("No more modules can be run (dependencies missing). Marking remaining as skipped.")
 			for _, m := range selectedModules {
 				if !completed[m.Name()] {
 					results = append(results, &modules.Result{
@@ -92,13 +108,11 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 			break
 		}
 
-		if opts.Verbose {
-			names := []string{}
-			for _, m := range readyModules {
-				names = append(names, m.Name())
-			}
-			pterm.Info.Printfln("Starting parallel wave: %v", names)
+		names := make([]string, 0, len(readyModules))
+		for _, m := range readyModules {
+			names = append(names, m.Name())
 		}
+		progress.waveStart(wave, names)
 
 		var wg sync.WaitGroup
 		waveResults := make(chan *modules.Result, len(readyModules))
@@ -110,19 +124,15 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 				defer wg.Done()
 				start := time.Now()
 
-				if opts.Verbose {
-					pterm.Info.Printfln("Running module %q...", m.Name())
-				}
+				progress.moduleStart(m.Name())
 
 				result, err := m.Run(ctx, runCtx, o.executor)
 
-				if opts.Verbose {
-					if err != nil {
-						pterm.Error.Printfln("Module %q failed (%s)", m.Name(), time.Since(start).Round(time.Millisecond))
-					} else {
-						pterm.Success.Printfln("Module %q done (%s)", m.Name(), time.Since(start).Round(time.Millisecond))
-					}
+				status := "failed"
+				if err == nil && result != nil {
+					status = result.Status
 				}
+				progress.moduleDone(m.Name(), status, time.Since(start), status != "completed")
 
 				if err != nil {
 					// Even if it failed, we want to record the result as failed
@@ -144,6 +154,7 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 		wg.Wait()
 		close(waveResults)
 		close(waveErrors)
+		progress.waveEnd()
 
 		// Check for errors in the wave but do not abort immediately
 		var waveErrs []error

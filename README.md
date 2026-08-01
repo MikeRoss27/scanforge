@@ -17,8 +17,14 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
 
 ## 🚀 Fonctionnalités Clés
 
-- **Pipeline orienté Artefacts** : Les modules communiquent via des artefacts de manière ordonnée (ex: la sortie de `subfinder` alimente automatiquement `dnsx` et `httpx`).
+- **Pipeline orienté Artefacts** : Les modules communiquent via des artefacts de manière ordonnée (ex: la sortie de `subfinder` alimente automatiquement `dnsx` et `httpx`), avec exécution parallèle par vagues du DAG.
 - **Validation de Scope Stricte** : Scope explicite par fichier ou scope implicite confirmé (`exact` par défaut, `domain` sur demande), puis filtrage de chaque artefact.
+- **Intégration proxy (Caido / Burp Suite)** : `--proxy` route le trafic HTTP des modules concernés à travers votre proxy d'interception pour triage/replay manuel.
+- **Scan authentifié** : `-H/--header` (répétable) injecte des headers/cookies (session, bearer token) dans toutes les requêtes HTTP émises.
+- **Scanner de secrets JavaScript** : le module `jssecrets` récupère les fichiers `.js` crawlés et détecte clés API/tokens/creds exposés, buckets cloud publics, hôtes internes, emails, endpoints API sensibles et source maps accessibles.
+- **Nuclei entièrement paramétrable** : sévérité, tags, rate-limit, templates personnalisés et mise à jour des templates via des flags dédiés.
+- **Nmap parallélisé** : pool de workers borné (`--nmap-concurrency`) au lieu d'un scan séquentiel hôte par hôte.
+- **Progression en temps réel** : spinner par module actif pendant le scan (visible par défaut, pas seulement en `--verbose`), tableaux colorés pour `plan`/`doctor`, et panneau récapitulatif en fin de run.
 - **Mode Dry-Run** : Visualisez les commandes qui vont être lancées et les fichiers générés avant de faire la moindre requête réseau.
 - **Outil de Diagnostic (Doctor)** : Vérifiez instantanément si vos dépendances locales sont installées et configurées pour le profil sélectionné.
 - **Rapports consolidés** : Génère automatiquement un modèle de risque unifié en formats `report.json` et `report.md`.
@@ -27,13 +33,13 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
 
 ## 🛠️ Outils Supportés
 
-ScanForge centralise et orchestre 12 outils de sécurité :
+ScanForge centralise et orchestre 12 outils de sécurité externes, plus un module natif :
 
 1. **subfinder** (Découverte de sous-domaines)
 2. **dnsx** (Résolution DNS active)
 3. **httpx** (Sondage HTTP et détection de technologies)
 4. **naabu** (Scanner de ports ultra-rapide)
-5. **nmap** (Scan de ports et détection de services précis)
+5. **nmap** (Scan de ports et détection de services précis, exécuté en parallèle)
 6. **whatweb** (Reconnaissance des technologies web)
 7. **wafw00f** (Détection de Web Application Firewall)
 8. **katana** (Crawl de ressources web)
@@ -41,6 +47,9 @@ ScanForge centralise et orchestre 12 outils de sécurité :
 10. **nuclei** (Scanner de vulnérabilités basé sur des modèles)
 11. **gau** (Collecte passive d'URL historiques)
 12. **tlsx** (Enrichissement des certificats et protocoles TLS)
+13. **jssecrets** (natif, aucun binaire externe) — analyse les JS crawlés par `katana` pour détecter secrets, buckets cloud, hôtes internes, emails et source maps exposés
+
+`httpx`, `nuclei`, `katana`, `ffuf`, `whatweb`, `wafw00f`, `subfinder`, `gau` et `jssecrets` supportent `--proxy` et `-H/--header` pour router le trafic vers Caido/Burp et scanner en authentifié.
 
 ---
 
@@ -148,6 +157,27 @@ scanforge scan example.com --preset safe
 
 ---
 
+## 🕵️ Proxy, authentification et réglages Nuclei
+
+Pour un test d'intrusion en conditions réelles, routez le trafic vers Caido (ou
+Burp Suite) et injectez une session authentifiée :
+
+```bash
+scanforge run app.example.com --profile web \
+  --proxy http://127.0.0.1:8080 \
+  -H "Cookie: session=..." \
+  --nuclei-tags cve,exposure --nuclei-severity critical,high \
+  --nuclei-update-templates \
+  --nmap-concurrency 6
+```
+
+- `--proxy` : proxy HTTP/SOCKS pour les modules qui parlent HTTP.
+- `-H/--header` (répétable) : header brut `"Nom: Valeur"` ajouté à chaque requête.
+- `--nuclei-severity`, `--nuclei-exclude-severity`, `--nuclei-tags`, `--nuclei-exclude-tags`, `--nuclei-rate-limit`, `--nuclei-templates`, `--nuclei-update-templates` : contrôle fin du scanner de vulnérabilités.
+- `--nmap-concurrency` : nombre de scans nmap simultanés (défaut 4) ; baissez-le pour rester discret sur un engagement sensible.
+
+---
+
 ## 📊 Profils et presets intégrés
 
 | Nom | Modules | Usage |
@@ -156,10 +186,10 @@ scanforge scan example.com --preset safe
 | `recon` | safe + gau | Inventaire enrichi par les URL historiques. |
 | `passive` | subfinder, dnsx, httpx | Pipeline historique minimal. |
 | `ports` | subfinder, dnsx, naabu, nmap | Ports ouverts puis validation de services. |
-| `web` | subfinder, dnsx, httpx, whatweb, wafw00f, katana, nuclei | Analyse applicative. |
+| `web` | subfinder, dnsx, httpx, whatweb, wafw00f, katana, jssecrets, nuclei | Analyse applicative, avec extraction des secrets JS. |
 | `vuln` | subfinder, dnsx, httpx, tlsx, nuclei | Détection ciblée de vulnérabilités. |
-| `deep` | Tous les modules | Pipeline complet et bruyant. |
-| `full` | Tous les modules | Profil complet compatible historique. |
+| `deep` | Tous les modules (+ jssecrets) | Pipeline complet et bruyant. |
+| `full` | Tous les modules (+ jssecrets) | Profil complet compatible historique. |
 
 Utilisez indifféremment `--preset safe` ou `--profile safe`. Avant un profil
 actif, contrôlez toujours son DAG avec `scanforge plan`.
@@ -176,6 +206,7 @@ actif, contrôlez toujours son DAG avec `scanforge plan`.
 - `00_meta/commands.log` : Commandes externes préparées ou exécutées.
 - `00_meta/effective-scope.txt` : Copie canonique du scope réellement appliqué, avec sa source et son mode consignés dans le manifeste.
 - `00_meta/scope-rejections.jsonl` : Valeurs hors scope rejetées, lorsqu'il y en a.
+- `06_vulns/js-secrets.jsonl` : Secrets, buckets cloud, hôtes internes, emails et source maps détectés dans les JS crawlés (module `jssecrets`).
 
 > ScanForge doit uniquement être utilisé sur des actifs pour lesquels vous
 > disposez d'une autorisation explicite.

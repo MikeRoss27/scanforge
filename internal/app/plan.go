@@ -95,7 +95,7 @@ func moduleRisk(name string) string {
 	switch name {
 	case "subfinder", "gau":
 		return "passive"
-	case "dnsx", "httpx", "tlsx", "whatweb", "wafw00f":
+	case "dnsx", "httpx", "tlsx", "whatweb", "wafw00f", "jssecrets":
 		return "active-low"
 	case "katana", "naabu":
 		return "active"

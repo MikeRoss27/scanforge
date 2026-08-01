@@ -364,6 +364,55 @@ func ParseTlsx(path string, report *Report) error {
 	})
 }
 
+func ParseJSSecrets(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			URL      string `json:"url"`
+			Kind     string `json:"kind"`
+			Pattern  string `json:"pattern"`
+			Severity string `json:"severity"`
+			Match    string `json:"match"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.URL == "" {
+			return
+		}
+		host := normalizeAssetName(record.URL)
+		if host == "" {
+			return
+		}
+		asset := report.GetOrCreateAsset(host)
+
+		if record.Kind == "endpoint" {
+			asset.Paths = appendUnique(asset.Paths, record.Match)
+			return
+		}
+
+		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+			Source:     "jssecrets",
+			TemplateID: record.Pattern,
+			Title:      jsFindingTitle(record.Kind, record.Pattern),
+			Severity:   record.Severity,
+			MatchedAt:  record.URL,
+			Evidence:   record.Match,
+		})
+	})
+}
+
+func jsFindingTitle(kind, pattern string) string {
+	switch kind {
+	case "cloud-storage":
+		return "Cloud storage bucket referenced in JavaScript: " + pattern
+	case "internal-host":
+		return "Internal host/IP referenced in JavaScript"
+	case "email":
+		return "Email address exposed in JavaScript"
+	case "source-map":
+		return "Source map exposed (leaks original source code)"
+	default:
+		return "Exposed secret in JavaScript: " + pattern
+	}
+}
+
 func ParseNmapCollection(path string, report *Report) error {
 	info, err := os.Stat(path)
 	if err != nil {

@@ -29,6 +29,32 @@ type RunContext struct {
 	Artifacts      map[string]Artifact
 	artifactErrors map[string]error
 	mu             sync.RWMutex
+
+	// Proxy is an optional HTTP/SOCKS proxy (e.g. a Caido or Burp listener
+	// such as http://127.0.0.1:8080) that HTTP-capable modules route their
+	// traffic through, so findings can be intercepted and triaged manually.
+	Proxy string
+	// Headers are raw "Name: Value" entries applied to every outgoing HTTP
+	// request by modules that support it (e.g. session cookies or auth
+	// tokens for authenticated scanning).
+	Headers []string
+	// Nuclei carries nuclei-specific tuning that has no equivalent in other
+	// modules (severity/tag filtering, rate limiting, custom templates).
+	Nuclei NucleiOptions
+	// NmapConcurrency bounds how many nmap processes run at once. <= 0 means
+	// the module picks its own default.
+	NmapConcurrency int
+}
+
+// NucleiOptions configures the nuclei module's template selection and pacing.
+type NucleiOptions struct {
+	Severity        string
+	ExcludeSeverity string
+	Tags            string
+	ExcludeTags     string
+	RateLimit       int
+	TemplatesDir    string
+	UpdateTemplates bool
 }
 
 func NewRunContext(target, profile string, dryRun bool, run *storage.Run, scopes ...*scanScope.Scope) *RunContext {

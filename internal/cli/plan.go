@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/MikeRoss27/scanforge/internal/app"
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
 
@@ -26,27 +27,35 @@ func NewPlanCommand(application *app.App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			out := cmd.OutOrStdout()
+
 			fmt.Fprintf(
-				cmd.OutOrStdout(),
+				out,
 				"Target:       %s\nProfile:      %s\nScope source: %s\nScope mode:   %s\nScope input:  %s\nScope entries:\n",
 				plan.Target, plan.Profile, plan.ScopeSource, plan.ScopeMode, plan.Scope,
 			)
 			for _, entry := range plan.ScopeEntries {
-				fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", entry)
+				fmt.Fprintf(out, "  - %s\n", entry)
 			}
 			if plan.ScopeNote != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "Scope note:   %s\n", plan.ScopeNote)
+				fmt.Fprintf(out, "Scope note:   %s\n", plan.ScopeNote)
 			}
-			fmt.Fprintln(cmd.OutOrStdout())
-			fmt.Fprintln(cmd.OutOrStdout(), "WAVE  MODULE       RISK         REQUIRES")
+			fmt.Fprintln(out)
+
+			rows := pterm.TableData{{"WAVE", "MODULE", "RISK", "REQUIRES"}}
 			for _, step := range plan.Steps {
 				requires := "-"
 				if len(step.Requires) > 0 {
-					requires = strings.Join(step.Requires, ",")
+					requires = strings.Join(step.Requires, ", ")
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%-5d %-12s %-12s %s\n", step.Wave, step.Name, step.Risk, requires)
+				rows = append(rows, []string{
+					fmt.Sprintf("%d", step.Wave),
+					step.Name,
+					colorizeRisk(step.Risk),
+					requires,
+				})
 			}
-			return nil
+			return pterm.DefaultTable.WithHasHeader().WithBoxed().WithWriter(out).WithData(rows).Render()
 		},
 	}
 	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan preset/profile to inspect")
@@ -56,4 +65,19 @@ func NewPlanCommand(application *app.App) *cobra.Command {
 	cmd.Flags().StringArrayVar(&scopeAdd, "scope-add", nil, "Add an entry to implicit scope (repeatable)")
 	cmd.Flags().StringArrayVar(&exclusions, "exclude", nil, "Exclude an entry from implicit scope (repeatable)")
 	return cmd
+}
+
+func colorizeRisk(risk string) string {
+	switch risk {
+	case "passive":
+		return pterm.FgGreen.Sprint(risk)
+	case "active-low":
+		return pterm.FgCyan.Sprint(risk)
+	case "active":
+		return pterm.FgYellow.Sprint(risk)
+	case "active-high":
+		return pterm.FgRed.Sprint(risk)
+	default:
+		return pterm.FgGray.Sprint(risk)
+	}
 }

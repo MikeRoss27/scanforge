@@ -56,6 +56,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		StdoutFile: outputFile,
 		StderrFile: stderrFile,
 	}
+	cmd.Args = append(cmd.Args, runCtx.ProxyArgs("-proxy")...)
 
 	if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, cmd); err != nil {
 		return nil, fmt.Errorf("failed to write commands log: %w", err)

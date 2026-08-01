@@ -20,10 +20,10 @@ func New(binary string) *Module {
 	return &Module{binary: binary}
 }
 
-func (m *Module) Name() string { return "katana" }
+func (m *Module) Name() string        { return "katana" }
 func (m *Module) Description() string { return "A next-generation crawling and spidering framework" }
-func (m *Module) Requires() []string { return []string{"alive_urls"} }
-func (m *Module) Produces() []string { return []string{"crawled_urls"} }
+func (m *Module) Requires() []string  { return []string{"alive_urls"} }
+func (m *Module) Produces() []string  { return []string{"crawled_urls"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	inputArt, err := runCtx.MustArtifact("alive_urls")
@@ -35,9 +35,13 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	outputFile := runCtx.Run.Path("05_content", "katana.txt")
 	stderrFile := runCtx.Run.Path("00_meta", "katana.stderr.log")
 
+	args := []string{"-list", inputFile, "-silent", "-depth", "2"}
+	args = append(args, runCtx.ProxyArgs("-proxy")...)
+	args = append(args, runCtx.HeaderArgs("-H")...)
+
 	cmd := runner.Command{
 		Name:       m.binary,
-		Args:       []string{"-list", inputFile, "-silent", "-depth", "2"},
+		Args:       args,
 		Timeout:    45 * time.Minute,
 		StdoutFile: outputFile,
 		StderrFile: stderrFile,
@@ -52,11 +56,13 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
 	}
 
-	runCtx.AddArtifact("crawled_urls", modules.Artifact{
+	if err := runCtx.AddArtifact("crawled_urls", modules.Artifact{
 		Name: "crawled_urls",
 		Type: "text",
 		Path: "05_content/katana.txt",
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("failed to publish crawled URLs: %w", err)
+	}
 
 	status := "completed"
 	if res.ExitCode != 0 {

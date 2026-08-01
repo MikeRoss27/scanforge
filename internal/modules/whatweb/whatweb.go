@@ -20,10 +20,10 @@ func New(binary string) *Module {
 	return &Module{binary: binary}
 }
 
-func (m *Module) Name() string { return "whatweb" }
+func (m *Module) Name() string        { return "whatweb" }
 func (m *Module) Description() string { return "Next generation web scanner" }
-func (m *Module) Requires() []string { return []string{"alive_urls"} }
-func (m *Module) Produces() []string { return []string{"technologies_raw"} }
+func (m *Module) Requires() []string  { return []string{"alive_urls"} }
+func (m *Module) Produces() []string  { return []string{"technologies_raw"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	inputArt, err := runCtx.MustArtifact("alive_urls")
@@ -43,6 +43,11 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		StderrFile: stderrFile,
 	}
 
+	if runCtx.Proxy != "" {
+		cmd.Args = append(cmd.Args, "--proxy", runCtx.ProxyHost())
+	}
+	cmd.Args = append(cmd.Args, runCtx.HeaderArgs("-H")...)
+
 	if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, cmd); err != nil {
 		return nil, fmt.Errorf("failed to write commands log: %w", err)
 	}
@@ -52,11 +57,13 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
 	}
 
-	runCtx.AddArtifact("technologies_raw", modules.Artifact{
+	if err := runCtx.AddArtifact("technologies_raw", modules.Artifact{
 		Name: "technologies_raw",
 		Type: "text",
 		Path: "04_web/whatweb.txt",
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("failed to publish technology results: %w", err)
+	}
 
 	status := "completed"
 	if res.ExitCode != 0 {

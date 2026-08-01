@@ -20,10 +20,10 @@ func New(binary string) *Module {
 	return &Module{binary: binary}
 }
 
-func (m *Module) Name() string { return "wafw00f" }
+func (m *Module) Name() string        { return "wafw00f" }
 func (m *Module) Description() string { return "Web application firewall fingerprinting tool" }
-func (m *Module) Requires() []string { return []string{"alive_urls"} }
-func (m *Module) Produces() []string { return []string{"waf_raw"} }
+func (m *Module) Requires() []string  { return []string{"alive_urls"} }
+func (m *Module) Produces() []string  { return []string{"waf_raw"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	inputArt, err := runCtx.MustArtifact("alive_urls")
@@ -42,6 +42,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		StdoutFile: outputFile,
 		StderrFile: stderrFile,
 	}
+	cmd.Args = append(cmd.Args, runCtx.ProxyArgs("-p")...)
 
 	if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, cmd); err != nil {
 		return nil, fmt.Errorf("failed to write commands log: %w", err)
@@ -52,11 +53,13 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
 	}
 
-	runCtx.AddArtifact("waf_raw", modules.Artifact{
+	if err := runCtx.AddArtifact("waf_raw", modules.Artifact{
 		Name: "waf_raw",
 		Type: "text",
 		Path: "04_web/wafw00f.txt",
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("failed to publish WAF results: %w", err)
+	}
 
 	status := "completed"
 	if res.ExitCode != 0 {

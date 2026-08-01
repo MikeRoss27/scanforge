@@ -31,6 +31,7 @@ var builtins = map[string][]string{
 		"whatweb",
 		"wafw00f",
 		"katana",
+		"jssecrets",
 		"nuclei",
 	},
 	"ports": {
@@ -57,6 +58,7 @@ var builtins = map[string][]string{
 		"whatweb",
 		"wafw00f",
 		"katana",
+		"jssecrets",
 		"ffuf",
 		"nuclei",
 	},
@@ -70,6 +72,7 @@ var builtins = map[string][]string{
 		"whatweb",
 		"wafw00f",
 		"katana",
+		"jssecrets",
 		"ffuf",
 		"nuclei",
 		"tlsx",

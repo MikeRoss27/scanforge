@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/ascii"
@@ -17,6 +18,7 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/modules/ffuf"
 	"github.com/MikeRoss27/scanforge/internal/modules/gau"
 	"github.com/MikeRoss27/scanforge/internal/modules/httpx"
+	"github.com/MikeRoss27/scanforge/internal/modules/jssecrets"
 	"github.com/MikeRoss27/scanforge/internal/modules/katana"
 	"github.com/MikeRoss27/scanforge/internal/modules/naabu"
 	"github.com/MikeRoss27/scanforge/internal/modules/nmap"
@@ -55,6 +57,17 @@ type RunOptions struct {
 	ConfirmScope bool
 	DryRun       bool
 	Verbose      bool
+
+	// Proxy routes HTTP-capable modules through an intercepting proxy such
+	// as Caido or Burp Suite (e.g. http://127.0.0.1:8080).
+	Proxy string
+	// Headers are applied to every outgoing HTTP request, for example to
+	// carry an authenticated session (Cookie/Authorization).
+	Headers []string
+	// Nuclei carries nuclei-specific tuning (severity, tags, rate limiting).
+	Nuclei modules.NucleiOptions
+	// NmapConcurrency bounds how many nmap processes run at once.
+	NmapConcurrency int
 }
 
 type DoctorOptions struct {
@@ -149,12 +162,16 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	orch := orchestrator.New(executor, registry)
 
 	results, runErr := orch.Run(ctx, scanRun, orchestrator.Options{
-		Target:  opts.Target,
-		Profile: profile,
-		Config:  cfg,
-		DryRun:  opts.DryRun,
-		Verbose: opts.Verbose,
-		Scope:   effective.value,
+		Target:          opts.Target,
+		Profile:         profile,
+		Config:          cfg,
+		DryRun:          opts.DryRun,
+		Verbose:         opts.Verbose,
+		Scope:           effective.value,
+		Proxy:           opts.Proxy,
+		Headers:         opts.Headers,
+		Nuclei:          opts.Nuclei,
+		NmapConcurrency: opts.NmapConcurrency,
 	})
 
 	scanRun.Manifest.CompletedAt = time.Now().Format(time.RFC3339)
@@ -199,18 +216,99 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 		if reportErr != nil {
 			pterm.Warning.Printfln("Failed to write report: %v", reportErr)
 		} else {
-			pterm.Success.Println("Report generated successfully")
 			report.PrintTerminalSummary(rep)
 		}
 	}
 
-	if scanRun.Manifest.Status == "completed" {
-		pterm.Success.Printfln("Run completed. Directory: %s", scanRun.RootDir)
-	} else {
-		pterm.Warning.Printfln("Run %s. Directory: %s", scanRun.Manifest.Status, scanRun.RootDir)
-	}
+	printRunSummaryBox(scanRun, results, rep)
 
 	return errors.Join(runErr, reportErr)
+}
+
+// printRunSummaryBox renders a single, hard-to-miss closing panel. Unlike
+// the mid-scroll module log and report.PrintTerminalSummary (which only
+// prints when report generation succeeds), this always renders so a run
+// never ends in just one easy-to-miss text line.
+func printRunSummaryBox(scanRun *storage.Run, results []*modules.Result, rep *report.Report) {
+	duration := "unknown"
+	if started, err := time.Parse(time.RFC3339, scanRun.Manifest.StartedAt); err == nil {
+		if completed, err := time.Parse(time.RFC3339, scanRun.Manifest.CompletedAt); err == nil {
+			duration = completed.Sub(started).Round(time.Second).String()
+		}
+	}
+
+	completedCount := 0
+	var failedModules []string
+	for _, res := range results {
+		if res.Status == "completed" {
+			completedCount++
+		} else {
+			failedModules = append(failedModules, fmt.Sprintf("%s (%s)", res.Name, res.Status))
+		}
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n", statusLine(scanRun.Manifest.Status))
+	fmt.Fprintf(&b, "Duration:  %s\n", duration)
+	fmt.Fprintf(&b, "Modules:   %d/%d completed\n", completedCount, len(results))
+	if len(failedModules) > 0 {
+		fmt.Fprintf(&b, "Failed:    %s\n", strings.Join(failedModules, ", "))
+	}
+	fmt.Fprintf(&b, "Findings:  %s\n", formatSeverityCounts(countBySeverity(rep)))
+	fmt.Fprintf(&b, "Output:    %s", scanRun.RootDir)
+
+	pterm.DefaultBox.WithTitle("Scan Summary").WithTitleTopCenter().Println(b.String())
+}
+
+func statusLine(status string) string {
+	text := "Status:    " + status
+	switch status {
+	case "completed":
+		return pterm.FgGreen.Sprint(text)
+	case "partial":
+		return pterm.FgYellow.Sprint(text)
+	default:
+		return pterm.FgRed.Sprint(text)
+	}
+}
+
+func countBySeverity(rep *report.Report) map[string]int {
+	counts := make(map[string]int)
+	if rep == nil {
+		return counts
+	}
+	for _, asset := range rep.Assets {
+		for _, vuln := range asset.Vulnerabilities {
+			counts[strings.ToLower(vuln.Severity)]++
+		}
+	}
+	return counts
+}
+
+func formatSeverityCounts(counts map[string]int) string {
+	levels := []struct {
+		key   string
+		color pterm.Color
+	}{
+		{"critical", pterm.FgRed},
+		{"high", pterm.FgRed},
+		{"medium", pterm.FgYellow},
+		{"low", pterm.FgCyan},
+		{"info", pterm.FgGray},
+	}
+
+	var parts []string
+	total := 0
+	for _, level := range levels {
+		if n := counts[level.key]; n > 0 {
+			parts = append(parts, level.color.Sprintf("%d %s", n, level.key))
+			total += n
+		}
+	}
+	if total == 0 {
+		return pterm.FgGreen.Sprint("none")
+	}
+	return strings.Join(parts, ", ")
 }
 
 func buildRegistry(cfg *config.Config) *modules.Registry {
@@ -223,6 +321,7 @@ func buildRegistry(cfg *config.Config) *modules.Registry {
 	registry.Register(whatweb.New(cfg.ToolPath("whatweb")))
 	registry.Register(wafw00f.New(cfg.ToolPath("wafw00f")))
 	registry.Register(katana.New(cfg.ToolPath("katana")))
+	registry.Register(jssecrets.New())
 	registry.Register(ffuf.New(cfg.ToolPath("ffuf")))
 	registry.Register(nuclei.New(cfg.ToolPath("nuclei")))
 	registry.Register(gau.New(cfg.ToolPath("gau")))

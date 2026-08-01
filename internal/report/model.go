@@ -70,6 +70,7 @@ type Vulnerability struct {
 	Title      string   `json:"title"`
 	Severity   string   `json:"severity"`
 	MatchedAt  string   `json:"matched_at"`
+	Evidence   string   `json:"evidence,omitempty"`
 	Tags       []string `json:"tags,omitempty"`
 	CVEs       []string `json:"cves,omitempty"`
 	CWEs       []string `json:"cwes,omitempty"`

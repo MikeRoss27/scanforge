@@ -180,6 +180,43 @@ func TestParseNuclei(t *testing.T) {
 	}
 }
 
+func TestParseJSSecrets(t *testing.T) {
+	content := `{"url":"https://example.com/app.js","kind":"secret","pattern":"aws-access-key-id","severity":"critical","match":"AKIAIOSFODNN7EXAMPLE"}
+{"url":"https://example.com/app.js","kind":"endpoint","pattern":"sensitive-api-endpoint","severity":"info","match":"/api/v1/admin/export"}
+{"url":"https://example.com/app.js","kind":"cloud-storage","pattern":"aws-s3-bucket","severity":"medium","match":"uploads.s3.amazonaws.com"}
+`
+	path := writeTempFile(t, content)
+
+	rep := NewReport("example.com", "test")
+	if err := ParseJSSecrets(path, rep); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	asset := rep.GetOrCreateAsset("example.com")
+	if len(asset.Vulnerabilities) != 2 {
+		t.Fatalf("expected 2 vulnerabilities (secret + cloud-storage), got %d: %+v", len(asset.Vulnerabilities), asset.Vulnerabilities)
+	}
+	if len(asset.Paths) != 1 || asset.Paths[0] != "/api/v1/admin/export" {
+		t.Fatalf("expected endpoint routed to Paths, got %+v", asset.Paths)
+	}
+
+	var secret, bucket *Vulnerability
+	for _, v := range asset.Vulnerabilities {
+		switch v.TemplateID {
+		case "aws-access-key-id":
+			secret = v
+		case "aws-s3-bucket":
+			bucket = v
+		}
+	}
+	if secret == nil || secret.Evidence != "AKIAIOSFODNN7EXAMPLE" || secret.Severity != "critical" {
+		t.Fatalf("bad secret vulnerability: %+v", secret)
+	}
+	if bucket == nil || bucket.Severity != "medium" || bucket.Title != "Cloud storage bucket referenced in JavaScript: aws-s3-bucket" {
+		t.Fatalf("bad cloud-storage vulnerability: %+v", bucket)
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()

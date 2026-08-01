@@ -50,25 +50,29 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	aliveOutputFile := runCtx.Run.Path("02_http", "alive.txt")
 	stderrFile := runCtx.Run.Path("00_meta", "httpx.stderr.log")
 
+	args := []string{
+		"-l", inputFile,
+		"-silent",
+		"-json",
+		"-status-code",
+		"-title",
+		"-tech-detect",
+		"-server",
+		"-ip",
+		"-cname",
+		"-cdn",
+		"-location",
+		"-content-type",
+		"-content-length",
+		"-favicon",
+		"-response-time",
+	}
+	args = append(args, runCtx.ProxyArgs("-proxy")...)
+	args = append(args, runCtx.HeaderArgs("-H")...)
+
 	cmd := runner.Command{
-		Name: m.binary,
-		Args: []string{
-			"-l", inputFile,
-			"-silent",
-			"-json",
-			"-status-code",
-			"-title",
-			"-tech-detect",
-			"-server",
-			"-ip",
-			"-cname",
-			"-cdn",
-			"-location",
-			"-content-type",
-			"-content-length",
-			"-favicon",
-			"-response-time",
-		},
+		Name:       m.binary,
+		Args:       args,
 		Timeout:    10 * time.Minute,
 		StdoutFile: rawOutputFile,
 		StderrFile: stderrFile,

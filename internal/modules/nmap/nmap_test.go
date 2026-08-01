@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
@@ -13,13 +14,33 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/storage"
 )
 
+// recordingExecutor is shared across concurrent nmap goroutines (the module
+// now runs one host per worker), so appends must be synchronized.
 type recordingExecutor struct {
+	mu       sync.Mutex
 	commands []runner.Command
 }
 
 func (e *recordingExecutor) Run(_ context.Context, command runner.Command) (*runner.CommandResult, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.commands = append(e.commands, command)
 	return &runner.CommandResult{Command: command, ExitCode: 0}, nil
+}
+
+// commandForHost returns the recorded command targeting host. Commands run
+// concurrently, so callers must look them up by host rather than by index.
+func (e *recordingExecutor) commandForHost(t *testing.T, host string) runner.Command {
+	t.Helper()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, cmd := range e.commands {
+		if len(cmd.Args) > 0 && cmd.Args[len(cmd.Args)-1] == host {
+			return cmd
+		}
+	}
+	t.Fatalf("no recorded command for host %q (commands: %v)", host, e.commands)
+	return runner.Command{}
 }
 
 func TestRequiresOpenPorts(t *testing.T) {
@@ -61,8 +82,8 @@ func TestRunBuildsOnePortRestrictedCommandPerHost(t *testing.T) {
 		t.Fatalf("command count = %d, want 2", len(executor.commands))
 	}
 
-	assertCommandTarget(t, executor.commands[0], "alpha.example.com", "80,8080")
-	assertCommandTarget(t, executor.commands[1], "beta.example.com", "443")
+	assertCommandTarget(t, executor.commandForHost(t, "alpha.example.com"), "alpha.example.com", "80,8080")
+	assertCommandTarget(t, executor.commandForHost(t, "beta.example.com"), "beta.example.com", "443")
 }
 
 func TestRunSupportsBracketedIPv6(t *testing.T) {
