@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
-	"github.com/pterm/pterm"
+	"github.com/MikeRoss27/scanforge/internal/ui"
 )
 
 type Severity string
@@ -272,37 +272,28 @@ func extractVersionLine(output string) string {
 }
 
 func FormatChecks(checks []Check) string {
-	rows := pterm.TableData{{"", "CHECK", "DETAILS"}}
+	var rows [][]string
 
 	passed := 0
 	failed := 0
 	warned := 0
 
 	for _, check := range checks {
-		symbol := pterm.FgGray.Sprint(string(check.Status))
 		switch check.Status {
 		case SeverityOK:
-			symbol = pterm.FgGreen.Sprint("✓")
 			passed++
 		case SeverityWarn:
-			symbol = pterm.FgYellow.Sprint("!")
 			warned++
 		case SeverityFail:
-			symbol = pterm.FgRed.Sprint("✗")
 			if check.Required {
 				failed++
 			}
 		}
-		rows = append(rows, []string{symbol, check.Name, check.Message})
-	}
-
-	table, err := pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(rows).Srender()
-	if err != nil {
-		table = ""
+		rows = append(rows, []string{ui.StatusSymbol(string(check.Status)), check.Name, check.Message})
 	}
 
 	var b strings.Builder
-	b.WriteString(table)
+	b.WriteString(ui.Table([]string{"", "CHECK", "DETAILS"}, rows))
 	fmt.Fprintf(&b, "\n%d passed", passed)
 	if failed > 0 {
 		fmt.Fprintf(&b, ", %d failed", failed)

@@ -12,7 +12,7 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/runner"
 	scanScope "github.com/MikeRoss27/scanforge/internal/scope"
 	"github.com/MikeRoss27/scanforge/internal/storage"
-	"github.com/pterm/pterm"
+	"github.com/MikeRoss27/scanforge/internal/ui"
 )
 
 type Options struct {
@@ -166,7 +166,7 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 			runErrors = append(runErrors, waveErrs...)
 			if opts.Verbose {
 				for _, e := range waveErrs {
-					pterm.Error.Printfln("Error in wave: %v", e)
+					ui.Error("Error in wave: %v", e)
 				}
 			}
 		}
@@ -193,6 +193,8 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 			}
 		}
 	}
+
+	progress.close()
 
 	return results, errors.Join(runErrors...)
 }

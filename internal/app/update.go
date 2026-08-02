@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	
-	"github.com/pterm/pterm"
+
+	"github.com/MikeRoss27/scanforge/internal/ui"
 )
 
 type UpdateOptions struct {
@@ -18,7 +18,7 @@ func (a *App) Update(ctx context.Context, opts UpdateOptions) error {
 		return fmt.Errorf("the 'go' command was not found in PATH, which is required for updating: %w", err)
 	}
 
-	pterm.Info.Println("Updating scanforge...")
+	ui.Info("Updating scanforge...")
 	cmd := exec.CommandContext(ctx, "go", "install", "github.com/MikeRoss27/scanforge/cmd/scanforge@latest")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -26,7 +26,7 @@ func (a *App) Update(ctx context.Context, opts UpdateOptions) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to update scanforge: %w", err)
 	}
-	pterm.Success.Println("ScanForge updated successfully.")
+	ui.Success("ScanForge updated successfully.")
 
 	if opts.Tools {
 		tools := []string{
@@ -38,19 +38,19 @@ func (a *App) Update(ctx context.Context, opts UpdateOptions) error {
 			"github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
 			"github.com/ffuf/ffuf/v2@latest",
 		}
-		pterm.Println()
-		pterm.Info.Println("Updating external tools...")
+		fmt.Println()
+		ui.Info("Updating external tools...")
 		for _, tool := range tools {
-			spinner, _ := pterm.DefaultSpinner.Start(fmt.Sprintf("Updating %s ...", tool))
+			ui.Info("Updating %s ...", tool)
 			tcmd := exec.CommandContext(ctx, "go", "install", tool)
-			
+
 			if err := tcmd.Run(); err != nil {
-				spinner.Warning(fmt.Sprintf("Failed to update %s: %v", tool, err))
+				ui.Warn("Failed to update %s: %v", tool, err)
 			} else {
-				spinner.Success(fmt.Sprintf("Updated %s", tool))
+				ui.Success("Updated %s", tool)
 			}
 		}
-		pterm.Success.Println("External tools updated.")
+		ui.Success("External tools updated.")
 	}
 
 	return nil

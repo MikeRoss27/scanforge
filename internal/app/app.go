@@ -31,8 +31,8 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/report"
 	"github.com/MikeRoss27/scanforge/internal/runner"
 	"github.com/MikeRoss27/scanforge/internal/storage"
+	"github.com/MikeRoss27/scanforge/internal/ui"
 	"github.com/MikeRoss27/scanforge/internal/version"
-	"github.com/pterm/pterm"
 )
 
 type App struct {
@@ -149,13 +149,13 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 
 	ascii.PrintBanner()
 
-	pterm.DefaultHeader.WithFullWidth().WithBackgroundStyle(pterm.NewStyle(pterm.BgCyan)).WithTextStyle(pterm.NewStyle(pterm.FgBlack)).Println("ScanForge Run Started")
+	fmt.Println(ui.Header("ScanForge Run Started", ui.AccentCyan))
 
-	pterm.Info.Printfln("Target:  %s", opts.Target)
-	pterm.Info.Printfln("Profile: %s", profile)
-	pterm.Info.Printfln("Scope:   %s (%s, mode %s)", scanRun.Manifest.ScopePath, effective.proposal.Source, effective.proposal.Mode)
-	pterm.Info.Printfln("Dry run: %v", opts.DryRun)
-	pterm.Info.Printfln("Output:  %s\n", scanRun.RootDir)
+	ui.Info("Target:  %s", opts.Target)
+	ui.Info("Profile: %s", profile)
+	ui.Info("Scope:   %s (%s, mode %s)", scanRun.Manifest.ScopePath, effective.proposal.Source, effective.proposal.Mode)
+	ui.Info("Dry run: %v", opts.DryRun)
+	ui.Info("Output:  %s\n", scanRun.RootDir)
 
 	registry := buildRegistry(cfg)
 
@@ -204,17 +204,17 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 		return fmt.Errorf("failed to write manifest: %v (run error: %v)", writeErr, runErr)
 	}
 
-	pterm.Println()
-	pterm.Info.Println("Generating report...")
+	fmt.Println()
+	ui.Info("Generating report...")
 	rep, reportErr := report.GenerateReport(scanRun.RootDir, &scanRun.Manifest)
 	if reportErr != nil {
-		pterm.Warning.Printfln("Failed to generate report: %v", reportErr)
+		ui.Warn("Failed to generate report: %v", reportErr)
 	} else {
 		jsonPath := filepath.Join(scanRun.RootDir, "report.json")
 		mdPath := filepath.Join(scanRun.RootDir, "report.md")
 		reportErr = errors.Join(rep.WriteJSON(jsonPath), rep.WriteMarkdown(mdPath))
 		if reportErr != nil {
-			pterm.Warning.Printfln("Failed to write report: %v", reportErr)
+			ui.Warn("Failed to write report: %v", reportErr)
 		} else {
 			report.PrintTerminalSummary(rep)
 		}
@@ -257,18 +257,18 @@ func printRunSummaryBox(scanRun *storage.Run, results []*modules.Result, rep *re
 	fmt.Fprintf(&b, "Findings:  %s\n", formatSeverityCounts(countBySeverity(rep)))
 	fmt.Fprintf(&b, "Output:    %s", scanRun.RootDir)
 
-	pterm.DefaultBox.WithTitle("Scan Summary").WithTitleTopCenter().Println(b.String())
+	fmt.Println(ui.Box("Scan Summary", b.String()))
 }
 
 func statusLine(status string) string {
 	text := "Status:    " + status
 	switch status {
 	case "completed":
-		return pterm.FgGreen.Sprint(text)
+		return ui.Green(text)
 	case "partial":
-		return pterm.FgYellow.Sprint(text)
+		return ui.Yellow(text)
 	default:
-		return pterm.FgRed.Sprint(text)
+		return ui.Red(text)
 	}
 }
 
@@ -288,25 +288,25 @@ func countBySeverity(rep *report.Report) map[string]int {
 func formatSeverityCounts(counts map[string]int) string {
 	levels := []struct {
 		key   string
-		color pterm.Color
+		color func(string) string
 	}{
-		{"critical", pterm.FgRed},
-		{"high", pterm.FgRed},
-		{"medium", pterm.FgYellow},
-		{"low", pterm.FgCyan},
-		{"info", pterm.FgGray},
+		{"critical", ui.Red},
+		{"high", ui.Red},
+		{"medium", ui.Yellow},
+		{"low", ui.Cyan},
+		{"info", ui.Gray},
 	}
 
 	var parts []string
 	total := 0
 	for _, level := range levels {
 		if n := counts[level.key]; n > 0 {
-			parts = append(parts, level.color.Sprintf("%d %s", n, level.key))
+			parts = append(parts, level.color(fmt.Sprintf("%d %s", n, level.key)))
 			total += n
 		}
 	}
 	if total == 0 {
-		return pterm.FgGreen.Sprint("none")
+		return ui.Green("none")
 	}
 	return strings.Join(parts, ", ")
 }
@@ -368,29 +368,29 @@ func (a *App) Init(ctx context.Context, opts InitOptions) error {
 	result, err := initcmd.Run(initcmd.Options{Force: opts.Force})
 	if err != nil {
 		for _, path := range result.Created {
-			pterm.Success.Printfln("Created: %s", path)
+			ui.Success("Created: %s", path)
 		}
 		for _, path := range result.Skipped {
-			pterm.Info.Printfln("Skipped: %s", path)
+			ui.Info("Skipped: %s", path)
 		}
 		return err
 	}
 
 	for _, path := range result.Created {
-		pterm.Success.Printfln("Created: %s", path)
+		ui.Success("Created: %s", path)
 	}
 	for _, path := range result.Skipped {
-		pterm.Info.Printfln("Skipped: %s", path)
+		ui.Info("Skipped: %s", path)
 	}
 
-	pterm.Println()
-	pterm.DefaultHeader.WithFullWidth().WithBackgroundStyle(pterm.NewStyle(pterm.BgGreen)).WithTextStyle(pterm.NewStyle(pterm.FgBlack)).Println("Initialization Complete")
+	fmt.Println()
+	fmt.Println(ui.Header("Initialization Complete", ui.AccentGreen))
 
-	pterm.Info.Println("Next steps:")
-	pterm.Println("  1. Optionally edit scope.txt with your authorized targets")
-	pterm.Println("  2. Run: scanforge doctor")
-	pterm.Println("  3. Review: scanforge plan example.com")
-	pterm.Println("  4. Run: scanforge run example.com --dry-run")
+	ui.Info("Next steps:")
+	fmt.Println("  1. Optionally edit scope.txt with your authorized targets")
+	fmt.Println("  2. Run: scanforge doctor")
+	fmt.Println("  3. Review: scanforge plan example.com")
+	fmt.Println("  4. Run: scanforge run example.com --dry-run")
 
 	return nil
 }
