@@ -1,0 +1,217 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/MikeRoss27/scanforge/internal/orchestrator"
+	"github.com/MikeRoss27/scanforge/internal/ui"
+	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
+)
+
+var (
+	// Theming
+	colorMagenta = lipgloss.Color("13")
+	colorCyan    = lipgloss.Color("14")
+
+	borderStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorMagenta).
+			Padding(1, 2)
+
+	titleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("0")).
+			Background(colorMagenta).
+			Padding(0, 2)
+
+	headerStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorCyan)
+
+	rowStyle = lipgloss.NewStyle().Padding(0, 1)
+
+	warnStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("9")).
+			Bold(true)
+)
+
+type moduleState int
+
+const (
+	stateRunning moduleState = iota
+	stateDone
+)
+
+type moduleRow struct {
+	name   string
+	state  moduleState
+	start  time.Time
+	status string
+	dur    time.Duration
+	failed bool
+}
+
+type ScanModel struct {
+	eventChan <-chan orchestrator.Event
+	order     []string
+	rows      map[string]*moduleRow
+	warnings  []string
+	spin      spinner.Model
+}
+
+func NewScanModel(eventChan <-chan orchestrator.Event) ScanModel {
+	s := spinner.New(spinner.WithSpinner(spinner.MiniDot))
+	s.Style = lipgloss.NewStyle().Foreground(colorCyan).Bold(true)
+
+	return ScanModel{
+		eventChan: eventChan,
+		rows:      make(map[string]*moduleRow),
+		spin:      s,
+	}
+}
+
+func waitForEvent(ch <-chan orchestrator.Event) tea.Cmd {
+	return func() tea.Msg {
+		event, ok := <-ch
+		if !ok {
+			return nil // channel closed
+		}
+		return event
+	}
+}
+
+func (m ScanModel) Init() tea.Cmd {
+	return tea.Batch(
+		m.spin.Tick,
+		waitForEvent(m.eventChan),
+	)
+}
+
+func (m ScanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case orchestrator.WaveStartEvent:
+		wasIdle := !m.anyRunning()
+		for _, name := range msg.Modules {
+			m.order = append(m.order, name)
+			m.rows[name] = &moduleRow{name: name, state: stateRunning, start: time.Now()}
+		}
+		var cmd tea.Cmd
+		if wasIdle && m.anyRunning() {
+			cmd = m.spin.Tick
+		}
+		return m, tea.Batch(cmd, waitForEvent(m.eventChan))
+
+	case orchestrator.ModuleStartEvent:
+		return m, waitForEvent(m.eventChan)
+
+	case orchestrator.ModuleDoneEvent:
+		if row, ok := m.rows[msg.Name]; ok {
+			row.state = stateDone
+			row.status = msg.Status
+			row.dur = msg.Dur
+			row.failed = msg.Failed
+		}
+		return m, waitForEvent(m.eventChan)
+
+	case orchestrator.DeadlockEvent:
+		m.warnings = append(m.warnings, msg.Message)
+		return m, waitForEvent(m.eventChan)
+
+	case spinner.TickMsg:
+		if !m.anyRunning() {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.spin, cmd = m.spin.Update(msg)
+		return m, cmd
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		}
+	}
+
+	if msg == nil {
+		return m, tea.Quit
+	}
+
+	return m, nil
+}
+
+func (m ScanModel) View() string {
+	// Layout assembly
+	var out strings.Builder
+
+	// Top banner
+	banner := titleStyle.Render("SCANFORGE ORCHESTRATOR")
+	out.WriteString(fmt.Sprintf("%s\n\n", banner))
+
+	// The table
+	if len(m.order) > 0 {
+		t := table.New().
+			Border(lipgloss.HiddenBorder()).
+			Headers("MODULE", "STATE", "TIME", "STATUS").
+			StyleFunc(func(row, col int) lipgloss.Style {
+				if row == table.HeaderRow {
+					return headerStyle.Padding(0, 2)
+				}
+				return rowStyle.Padding(0, 2)
+			})
+
+		for _, name := range m.order {
+			row := m.rows[name]
+			if row.state == stateRunning {
+				elapsed := time.Since(row.start).Round(time.Second).String()
+				t.Row(ui.Bold(name), m.spin.View()+" RUNNING", elapsed, ui.Gray("..."))
+			} else {
+				stateLabel := ui.SuccessTag("DONE")
+				if row.failed {
+					stateLabel = ui.ErrorTag("FAIL")
+				}
+				dur := row.dur.Round(time.Millisecond).String()
+				
+				statusText := ui.Gray(row.status)
+				if row.failed {
+					statusText = ui.Red(row.status)
+				} else if row.status == "completed" {
+					statusText = ui.Green(row.status)
+				}
+
+				t.Row(ui.Bold(name), stateLabel, dur, statusText)
+			}
+		}
+		
+		out.WriteString(t.Render())
+		out.WriteString("\n")
+	} else {
+		out.WriteString(ui.Gray("  Waiting for modules to load...\n"))
+	}
+
+	// Warnings panel
+	if len(m.warnings) > 0 {
+		var warnBox strings.Builder
+		for _, w := range m.warnings {
+			warnBox.WriteString("⚠ " + w + "\n")
+		}
+		out.WriteString("\n")
+		out.WriteString(warnStyle.Render(warnBox.String()))
+	}
+
+	// Wrap in a glowing border
+	return borderStyle.Render(out.String()) + "\n"
+}
+
+func (m ScanModel) anyRunning() bool {
+	for _, row := range m.rows {
+		if row.state == stateRunning {
+			return true
+		}
+	}
+	return false
+}

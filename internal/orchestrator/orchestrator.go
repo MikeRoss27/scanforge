@@ -47,7 +47,11 @@ func New(executor runner.Executor, registry *modules.Registry) *Orchestrator {
 	}
 }
 
-func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Options) ([]*modules.Result, error) {
+func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Options, outChan chan<- Event) ([]*modules.Result, error) {
+	if outChan != nil {
+		defer close(outChan)
+	}
+
 	if o.registry == nil {
 		return nil, fmt.Errorf("module registry not configured")
 	}
@@ -79,7 +83,6 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	var runErrors []error
 
 	totalModules := len(selectedModules)
-	progress := newReporter(opts.Verbose, opts.DryRun)
 	wave := 0
 
 	// Loop until all modules are completed
@@ -91,7 +94,9 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 			// This means we have a deadlock or unreachable modules due to failed dependencies.
 			// Instead of returning an error, we mark the remaining modules as "skipped"
 			// and gracefully finish the orchestration.
-			progress.deadlock("No more modules can be run (dependencies missing). Marking remaining as skipped.")
+			if outChan != nil {
+				outChan <- DeadlockEvent{Message: "No more modules can be run (dependencies missing). Marking remaining as skipped."}
+			}
 			for _, m := range selectedModules {
 				if !completed[m.Name()] {
 					results = append(results, &modules.Result{
@@ -112,7 +117,9 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 		for _, m := range readyModules {
 			names = append(names, m.Name())
 		}
-		progress.waveStart(wave, names)
+		if outChan != nil {
+			outChan <- WaveStartEvent{Wave: wave, Modules: names}
+		}
 
 		var wg sync.WaitGroup
 		waveResults := make(chan *modules.Result, len(readyModules))
@@ -124,7 +131,9 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 				defer wg.Done()
 				start := time.Now()
 
-				progress.moduleStart(m.Name())
+				if outChan != nil {
+					outChan <- ModuleStartEvent{Name: m.Name()}
+				}
 
 				result, err := m.Run(ctx, runCtx, o.executor)
 
@@ -132,7 +141,9 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 				if err == nil && result != nil {
 					status = result.Status
 				}
-				progress.moduleDone(m.Name(), status, time.Since(start), status != "completed")
+				if outChan != nil {
+					outChan <- ModuleDoneEvent{Name: m.Name(), Status: status, Dur: time.Since(start), Failed: status != "completed"}
+				}
 
 				if err != nil {
 					// Even if it failed, we want to record the result as failed
@@ -154,7 +165,6 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 		wg.Wait()
 		close(waveResults)
 		close(waveErrors)
-		progress.waveEnd()
 
 		// Check for errors in the wave but do not abort immediately
 		var waveErrs []error
@@ -193,8 +203,6 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 			}
 		}
 	}
-
-	progress.close()
 
 	return results, errors.Join(runErrors...)
 }

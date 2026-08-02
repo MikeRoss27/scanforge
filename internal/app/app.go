@@ -9,6 +9,9 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"golang.org/x/term"
+
 	"github.com/MikeRoss27/scanforge/internal/ascii"
 	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/doctor"
@@ -31,6 +34,7 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/report"
 	"github.com/MikeRoss27/scanforge/internal/runner"
 	"github.com/MikeRoss27/scanforge/internal/storage"
+	"github.com/MikeRoss27/scanforge/internal/tui"
 	"github.com/MikeRoss27/scanforge/internal/ui"
 	"github.com/MikeRoss27/scanforge/internal/version"
 )
@@ -148,31 +152,66 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	}
 
 	ascii.PrintBanner()
+	fmt.Println(ui.Gray("  by MikeRoss"))
+	fmt.Println()
 
-	fmt.Println(ui.Header("ScanForge Run Started", ui.AccentCyan))
-
-	ui.Info("Target:  %s", opts.Target)
-	ui.Info("Profile: %s", profile)
-	ui.Info("Scope:   %s (%s, mode %s)", scanRun.Manifest.ScopePath, effective.proposal.Source, effective.proposal.Mode)
-	ui.Info("Dry run: %v", opts.DryRun)
-	ui.Info("Output:  %s\n", scanRun.RootDir)
+	printRunInfoPanel(opts, profile, scanRun, *effective)
 
 	registry := buildRegistry(cfg)
 
 	orch := orchestrator.New(executor, registry)
+	eventChan := make(chan orchestrator.Event)
 
-	results, runErr := orch.Run(ctx, scanRun, orchestrator.Options{
-		Target:          opts.Target,
-		Profile:         profile,
-		Config:          cfg,
-		DryRun:          opts.DryRun,
-		Verbose:         opts.Verbose,
-		Scope:           effective.value,
-		Proxy:           opts.Proxy,
-		Headers:         opts.Headers,
-		Nuclei:          opts.Nuclei,
-		NmapConcurrency: opts.NmapConcurrency,
-	})
+	var results []*modules.Result
+	var runErr error
+
+	go func() {
+		results, runErr = orch.Run(ctx, scanRun, orchestrator.Options{
+			Target:          opts.Target,
+			Profile:         profile,
+			Config:          cfg,
+			DryRun:          opts.DryRun,
+			Verbose:         opts.Verbose,
+			Scope:           effective.value,
+			Proxy:           opts.Proxy,
+			Headers:         opts.Headers,
+			Nuclei:          opts.Nuclei,
+			NmapConcurrency: opts.NmapConcurrency,
+		}, eventChan)
+	}()
+
+	isInteractive := term.IsTerminal(int(os.Stdout.Fd()))
+
+	if !opts.DryRun && isInteractive {
+		model := tui.NewScanModel(eventChan)
+		if _, err := tea.NewProgram(model).Run(); err != nil {
+			return err
+		}
+	} else {
+		for event := range eventChan {
+			switch e := event.(type) {
+			case orchestrator.WaveStartEvent:
+				if opts.Verbose || !opts.DryRun {
+					ui.Info("Wave %d: %s", e.Wave, strings.Join(e.Modules, ", "))
+				}
+			case orchestrator.ModuleStartEvent:
+				if opts.Verbose {
+					ui.Info("Running module %q...", e.Name)
+				}
+			case orchestrator.ModuleDoneEvent:
+				if opts.Verbose || !opts.DryRun {
+					msg := fmt.Sprintf("%s: %s (%s)", e.Name, e.Status, e.Dur.Round(time.Millisecond))
+					if e.Failed {
+						ui.Error("%s", msg)
+					} else {
+						ui.Success("%s", msg)
+					}
+				}
+			case orchestrator.DeadlockEvent:
+				ui.Warn("%s", e.Message)
+			}
+		}
+	}
 
 	scanRun.Manifest.CompletedAt = time.Now().Format(time.RFC3339)
 	completedModules := 0
@@ -225,6 +264,29 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	return errors.Join(runErr, reportErr)
 }
 
+// printRunInfoPanel renders a sleek bordered panel with the run configuration
+// instead of the old full-width cyan block.
+func printRunInfoPanel(opts RunOptions, profile string, scanRun *storage.Run, effective effectiveScope) {
+	label := func(key, val string) string {
+		return ui.Bold(ui.Cyan(key)) + " " + val
+	}
+
+	dryTag := ui.Green("OFF")
+	if opts.DryRun {
+		dryTag = ui.Yellow("ON")
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n", label("TARGET ", opts.Target))
+	fmt.Fprintf(&b, "%s\n", label("PROFILE", profile))
+	fmt.Fprintf(&b, "%s\n", label("SCOPE  ", fmt.Sprintf("%s (%s, mode %s)", scanRun.Manifest.ScopePath, effective.proposal.Source, effective.proposal.Mode)))
+	fmt.Fprintf(&b, "%s\n", label("DRY RUN", dryTag))
+	fmt.Fprintf(&b, "%s", label("OUTPUT ", scanRun.RootDir))
+
+	fmt.Println(ui.Box("⚡ Run Started", b.String()))
+	fmt.Println()
+}
+
 // printRunSummaryBox renders a single, hard-to-miss closing panel. Unlike
 // the mid-scroll module log and report.PrintTerminalSummary (which only
 // prints when report generation succeeds), this always renders so a run
@@ -247,17 +309,21 @@ func printRunSummaryBox(scanRun *storage.Run, results []*modules.Result, rep *re
 		}
 	}
 
+	label := func(key, val string) string {
+		return ui.Bold(ui.Magenta(key)) + " " + val
+	}
+
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", statusLine(scanRun.Manifest.Status))
-	fmt.Fprintf(&b, "Duration:  %s\n", duration)
-	fmt.Fprintf(&b, "Modules:   %d/%d completed\n", completedCount, len(results))
+	fmt.Fprintf(&b, "%s\n", label("DURATION ", duration))
+	fmt.Fprintf(&b, "%s\n", label("MODULES  ", fmt.Sprintf("%d/%d completed", completedCount, len(results))))
 	if len(failedModules) > 0 {
-		fmt.Fprintf(&b, "Failed:    %s\n", strings.Join(failedModules, ", "))
+		fmt.Fprintf(&b, "%s\n", label("FAILED   ", ui.Red(strings.Join(failedModules, ", "))))
 	}
-	fmt.Fprintf(&b, "Findings:  %s\n", formatSeverityCounts(countBySeverity(rep)))
-	fmt.Fprintf(&b, "Output:    %s", scanRun.RootDir)
+	fmt.Fprintf(&b, "%s\n", label("FINDINGS ", formatSeverityCounts(countBySeverity(rep))))
+	fmt.Fprintf(&b, "%s", label("OUTPUT   ", scanRun.RootDir))
 
-	fmt.Println(ui.Box("Scan Summary", b.String()))
+	fmt.Println(ui.Box("🏁 Scan Summary", b.String()))
 }
 
 func statusLine(status string) string {
