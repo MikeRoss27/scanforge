@@ -96,6 +96,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 					"-T4",
 				},
 				Timeout:    1 * time.Hour,
+				StdoutFile: filepath.Join(outputDir, base+".stdout.log"),
 				StderrFile: filepath.Join(outputDir, base+".stderr.log"),
 			}
 			if ip := net.ParseIP(target.Host); ip != nil && ip.To4() == nil {
