@@ -50,6 +50,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			Name:       m.binary,
 			Args:       []string{"-update-templates"},
 			Timeout:    10 * time.Minute,
+			StdoutFile: runCtx.Run.Path("00_meta", "nuclei-update.stdout.log"),
 			StderrFile: runCtx.Run.Path("00_meta", "nuclei-update.stderr.log"),
 		}
 		if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, updateCmd); err != nil {
@@ -74,6 +75,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 
 	args := []string{
 		"-l", inputFile,
+		"-silent",
 		"-severity", severity,
 		"-rate-limit", strconv.Itoa(rateLimit),
 		"-jsonl",

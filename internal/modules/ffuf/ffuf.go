@@ -59,6 +59,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		Name:       m.binary,
 		Args:       args,
 		Timeout:    1 * time.Hour,
+		StdoutFile: runCtx.Run.Path("00_meta", "ffuf.stdout.log"),
 		StderrFile: stderrFile,
 	}
 

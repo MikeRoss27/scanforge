@@ -44,6 +44,7 @@ func TestOrchestratorReturnsModuleFailuresAfterFinishingWave(t *testing.T) {
 	results, err := New(runner.NewDryRunExecutor(false), reg).Run(
 		context.Background(), nil,
 		Options{Target: "example.com", Profile: "test", Config: cfg},
+		nil,
 	)
 	if err == nil || len(results) != 2 {
 		t.Fatalf("Run() results=%d error=%v, want two results and an aggregate error", len(results), err)
@@ -65,6 +66,7 @@ func TestOrchestratorKeepsProfileOrderWithinParallelWave(t *testing.T) {
 		context.Background(),
 		nil,
 		Options{Target: "example.com", Profile: "test", Config: cfg},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -90,7 +92,7 @@ func TestOrchestratorMissingArtifact(t *testing.T) {
 		Target:  "example.com",
 		Profile: "test",
 		Config:  cfg,
-	})
+	}, nil)
 
 	if err == nil {
 		t.Fatal("expected an invalid DAG error")
@@ -111,7 +113,7 @@ func TestOrchestratorSuccess(t *testing.T) {
 		Target:  "example.com",
 		Profile: "test",
 		Config:  cfg,
-	})
+	}, nil)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
