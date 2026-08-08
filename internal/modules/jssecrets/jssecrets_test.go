@@ -21,7 +21,7 @@ func TestRequiresAndProduces(t *testing.T) {
 	if got, want := New().Requires(), []string{"crawled_urls"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Requires() = %v, want %v", got, want)
 	}
-	if got, want := New().Produces(), []string{"js_secrets"}; !reflect.DeepEqual(got, want) {
+	if got, want := New().Produces(), []string{"js_secrets", "js_payloads"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Produces() = %v, want %v", got, want)
 	}
 }
@@ -193,7 +193,7 @@ func TestScanBodyDetectsEveryCategory(t *testing.T) {
 	}
 }
 
-func TestDetectSourceMapOnlyWhenReachable(t *testing.T) {
+func TestScanSourceMapsOnlyWhenReachable(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/app.js", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("console.log(1);\n//# sourceMappingURL=app.js.map\n"))
@@ -212,17 +212,126 @@ func TestDetectSourceMapOnlyWhenReachable(t *testing.T) {
 	client := server.Client()
 
 	appBody := "console.log(1);\n//# sourceMappingURL=app.js.map\n"
-	found := detectSourceMap(context.Background(), client, server.URL+"/app.js", appBody, nil)
-	if found == nil {
+	runCtx := modules.NewRunContext("example.com", "web", false, nil)
+	found := scanSourceMaps(context.Background(), runCtx, client, server.URL+"/app.js", appBody, nil)
+	if len(found) == 0 {
 		t.Fatal("expected a reachable source map to be reported")
 	}
-	if found.Kind != "source-map" || found.Match != server.URL+"/app.js.map" {
-		t.Fatalf("finding = %+v, want source-map at %s/app.js.map", found, server.URL)
+	mapFinding := found[0]
+	if mapFinding.Kind != "source-map" || mapFinding.Match != server.URL+"/app.js.map" {
+		t.Fatalf("finding = %+v, want source-map at %s/app.js.map", mapFinding, server.URL)
 	}
 
 	goneBody := "console.log(1);\n//# sourceMappingURL=gone.js.map\n"
-	if got := detectSourceMap(context.Background(), client, server.URL+"/gone.js", goneBody, nil); got != nil {
+	if got := scanSourceMaps(context.Background(), runCtx, client, server.URL+"/gone.js", goneBody, nil); len(got) != 0 {
 		t.Fatalf("expected a 404 source map to be skipped, got %+v", got)
+	}
+}
+
+func TestScanSourceMapsScansOriginalSources(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/app.js", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("console.log(1);\n//# sourceMappingURL=app.js.map\n"))
+	})
+	mux.HandleFunc("/app.js.map", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"version":3,"sources":["app.ts"],"sourcesContent":["const dbPassword = 'Kx9mQ2vR7tY4wN8pL1zX5cV3bG6hJ0fD8sA2';"]}`))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client := server.Client()
+
+	found := scanSourceMaps(context.Background(), modules.NewRunContext("example.com", "web", false, nil), client, server.URL+"/app.js",
+		"console.log(1);\n//# sourceMappingURL=app.js.map\n", nil)
+	if len(found) < 2 {
+		t.Fatalf("expected source-map finding + secret from original source, got %+v", found)
+	}
+	if found[0].Pattern != "exposed-source-map" {
+		t.Fatalf("first finding = %+v, want the map exposure", found[0])
+	}
+}
+
+func TestChaseImportsFindsLazyChunks(t *testing.T) {
+	body := strings.Join([]string{
+		`import("./chunk.abc123.js");`,
+		`const url = new URL("vendor.js?v=2", import.meta.url);`,
+		`import("./data.json");`,
+		`const other = import("/abs/path/admin.mjs");`,
+	}, "\n")
+
+	got := chaseImports("https://example.com/assets/app.js", body)
+	want := []string{
+		"https://example.com/assets/chunk.abc123.js",
+		"https://example.com/abs/path/admin.mjs",
+		"https://example.com/assets/vendor.js?v=2",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("chaseImports = %v, want %v", got, want)
+	}
+}
+
+func TestChaseImportsIgnoresNonJS(t *testing.T) {
+	body := `import("./style.css"); import("https://cdn.other.test/lib.js");`
+	got := chaseImports("https://example.com/assets/app.js", body)
+	want := []string{"https://cdn.other.test/lib.js"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("chaseImports = %v, want %v (css skipped, absolute JS kept)", got, want)
+	}
+}
+
+func TestScanBodyFlagsHighEntropySecret(t *testing.T) {
+	body := `var config = {"apiKey": "qW7zR4tY8uI2pL5sX9vB3nM6jH1kF8dA2cG5zE7wQ9rT1yU4iO6pA3sD9fG2hJ5kL8mN1vB4xZ7cV2"};`
+	findings := scanBody("https://target.example/app.js", body)
+	var found bool
+	for _, f := range findings {
+		if f.Pattern == "high-entropy-secret" {
+			found = true
+			if f.Severity != "medium" || f.Match == "" {
+				t.Fatalf("bad entropy finding: %+v", f)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected a high-entropy finding, got %+v", findings)
+	}
+}
+
+func TestScanBodySkipsLowEntropyValues(t *testing.T) {
+	body := `var config = {"apiKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"};`
+	findings := scanBody("https://target.example/app.js", body)
+	for _, f := range findings {
+		if f.Pattern == "high-entropy-secret" {
+			t.Fatalf("low-entropy value flagged: %+v", f)
+		}
+	}
+}
+
+func TestRunChasesDynamicImports(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/app.js", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`import("./chunk.js"); console.log("boot");` + "\n"))
+	})
+	mux.HandleFunc("/chunk.js", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("var token = 'SG.aaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';\n"))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	run := testRun(t)
+	writeCrawledURLs(t, run, server.URL+"/app.js\n")
+	runCtx := newRunContext(t, run, false)
+
+	if _, err := New().Run(context.Background(), runCtx, nil); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	findings := readFindings(t, run.Path("06_vulns", "js-secrets.jsonl"))
+	var found bool
+	for _, f := range findings {
+		if f.Pattern == "sendgrid-api-key" && f.URL == server.URL+"/chunk.js" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a sendgrid key found in the chased chunk, got %+v", findings)
 	}
 }
 
@@ -268,6 +377,61 @@ func writeCrawledURLs(t *testing.T, run *storage.Run, content string) {
 	t.Helper()
 	if err := os.WriteFile(run.Path("05_content", "katana.txt"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRunReportsDangerousPatternsAndPayloads(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`var view = document.getElementById("preview");`,
+			`view.innerHTML = location.hash;`,
+			`eval(params.code);`,
+		}, "\n")))
+	}))
+	defer server.Close()
+
+	run := testRun(t)
+	writeCrawledURLs(t, run, server.URL+"/app.js\n")
+	runCtx := newRunContext(t, run, false)
+
+	if _, err := New().Run(context.Background(), runCtx, nil); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if _, ok := runCtx.GetArtifact("js_payloads"); !ok {
+		t.Fatal("js_payloads artifact was not published")
+	}
+
+	findings := readFindings(t, run.Path("06_vulns", "js-secrets.jsonl"))
+	var html, evalFinding *finding
+	for _, f := range findings {
+		switch f.Pattern {
+		case "html-assignment":
+			html = &f
+		case "eval-call":
+			evalFinding = &f
+		}
+	}
+	if html == nil || evalFinding == nil {
+		t.Fatalf("expected html-assignment and eval-call findings, got %+v", findings)
+	}
+	if html.URL != server.URL+"/app.js" || html.Line != 2 || html.Snippet == "" {
+		t.Fatalf("bad html finding: %+v", html)
+	}
+	if len(evalFinding.Payloads) == 0 {
+		t.Fatalf("eval finding should carry payloads: %+v", evalFinding)
+	}
+
+	payloadFile := run.Path("06_vulns", "js-payloads.txt")
+	data, err := os.ReadFile(payloadFile)
+	if err != nil {
+		t.Fatalf("payloads file missing: %v", err)
+	}
+	flat := string(data)
+	for _, p := range evalFinding.Payloads {
+		if !strings.Contains(flat, p) {
+			t.Errorf("payload %q missing from %s", p, payloadFile)
+		}
 	}
 }
 

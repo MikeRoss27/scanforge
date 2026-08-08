@@ -24,7 +24,7 @@ func New(binary string) *Module {
 func (m *Module) Name() string        { return "whatweb" }
 func (m *Module) Description() string { return "Next generation web scanner" }
 func (m *Module) Requires() []string  { return []string{"alive_urls"} }
-func (m *Module) Produces() []string  { return []string{"technologies_raw"} }
+func (m *Module) Produces() []string  { return []string{"whatweb_raw"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	inputArt, err := runCtx.MustArtifact("alive_urls")
@@ -58,8 +58,8 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
 	}
 
-	if err := runCtx.AddArtifact("technologies_raw", modules.Artifact{
-		Name: "technologies_raw",
+	if err := runCtx.AddArtifact("whatweb_raw", modules.Artifact{
+		Name: "whatweb_raw",
 		Type: "text",
 		Path: "04_web/whatweb.txt",
 	}); err != nil {

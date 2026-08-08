@@ -43,9 +43,22 @@ type RunContext struct {
 	// Nuclei carries nuclei-specific tuning that has no equivalent in other
 	// modules (severity/tag filtering, rate limiting, custom templates).
 	Nuclei NucleiOptions
+	// Ffuf carries ffuf-specific tuning (wordlist selection, status-code
+	// filtering).
+	Ffuf FfufOptions
 	// NmapConcurrency bounds how many nmap processes run at once. <= 0 means
 	// the module picks its own default.
 	NmapConcurrency int
+}
+
+// FfufOptions configures the ffuf module's fuzzing inputs.
+type FfufOptions struct {
+	// Wordlist is the directory/file wordlist used for path fuzzing. Empty
+	// means the module default (/usr/share/wordlists/dirb/common.txt).
+	Wordlist string
+	// FilterCodes are comma-separated HTTP status codes to filter out
+	// (ffuf -fc), e.g. "404,500".
+	FilterCodes string
 }
 
 // NucleiOptions configures the nuclei module's template selection and pacing.
@@ -57,6 +70,13 @@ type NucleiOptions struct {
 	RateLimit       int
 	TemplatesDir    string
 	UpdateTemplates bool
+	// Headless enables headless-mode templates (renders pages in a browser).
+	Headless bool
+	// IncludeCustomTemplates appends the repository's bundled custom template
+	// directory to the nuclei scan.
+	IncludeCustomTemplates bool
+	// CustomTemplatesDir overrides the bundled custom template directory path.
+	CustomTemplatesDir string
 }
 
 func NewRunContext(target, profile string, dryRun bool, run *storage.Run, scopes ...*scanScope.Scope) *RunContext {
@@ -98,6 +118,15 @@ func (c *RunContext) GetArtifact(name string) (Artifact, bool) {
 	return art, ok
 }
 
+// IsInScope reports whether value is within the configured scope. A missing
+// scope (tests, some dry runs) allows everything.
+func (c *RunContext) IsInScope(value string) bool {
+	if c.Scope == nil {
+		return true
+	}
+	return c.Scope.IsAllowed(value)
+}
+
 func (c *RunContext) MustArtifact(name string) (Artifact, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -123,12 +152,13 @@ type scopeRejection struct {
 }
 
 var scopedTextArtifacts = map[string]struct{}{
-	"subdomains":      {},
-	"resolved_hosts":  {},
-	"alive_urls":      {},
-	"crawled_urls":    {},
-	"open_ports":      {},
-	"historical_urls": {},
+	"subdomains":          {},
+	"resolved_hosts":      {},
+	"alive_urls":          {},
+	"crawled_urls":        {},
+	"open_ports":          {},
+	"historical_urls":     {},
+	"attack_surface_urls": {},
 }
 
 func (c *RunContext) filterArtifact(name string, artifact Artifact) error {
@@ -191,16 +221,19 @@ func (c *RunContext) filterArtifact(name string, artifact Artifact) error {
 	if err := os.Chmod(tmpPath, 0644); err != nil {
 		return fmt.Errorf("set filtered artifact permissions: %w", err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("replace artifact with filtered output: %w", err)
-	}
-	keepTemp = true
-
+	// Record rejections before replacing the artifact: if the log write
+	// fails, the artifact is left unpublished and the original file intact,
+	// keeping the state consistent for downstream consumers.
 	if len(rejected) > 0 {
 		if err := c.appendScopeRejections(rejected); err != nil {
 			return err
 		}
 	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("replace artifact with filtered output: %w", err)
+	}
+	keepTemp = true
+
 	return nil
 }
 

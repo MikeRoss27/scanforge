@@ -27,8 +27,13 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var nucleiRateLimit int
 	var nucleiTemplates string
 	var nucleiUpdateTemplates bool
+	var nucleiHeadless bool
+	var nucleiIncludeCustom bool
 
 	var nmapConcurrency int
+
+	var ffufWordlist string
+	var ffufFilterCodes string
 
 	cmd := &cobra.Command{
 		Use:     "run <target>",
@@ -54,15 +59,21 @@ func NewRunCommand(application *app.App) *cobra.Command {
 				Proxy:        proxy,
 				Headers:      headers,
 				Nuclei: modules.NucleiOptions{
-					Severity:        nucleiSeverity,
-					ExcludeSeverity: nucleiExcludeSeverity,
-					Tags:            nucleiTags,
-					ExcludeTags:     nucleiExcludeTags,
-					RateLimit:       nucleiRateLimit,
-					TemplatesDir:    nucleiTemplates,
-					UpdateTemplates: nucleiUpdateTemplates,
+					Severity:               nucleiSeverity,
+					ExcludeSeverity:        nucleiExcludeSeverity,
+					Tags:                   nucleiTags,
+					ExcludeTags:            nucleiExcludeTags,
+					RateLimit:              nucleiRateLimit,
+					TemplatesDir:           nucleiTemplates,
+					UpdateTemplates:        nucleiUpdateTemplates,
+					Headless:               nucleiHeadless,
+					IncludeCustomTemplates: nucleiIncludeCustom,
 				},
 				NmapConcurrency: nmapConcurrency,
+				Ffuf: modules.FfufOptions{
+					Wordlist:    ffufWordlist,
+					FilterCodes: ffufFilterCodes,
+				},
 			})
 		},
 	}
@@ -87,8 +98,13 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	cmd.Flags().IntVar(&nucleiRateLimit, "nuclei-rate-limit", 0, "Nuclei: max requests per second (default 10)")
 	cmd.Flags().StringVar(&nucleiTemplates, "nuclei-templates", "", "Nuclei: custom template file or directory to run instead of the default set")
 	cmd.Flags().BoolVar(&nucleiUpdateTemplates, "nuclei-update-templates", false, "Nuclei: update the local template cache before scanning")
+	cmd.Flags().BoolVar(&nucleiHeadless, "nuclei-headless", false, "Nuclei: enable headless-mode templates (requires nuclei headless support)")
+	cmd.Flags().BoolVar(&nucleiIncludeCustom, "nuclei-include-custom", false, "Nuclei: also run the bundled ScanForge custom templates")
 
 	cmd.Flags().IntVar(&nmapConcurrency, "nmap-concurrency", 0, "Max concurrent nmap processes (default 4; lower to reduce noise)")
+
+	cmd.Flags().StringVar(&ffufWordlist, "ffuf-wordlist", "", "Ffuf: wordlist of paths to fuzz (default /usr/share/wordlists/dirb/common.txt)")
+	cmd.Flags().StringVar(&ffufFilterCodes, "ffuf-filter-codes", "", "Ffuf: comma-separated HTTP status codes to filter out, e.g. 404,500")
 
 	return cmd
 }

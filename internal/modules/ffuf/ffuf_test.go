@@ -74,6 +74,33 @@ func TestRunBuildsFFUFCommand(t *testing.T) {
 	}
 }
 
+func TestRunAppliesWordlistAndFilterCodes(t *testing.T) {
+	run := testRun(t, t.TempDir())
+	if err := os.WriteFile(run.Path("02_http", "httpx.txt"), []byte("http://example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	wordlist := filepath.Join(t.TempDir(), "custom.txt")
+	if err := os.WriteFile(wordlist, []byte("admin\napi\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{Name: "alive_urls", Type: "text", Path: "02_http/httpx.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	runCtx.Ffuf = modules.FfufOptions{Wordlist: wordlist, FilterCodes: "404,500"}
+	executor := &recordingExecutor{}
+
+	if _, err := New("ffuf").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	args := strings.Join(executor.commands[0].Args, " ")
+	for _, want := range []string{"-w", wordlist + ":FUZZ", "-fc", "404,500"} {
+		if !strings.Contains(args, want) {
+			t.Errorf("args %q missing %q", args, want)
+		}
+	}
+}
+
 func TestRunRequiresExistingWordlistOutsideDryRun(t *testing.T) {
 	run := testRun(t, t.TempDir())
 	if err := os.WriteFile(run.Path("02_http", "httpx.txt"), []byte("http://example.com\n"), 0644); err != nil {

@@ -22,8 +22,24 @@ func TestDefault(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(modules) != 8 {
-		t.Fatalf("expected 8 modules for web profile, got %d", len(modules))
+	// The web profile chains recon into detection: subdomain discovery,
+	// probing, fingerprinting, crawling, JS analysis, the consolidated attack
+	// surface and the vulnerability scanners.
+	required := []string{
+		"subfinder", "dnsx", "httpx", "whatweb", "wafw00f", "katana",
+		"jssecrets", "attacksurface", "techcve", "httpcheck", "nuclei",
+	}
+	for _, name := range required {
+		found := false
+		for _, m := range modules {
+			if m == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("web profile missing module %q (got %v)", name, modules)
+		}
 	}
 }
 

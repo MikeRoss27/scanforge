@@ -4,152 +4,177 @@
 
 # ScanForge
 
-**ScanForge** est un outil en ligne de commande (CLI) écrit en Go, conçu pour orchestrer de manière sécurisée et structurée vos flux de travail de test d'intrusion et de reconnaissance (recon).
+**ScanForge** is a command-line tool (CLI) written in Go, designed to securely and structurally orchestrate your penetration testing and reconnaissance (recon) workflows.
 
-Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intelligemment les outils de sécurité reconnus du marché tout en appliquant des règles de validation de scope extrêmement strictes pour éviter tout scan non autorisé.
+Thanks to its artifact-driven architecture, ScanForge chains well-known security tools while enforcing extremely strict scope validation rules to prevent any unauthorized scanning.
 
 ## 📚 Documentation
 
-- [Guide d'utilisation](docs/USAGE.md) : installation, configuration, commandes et exemples.
-- [Gestion du scope](docs/SCOPE.md) : modes implicites, fichiers, exclusions et CI.
-- [Architecture](docs/ARCHITECTURE.md) : DAG, artefacts, filtrage central et sorties.
-- [Guide de contribution](AGENTS.md) : structure du dépôt, style et validations.
+- [Usage guide](docs/USAGE.md): installation, configuration, commands and examples.
+- [Scope management](docs/SCOPE.md): implicit modes, files, exclusions and CI.
+- [Architecture](docs/ARCHITECTURE.md): DAG, artifacts, central filtering and outputs.
+- [Contribution guide](AGENTS.md): repository structure, style and validations.
 
-## 🚀 Fonctionnalités Clés
+> **Français** : [Documentation en français](docs/fr/README.md) · **中文**：[中文文档](docs/zh/README.md)
 
-- **Pipeline orienté Artefacts** : Les modules communiquent via des artefacts de manière ordonnée (ex: la sortie de `subfinder` alimente automatiquement `dnsx` et `httpx`), avec exécution parallèle par vagues du DAG.
-- **Validation de Scope Stricte** : Scope explicite par fichier ou scope implicite confirmé (`exact` par défaut, `domain` sur demande), puis filtrage de chaque artefact.
-- **Intégration proxy (Caido / Burp Suite)** : `--proxy` route le trafic HTTP des modules concernés à travers votre proxy d'interception pour triage/replay manuel.
-- **Scan authentifié** : `-H/--header` (répétable) injecte des headers/cookies (session, bearer token) dans toutes les requêtes HTTP émises.
-- **Scanner de secrets JavaScript** : le module `jssecrets` récupère les fichiers `.js` crawlés et détecte clés API/tokens/creds exposés, buckets cloud publics, hôtes internes, emails, endpoints API sensibles et source maps accessibles.
-- **Nuclei entièrement paramétrable** : sévérité, tags, rate-limit, templates personnalisés et mise à jour des templates via des flags dédiés.
-- **Nmap parallélisé** : pool de workers borné (`--nmap-concurrency`) au lieu d'un scan séquentiel hôte par hôte.
-- **Progression en temps réel** : spinner par module actif pendant le scan (visible par défaut, pas seulement en `--verbose`), tableaux colorés pour `plan`/`doctor`, et panneau récapitulatif en fin de run.
-- **Mode Dry-Run** : Visualisez les commandes qui vont être lancées et les fichiers générés avant de faire la moindre requête réseau.
-- **Outil de Diagnostic (Doctor)** : Vérifiez instantanément si vos dépendances locales sont installées et configurées pour le profil sélectionné.
-- **Rapports consolidés** : Génère automatiquement un modèle de risque unifié en formats `report.json` et `report.md`.
+## 🚀 Key Features
 
----
-
-## 🛠️ Outils Supportés
-
-ScanForge centralise et orchestre 12 outils de sécurité externes, plus un module natif :
-
-1. **subfinder** (Découverte de sous-domaines)
-2. **dnsx** (Résolution DNS active)
-3. **httpx** (Sondage HTTP et détection de technologies)
-4. **naabu** (Scanner de ports ultra-rapide)
-5. **nmap** (Scan de ports et détection de services précis, exécuté en parallèle)
-6. **whatweb** (Reconnaissance des technologies web)
-7. **wafw00f** (Détection de Web Application Firewall)
-8. **katana** (Crawl de ressources web)
-9. **ffuf** (Fuzzing de répertoires et fichiers)
-10. **nuclei** (Scanner de vulnérabilités basé sur des modèles)
-11. **gau** (Collecte passive d'URL historiques)
-12. **tlsx** (Enrichissement des certificats et protocoles TLS)
-13. **jssecrets** (natif, aucun binaire externe) — analyse les JS crawlés par `katana` pour détecter secrets, buckets cloud, hôtes internes, emails et source maps exposés
-
-`httpx`, `nuclei`, `katana`, `ffuf`, `whatweb`, `wafw00f`, `subfinder`, `gau` et `jssecrets` supportent `--proxy` et `-H/--header` pour router le trafic vers Caido/Burp et scanner en authentifié.
+- **Artifact-driven pipeline**: Modules communicate through artifacts in an ordered way (e.g. `subfinder` output automatically feeds `dnsx` and `httpx`), with parallel execution per DAG wave.
+- **Strict scope validation**: Explicit scope via file, or confirmed implicit scope (`exact` by default, `domain` on request), then filtering of every artifact.
+- **Proxy integration (Caido / Burp Suite)**: `--proxy` routes HTTP traffic of the relevant modules through your interception proxy for manual triage/replay.
+- **Authenticated scanning**: `-H/--header` (repeatable) injects headers/cookies (session, bearer token) into every HTTP request issued.
+- **JavaScript secrets scanner**: the `jssecrets` module fetches crawled `.js` files and detects exposed API keys/tokens/creds, public cloud buckets, internal hosts, emails, sensitive API endpoints and accessible source maps.
+- **Fully configurable Nuclei**: severity, tags, rate-limit, custom templates and template updates via dedicated flags.
+- **Parallelized Nmap**: bounded worker pool (`--nmap-concurrency`) instead of sequential host-by-host scans.
+- **Real-time progress**: spinner per active module during the scan (visible by default, not only in `--verbose`), colored tables for `plan`/`doctor`, and a summary panel at the end of the run.
+- **Dry-Run mode**: Preview the commands that will be launched and the generated files before making any network request.
+- **Diagnostic tool (Doctor)**: Instantly check whether your local dependencies are installed and configured for the selected profile.
+- **Consolidated reports**: Automatically generates a unified risk model in `report.json` and `report.md` formats.
 
 ---
 
-## 📦 Installation Simple (Sans prise de tête)
+## 🛠️ Supported Tools
 
-ScanForge dépend d'outils externes. Nous avons automatisé leur installation pour vous faciliter la vie.
+ScanForge centralizes and orchestrates 12 external security tools, plus one native module:
 
-### Option 1 : Scripts automatisés (Recommandé)
+1. **subfinder** (Subdomain discovery)
+2. **dnsx** (Active DNS resolution)
+3. **httpx** (HTTP probing and technology detection)
+4. **naabu** (Ultra-fast port scanner)
+5. **nmap** (Accurate port scanning and service detection, run in parallel)
+6. **whatweb** (Web technology fingerprinting)
+7. **wafw00f** (Web Application Firewall detection)
+8. **katana** (Web resource crawling)
+9. **ffuf** (Directory and file fuzzing)
+10. **nuclei** (Template-based vulnerability scanner)
+11. **gau** (Passive collection of historical URLs)
+12. **tlsx** (TLS certificate and protocol enrichment)
+13. **jssecrets** (native, no external binary) — analyzes JS crawled by `katana` to detect secrets, cloud buckets, internal hosts, emails and exposed source maps
 
-**Sur Windows (PowerShell) :**
-Lisez et exécutez le script d'installation pour configurer l'environnement :
+`httpx`, `nuclei`, `katana`, `ffuf`, `whatweb`, `wafw00f`, `subfinder`, `gau` and `jssecrets` support `--proxy` and `-H/--header` to route traffic through Caido/Burp and scan in authenticated mode.
+
+---
+
+## 📦 Simple Installation (Hassle-Free)
+
+Like mainstream tools (nuclei, subfinder...), ScanForge is distributed as **prebuilt binaries** via GitHub Releases: no compilation, no Go required.
+
+### Option 1: One-liner (Recommended)
+
+**Linux / macOS / Git-Bash:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.sh | bash
+```
+
+The script detects your OS/architecture, downloads the latest version, verifies its SHA-256 checksum and installs it in `~/.local/bin`.
+
+**Windows (PowerShell):**
 
 ```powershell
-.\install.ps1
+Invoke-Expression (Invoke-RestMethod https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.ps1)
 ```
 
-**Sur Linux / macOS (Bash) :**
+The installer places the binary in `%LOCALAPPDATA%\Programs\scanforge` and automatically adds the directory to the user PATH.
+
+**Specific version or custom directory:**
 
 ```bash
-chmod +x install.sh
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.sh | bash -s -- --version v0.1.0 --dir /usr/local/bin
 ```
 
-### Option 2 : Docker (Zéro installation locale)
+### Option 2: Full installation (binary + scan tools)
 
-Si vous ne souhaitez pas installer Go ou les autres outils sur votre système hôte, utilisez Docker. Tout est pré-configuré dans l'image !
+ScanForge orchestrates external tools (nmap, nuclei, subfinder, httpx, ...). To install them automatically **on top of** ScanForge (requires Go):
 
 ```bash
-# Avec docker-compose
+curl -fsSL https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.sh | bash -s -- --full
+```
+
+From a clone of the repository, the local scripts do the same:
+
+```bash
+chmod +x install.sh && ./install.sh --full   # Linux / macOS
+.\install.ps1 -Full                           # Windows (PowerShell)
+```
+
+### Option 3: Docker (Zero local installation)
+
+If you don't want to install Go or the other tools on your host system, use Docker. Everything is pre-configured in the image!
+
+```bash
+# With docker-compose
 docker-compose run scanforge run target.com --profile web
 
-# Manuellement avec Docker
+# Manually with Docker
 docker build -t scanforge .
 docker run -v $(pwd):/workspace scanforge run target.com --profile web
 ```
 
 ---
 
-## 🚦 Guide de Démarrage Rapide
+## 🚦 Quick Start Guide
 
-### 1. Initialiser le projet
+### 1. Initialize the project
 
-Générez les fichiers de configuration par défaut dans votre répertoire actuel :
+Generate the default configuration files in your current directory:
 
 ```bash
 scanforge init
 ```
 
-Cela crée :
+This creates:
 
-- `scanforge.yaml` : Permet de configurer les chemins des outils et de modifier/définir des profils.
-- `scope.txt` : Modèle facultatif pour conserver un périmètre réutilisable. Vous pouvez le supprimer ; ScanForge proposera alors un scope implicite minimal à confirmer.
+- `scanforge.yaml`: Lets you configure tool paths and modify/define profiles.
+- `scope.txt`: Optional template to keep a reusable perimeter. You can delete it; ScanForge will then propose a minimal implicit scope to confirm.
 
-### 2. Valider l'environnement
+### 2. Validate the environment
 
-Vérifiez que tous les outils requis pour votre profil de scan sont bien installés et accessibles :
+Check that all tools required for your scan profile are installed and accessible:
 
 ```bash
 scanforge doctor --profile web
 ```
 
-### 3. Lancer un Scan
+### 3. Launch a Scan
 
-Sans fichier de scope applicable, ScanForge déduit un scope minimal depuis la
-cible, l'affiche et demande une confirmation explicite avant de créer le run :
+Without an applicable scope file, ScanForge derives a minimal scope from the
+target, displays it and asks for explicit confirmation before creating the run:
 
 ```bash
 scanforge run example.com --profile web
 ```
 
-Pour inclure le domaine et ses sous-domaines, ajouter des règles ou en exclure :
+To include the domain and its subdomains, add rules or exclude some:
 
 ```bash
 scanforge run example.com --scope-mode domain \
   --scope-add api.other.test --exclude admin.example.com
 ```
 
-`--scope fichier.txt` reste prioritaire et n'est jamais remplacé implicitement
-s'il refuse la cible. Pour éviter toute ambiguïté, il ne se combine pas avec
-`--scope-mode`, `--scope-add` ou `--exclude`. Un fichier explicite ou configuré
-ne demande aucune confirmation supplémentaire. Pour un scope implicite en CI
-ou sans TTY, inspectez d'abord `scanforge plan`, puis confirmez l'intention avec
+`--scope file.txt` remains authoritative and is never silently replaced if it
+rejects the target. To avoid any ambiguity, it does not combine with
+`--scope-mode`, `--scope-add` or `--exclude`. An explicit or configured file
+requires no additional confirmation. For an implicit scope in CI or without a
+TTY, inspect `scanforge plan` first, then confirm the intent with
 `--confirm-scope`.
 
-Pour tester sans envoyer de requêtes :
+To test without sending any request:
 
 ```bash
 scanforge run example.com --profile web --dry-run --confirm-scope
 ```
 
-Avec un scope implicite, le dry-run exige lui aussi une confirmation : il
-n'effectue pas de requêtes réseau, mais formalise le périmètre autorisé.
+With an implicit scope, dry-run also requires confirmation: it performs no
+network requests, but formalizes the authorized perimeter.
 
-Prévisualisez le pipeline validé avant de créer un run :
+Preview the validated pipeline before creating a run:
 
 ```bash
 scanforge plan example.com --preset deep
 ```
 
-La commande `scanforge scan` est un alias plus direct de `scanforge run` :
+The `scanforge scan` command is a more direct alias of `scanforge run`:
 
 ```bash
 scanforge scan example.com --preset safe
@@ -157,10 +182,10 @@ scanforge scan example.com --preset safe
 
 ---
 
-## 🕵️ Proxy, authentification et réglages Nuclei
+## 🕵️ Proxy, authentication and Nuclei settings
 
-Pour un test d'intrusion en conditions réelles, routez le trafic vers Caido (ou
-Burp Suite) et injectez une session authentifiée :
+For real-world penetration testing, route traffic through Caido (or Burp
+Suite) and inject an authenticated session:
 
 ```bash
 scanforge run app.example.com --profile web \
@@ -168,45 +193,54 @@ scanforge run app.example.com --profile web \
   -H "Cookie: session=..." \
   --nuclei-tags cve,exposure --nuclei-severity critical,high \
   --nuclei-update-templates \
+  --nuclei-include-custom \
+  --ffuf-wordlist /usr/share/wordlists/dirb/big.txt \
   --nmap-concurrency 6
 ```
 
-- `--proxy` : proxy HTTP/SOCKS pour les modules qui parlent HTTP.
-- `-H/--header` (répétable) : header brut `"Nom: Valeur"` ajouté à chaque requête.
-- `--nuclei-severity`, `--nuclei-exclude-severity`, `--nuclei-tags`, `--nuclei-exclude-tags`, `--nuclei-rate-limit`, `--nuclei-templates`, `--nuclei-update-templates` : contrôle fin du scanner de vulnérabilités.
-- `--nmap-concurrency` : nombre de scans nmap simultanés (défaut 4) ; baissez-le pour rester discret sur un engagement sensible.
+- `--proxy`: HTTP/SOCKS proxy for the modules that speak HTTP.
+- `-H/--header` (repeatable): raw header `"Name: Value"` added to every request.
+- `--nuclei-severity`, `--nuclei-exclude-severity`, `--nuclei-tags`, `--nuclei-exclude-tags`, `--nuclei-rate-limit`, `--nuclei-templates`, `--nuclei-update-templates`: fine-grained control of the vulnerability scanner.
+- `--nuclei-headless`: enable nuclei headless mode (browser-based templates).
+- `--nuclei-include-custom`: also run the ScanForge templates bundled in `templates/` (actuator, swagger, CORS misconfiguration, Go debug endpoints, WordPress debug log); located via `SCANFORGE_TEMPLATES_DIR`, `./templates` or next to the binary.
+- `--ffuf-wordlist`, `--ffuf-filter-codes`: override the ffuf wordlist (default `/usr/share/wordlists/dirb/common.txt`) and filter out status codes.
+- `--nmap-concurrency`: number of simultaneous nmap scans (default 4); lower it to stay discreet on a sensitive engagement.
 
 ---
 
-## 📊 Profils et presets intégrés
+## 📊 Built-in Profiles and Presets
 
-| Nom | Modules | Usage |
+| Name | Modules | Usage |
 | --- | --- | --- |
-| `safe` | subfinder, dnsx, httpx, tlsx | Vérification légère d'exposition. |
-| `recon` | safe + gau | Inventaire enrichi par les URL historiques. |
-| `passive` | subfinder, dnsx, httpx | Pipeline historique minimal. |
-| `ports` | subfinder, dnsx, naabu, nmap | Ports ouverts puis validation de services. |
-| `web` | subfinder, dnsx, httpx, whatweb, wafw00f, katana, jssecrets, nuclei | Analyse applicative, avec extraction des secrets JS. |
-| `vuln` | subfinder, dnsx, httpx, tlsx, nuclei | Détection ciblée de vulnérabilités. |
-| `deep` | Tous les modules (+ jssecrets) | Pipeline complet et bruyant. |
-| `full` | Tous les modules (+ jssecrets) | Profil complet compatible historique. |
+| `safe` | subfinder, dnsx, httpx, tlsx | Light exposure check. |
+| `recon` | safe + gau | Inventory enriched with historical URLs. |
+| `passive` | subfinder, dnsx, httpx | Minimal historical pipeline. |
+| `ports` | subfinder, dnsx, naabu, nmap | Open ports then service validation. |
+| `web` | subfinder, dnsx, httpx, whatweb, wafw00f, katana, jssecrets, attacksurface, techcve, httpcheck, payloadgen, nuclei | Application analysis: attack-surface consolidation, JS secrets, tech-to-CVE correlation, header checks and payload generation. |
+| `vuln` | subfinder, dnsx, httpx, tlsx, attacksurface, techcve, nuclei | Targeted vulnerability detection (tech-to-CVE + templates). |
+| `deep` | All modules (+ jssecrets) | Full and noisy pipeline. |
+| `full` | All modules (+ jssecrets) | Full profile, history-compatible. |
 
-Utilisez indifféremment `--preset safe` ou `--profile safe`. Avant un profil
-actif, contrôlez toujours son DAG avec `scanforge plan`.
+Use `--preset safe` or `--profile safe` interchangeably. Before any active
+profile, always review its DAG with `scanforge plan`.
 
 ---
 
-## 📂 Structure du Rapport Final
+## 📂 Final Report Structure
 
-À la fin de chaque scan, un dossier horodaté est créé sous `./runs/`. En plus des fichiers de logs bruts de chaque outil, ScanForge génère :
+At the end of each scan, a timestamped folder is created under `./runs/`. In addition to the raw logs of each tool, ScanForge generates:
 
-- `report.json` : Modèle structuré des actifs, ports, technologies et vulnérabilités.
-- `report.md` : Rapport synthétique lisible.
-- `00_meta/manifest.json` : Statut du run, modules, artefacts et métadonnées de scope.
-- `00_meta/commands.log` : Commandes externes préparées ou exécutées.
-- `00_meta/effective-scope.txt` : Copie canonique du scope réellement appliqué, avec sa source et son mode consignés dans le manifeste.
-- `00_meta/scope-rejections.jsonl` : Valeurs hors scope rejetées, lorsqu'il y en a.
-- `06_vulns/js-secrets.jsonl` : Secrets, buckets cloud, hôtes internes, emails et source maps détectés dans les JS crawlés (module `jssecrets`).
+- `report.json`: Structured model of assets, ports, technologies and vulnerabilities.
+- `report.md`: Readable synthetic report.
+- `00_meta/manifest.json`: Run status, modules, artifacts and scope metadata.
+- `00_meta/commands.log`: External commands prepared or executed.
+- `00_meta/effective-scope.txt`: Canonical copy of the scope actually applied, with its source and mode recorded in the manifest.
+- `00_meta/scope-rejections.jsonl`: Out-of-scope values rejected, when any.
+- `06_vulns/js-secrets.jsonl`: Secrets, cloud buckets, internal hosts, emails and source maps detected in crawled JS (module `jssecrets`).
+- `06_vulns/cve-findings.jsonl`: Vulnerable versions correlated from fingerprints (module `techcve`).
+- `06_vulns/http-checks.jsonl`: Missing security headers and cookie flags (module `httpcheck`).
+- `04_surface/attack-surface.txt`: Consolidated candidate URLs for scanning (module `attacksurface`).
+- `04_payloads/`: Generated wordlists for api paths, endpoints, parameters and per-technology endpoints (module `payloadgen`).
 
-> ScanForge doit uniquement être utilisé sur des actifs pour lesquels vous
-> disposez d'une autorisation explicite.
+> ScanForge must only be used on assets for which you have explicit
+> authorization.

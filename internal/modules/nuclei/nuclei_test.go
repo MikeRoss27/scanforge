@@ -30,22 +30,25 @@ func testRun(t *testing.T, root string) *storage.Run {
 	if err := os.MkdirAll(filepath.Join(root, "02_http"), 0755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "04_surface"), 0755); err != nil {
+		t.Fatal(err)
+	}
 	return &storage.Run{RootDir: root, CommandsLog: filepath.Join(root, "00_meta", "commands.log")}
 }
 
-func TestRequiresAliveURLs(t *testing.T) {
-	if got, want := New("").Requires(), []string{"alive_urls"}; !reflect.DeepEqual(got, want) {
+func TestRequiresAttackSurface(t *testing.T) {
+	if got, want := New("").Requires(), []string{"attack_surface_urls"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Requires() = %v, want %v", got, want)
 	}
 }
 
 func TestRunBuildsNucleiCommandWithDefaults(t *testing.T) {
 	run := testRun(t, t.TempDir())
-	if err := os.WriteFile(run.Path("02_http", "httpx.txt"), []byte("http://example.com\n"), 0644); err != nil {
+	if err := os.WriteFile(run.Path("04_surface", "attack-surface.txt"), []byte("http://example.com\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	runCtx := modules.NewRunContext("example.com", "web", false, run)
-	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{Name: "alive_urls", Type: "text", Path: "02_http/httpx.txt"}); err != nil {
+	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
 		t.Fatal(err)
 	}
 	executor := &recordingExecutor{}
@@ -65,7 +68,7 @@ func TestRunBuildsNucleiCommandWithDefaults(t *testing.T) {
 		t.Fatalf("command name = %q", cmd.Name)
 	}
 	args := strings.Join(cmd.Args, " ")
-	for _, want := range []string{"-l", "02_http/httpx.txt", "-severity", "low,medium,high,critical", "-rate-limit", "10", "-jsonl", "-silent"} {
+	for _, want := range []string{"-l", "04_surface/attack-surface.txt", "-severity", "low,medium,high,critical", "-rate-limit", "10", "-jsonl", "-silent"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("args %q missing %q", args, want)
 		}
@@ -77,11 +80,11 @@ func TestRunBuildsNucleiCommandWithDefaults(t *testing.T) {
 
 func TestRunAppliesNucleiOptionsProxyAndHeaders(t *testing.T) {
 	run := testRun(t, t.TempDir())
-	if err := os.WriteFile(run.Path("02_http", "httpx.txt"), []byte("http://example.com\n"), 0644); err != nil {
+	if err := os.WriteFile(run.Path("04_surface", "attack-surface.txt"), []byte("http://example.com\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	runCtx := modules.NewRunContext("example.com", "web", false, run)
-	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{Name: "alive_urls", Type: "text", Path: "02_http/httpx.txt"}); err != nil {
+	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
 		t.Fatal(err)
 	}
 	runCtx.Nuclei = modules.NucleiOptions{
@@ -109,11 +112,11 @@ func TestRunAppliesNucleiOptionsProxyAndHeaders(t *testing.T) {
 
 func TestRunExecutesTemplateUpdateFirst(t *testing.T) {
 	run := testRun(t, t.TempDir())
-	if err := os.WriteFile(run.Path("02_http", "httpx.txt"), []byte("http://example.com\n"), 0644); err != nil {
+	if err := os.WriteFile(run.Path("04_surface", "attack-surface.txt"), []byte("http://example.com\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	runCtx := modules.NewRunContext("example.com", "web", false, run)
-	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{Name: "alive_urls", Type: "text", Path: "02_http/httpx.txt"}); err != nil {
+	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
 		t.Fatal(err)
 	}
 	runCtx.Nuclei.UpdateTemplates = true
@@ -141,11 +144,11 @@ func (e *failingExecutor) Run(_ context.Context, command runner.Command) (*runne
 
 func TestRunMarksExitCodeFailure(t *testing.T) {
 	run := testRun(t, t.TempDir())
-	if err := os.WriteFile(run.Path("02_http", "httpx.txt"), []byte("http://example.com\n"), 0644); err != nil {
+	if err := os.WriteFile(run.Path("04_surface", "attack-surface.txt"), []byte("http://example.com\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	runCtx := modules.NewRunContext("example.com", "web", false, run)
-	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{Name: "alive_urls", Type: "text", Path: "02_http/httpx.txt"}); err != nil {
+	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
 		t.Fatal(err)
 	}
 	executor := &failingExecutor{}
@@ -159,10 +162,10 @@ func TestRunMarksExitCodeFailure(t *testing.T) {
 	}
 }
 
-func TestRunFailsWithoutAliveURLsArtifact(t *testing.T) {
+func TestRunFailsWithoutAttackSurfaceArtifact(t *testing.T) {
 	run := testRun(t, t.TempDir())
 	runCtx := modules.NewRunContext("example.com", "web", false, run)
 	if _, err := New("nuclei").Run(context.Background(), runCtx, &recordingExecutor{}); err == nil {
-		t.Fatal("expected error for missing alive_urls artifact")
+		t.Fatal("expected error for missing attack_surface_urls artifact")
 	}
 }

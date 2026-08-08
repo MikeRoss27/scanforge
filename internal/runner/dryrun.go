@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/MikeRoss27/scanforge/internal/ui"
 )
 
 type DryRunExecutor struct {
@@ -18,7 +20,7 @@ func NewDryRunExecutor(verbose bool) *DryRunExecutor {
 func (e *DryRunExecutor) Run(ctx context.Context, command Command) (*CommandResult, error) {
 	start := time.Now()
 
-	fmt.Println("$", command.Name, strings.Join(command.Args, " "))
+	fmt.Println(ui.CommandLine(command.Name + " " + strings.Join(command.Args, " ")))
 
 	if e.verbose {
 		if command.StdoutFile != "" {

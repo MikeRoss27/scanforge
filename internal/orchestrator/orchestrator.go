@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/runner"
 	scanScope "github.com/MikeRoss27/scanforge/internal/scope"
 	"github.com/MikeRoss27/scanforge/internal/storage"
-	"github.com/MikeRoss27/scanforge/internal/ui"
 )
 
 type Options struct {
@@ -31,9 +31,15 @@ type Options struct {
 	Headers []string
 	// Nuclei carries nuclei-specific tuning (severity, tags, rate limiting).
 	Nuclei modules.NucleiOptions
+	// Ffuf carries ffuf-specific tuning (wordlist, status-code filtering).
+	Ffuf modules.FfufOptions
 	// NmapConcurrency bounds how many nmap processes run at once.
 	NmapConcurrency int
 }
+
+// ErrRunAborted is returned when the run was intentionally aborted by the
+// user (TUI quit or signal) rather than failing due to module errors.
+var ErrRunAborted = errors.New("run aborted")
 
 type Orchestrator struct {
 	executor runner.Executor
@@ -70,6 +76,7 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	runCtx.Proxy = opts.Proxy
 	runCtx.Headers = opts.Headers
 	runCtx.Nuclei = opts.Nuclei
+	runCtx.Ffuf = opts.Ffuf
 	runCtx.NmapConcurrency = opts.NmapConcurrency
 
 	dag, err := BuildDAG(selectedModules)
@@ -91,22 +98,36 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 		readyModules := dag.NextReady(completed, availableArtifacts)
 
 		if len(readyModules) == 0 {
-			// This means we have a deadlock or unreachable modules due to failed dependencies.
-			// Instead of returning an error, we mark the remaining modules as "skipped"
-			// and gracefully finish the orchestration.
+			// This means we have a deadlock or unreachable modules due to failed
+			// dependencies (or the run was aborted). Instead of returning an
+			// error, we mark the remaining modules as "skipped" (or "aborted"
+			// when the context was cancelled) and gracefully finish the
+			// orchestration.
+			status := "skipped"
+			if ctx.Err() != nil {
+				status = "aborted"
+			}
 			if outChan != nil {
-				outChan <- DeadlockEvent{Message: "No more modules can be run (dependencies missing). Marking remaining as skipped."}
+				outChan <- DeadlockEvent{Message: "No more modules can be run (dependencies missing). Marking remaining as " + status + "."}
+			}
+			// A partially failed pipeline is the documented "skipped" behavior:
+			// only surface an error when nothing at all completed.
+			if ctx.Err() == nil && len(completed) == 0 {
+				runErrors = append(runErrors, fmt.Errorf("orchestration stopped: required artifacts are unavailable"))
 			}
 			for _, m := range selectedModules {
-				if !completed[m.Name()] {
-					results = append(results, &modules.Result{
-						Name:   m.Name(),
-						Status: "skipped",
-					})
-					completed[m.Name()] = true
+				if completed[m.Name()] {
+					continue
+				}
+				results = append(results, &modules.Result{
+					Name:   m.Name(),
+					Status: status,
+				})
+				completed[m.Name()] = true
+				if outChan != nil {
+					outChan <- ModuleDoneEvent{Name: m.Name(), Status: status}
 				}
 			}
-			runErrors = append(runErrors, fmt.Errorf("orchestration stopped: required artifacts are unavailable"))
 			break
 		}
 
@@ -134,21 +155,33 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 
 				result, err := m.Run(ctx, runCtx, o.executor)
 
+				// A module returning (nil, nil) violates the contract; treat it
+				// as a failure instead of letting a nil result panic downstream.
+				if result == nil && err == nil {
+					err = fmt.Errorf("module %q returned no result", m.Name())
+				}
+
 				status := "failed"
-				if err == nil && result != nil {
+				if err == nil {
 					status = result.Status
+				} else if errors.Is(err, context.Canceled) {
+					// User-initiated abort: not a module failure.
+					status = "aborted"
 				}
 				if outChan != nil {
-					outChan <- ModuleDoneEvent{Name: m.Name(), Status: status, Dur: time.Since(start), Failed: status != "completed"}
+					outChan <- ModuleDoneEvent{Name: m.Name(), Status: status, Dur: time.Since(start), Failed: status != "completed", Summary: moduleSummary(runCtx, m, result)}
 				}
 
 				if err != nil {
-					// Even if it failed, we want to record the result as failed
+					// Even if it failed, we want to record the result in a way
+					// that reflects what happened.
 					waveResults <- &modules.Result{
 						Name:   m.Name(),
-						Status: "failed",
+						Status: status,
 					}
-					waveErrors <- fmt.Errorf("module %q failed: %w", m.Name(), err)
+					if status != "aborted" {
+						waveErrors <- fmt.Errorf("module %q failed: %w", m.Name(), err)
+					}
 					return
 				}
 				waveResults <- result
@@ -169,8 +202,10 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 		if len(waveErrs) > 0 {
 			runErrors = append(runErrors, waveErrs...)
 			if opts.Verbose {
+				// Diagnostics go to stderr so they never corrupt a Bubble Tea
+				// render loop that owns stdout.
 				for _, e := range waveErrs {
-					ui.Error("Error in wave: %v", e)
+					fmt.Fprintf(os.Stderr, "ERROR: %v\n", e)
 				}
 			}
 		}
@@ -186,17 +221,22 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 			results = append(results, res)
 			completed[res.Name] = true
 
-			// Only add artifacts if the module completed successfully
-			if res.Status == "completed" {
-				for _, prod := range module.Produces() {
-					if _, ok := runCtx.GetArtifact(prod); !ok {
-						continue
-					}
+			// Register artifacts by what was actually published, not by the
+			// human-readable status: tools routinely exit non-zero (nmap on
+			// down hosts, dnsx on failed query batches) while still producing
+			// valid, scope-filtered output that dependents must consume.
+			for _, prod := range module.Produces() {
+				if _, ok := runCtx.GetArtifact(prod); ok {
 					availableArtifacts[prod] = true
 				}
 			}
 		}
 	}
 
+	// An explicit abort (user quit, signal) is reported distinctly from a
+	// failure so callers can map it to the appropriate exit code.
+	if ctx.Err() != nil {
+		return results, errors.Join(append(runErrors, ErrRunAborted)...)
+	}
 	return results, errors.Join(runErrors...)
 }

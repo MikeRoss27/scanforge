@@ -38,12 +38,13 @@ const (
 )
 
 type moduleRow struct {
-	name   string
-	state  moduleState
-	start  time.Time
-	status string
-	dur    time.Duration
-	failed bool
+	name    string
+	state   moduleState
+	start   time.Time
+	status  string
+	dur     time.Duration
+	failed  bool
+	summary string
 }
 
 type ScanModel struct {
@@ -105,6 +106,7 @@ func (m ScanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			row.status = msg.Status
 			row.dur = msg.Dur
 			row.failed = msg.Failed
+			row.summary = msg.Summary
 		}
 		return m, waitForEvent(m.eventChan)
 
@@ -171,6 +173,9 @@ func (m ScanModel) View() string {
 					statusText = ui.Red(row.status)
 				} else if row.status == "completed" {
 					statusText = ui.Green(row.status)
+				}
+				if row.summary != "" {
+					statusText += ui.Secondary(" · " + row.summary)
 				}
 
 				t.Row(ui.Bold(name), stateLabel, ui.Dim(dur), statusText)

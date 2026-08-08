@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,16 +20,21 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/doctor"
 	"github.com/MikeRoss27/scanforge/internal/initcmd"
 	"github.com/MikeRoss27/scanforge/internal/modules"
+	"github.com/MikeRoss27/scanforge/internal/modules/attacksurface"
 	"github.com/MikeRoss27/scanforge/internal/modules/dnsx"
 	"github.com/MikeRoss27/scanforge/internal/modules/ffuf"
 	"github.com/MikeRoss27/scanforge/internal/modules/gau"
+	"github.com/MikeRoss27/scanforge/internal/modules/httpcheck"
 	"github.com/MikeRoss27/scanforge/internal/modules/httpx"
 	"github.com/MikeRoss27/scanforge/internal/modules/jssecrets"
+	"github.com/MikeRoss27/scanforge/internal/modules/jsverify"
 	"github.com/MikeRoss27/scanforge/internal/modules/katana"
 	"github.com/MikeRoss27/scanforge/internal/modules/naabu"
 	"github.com/MikeRoss27/scanforge/internal/modules/nmap"
 	"github.com/MikeRoss27/scanforge/internal/modules/nuclei"
+	"github.com/MikeRoss27/scanforge/internal/modules/payloadgen"
 	"github.com/MikeRoss27/scanforge/internal/modules/subfinder"
+	"github.com/MikeRoss27/scanforge/internal/modules/techcve"
 	"github.com/MikeRoss27/scanforge/internal/modules/tlsx"
 	"github.com/MikeRoss27/scanforge/internal/modules/wafw00f"
 	"github.com/MikeRoss27/scanforge/internal/modules/whatweb"
@@ -72,6 +78,8 @@ type RunOptions struct {
 	Headers []string
 	// Nuclei carries nuclei-specific tuning (severity, tags, rate limiting).
 	Nuclei modules.NucleiOptions
+	// Ffuf carries ffuf-specific tuning (wordlist, status-code filtering).
+	Ffuf modules.FfufOptions
 	// NmapConcurrency bounds how many nmap processes run at once.
 	NmapConcurrency int
 }
@@ -85,6 +93,15 @@ type DoctorOptions struct {
 type InitOptions struct {
 	Force bool
 }
+
+// ExitCodeError carries a non-zero process exit code out of a command handler
+// so the entry point can honor it without os.Exit in library code (which
+// would skip defers and make the path untestable).
+type ExitCodeError struct {
+	Code int
+}
+
+func (e ExitCodeError) Error() string { return fmt.Sprintf("exit code %d", e.Code) }
 
 func (a *App) loadConfig() (*config.Config, error) {
 	return config.Load(config.ResolvePath(a.ConfigPath))
@@ -113,6 +130,7 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	manifestErr := session.finalizeManifest(results, runErr)
 	rep := session.generateReports()
 	printRunSummaryBox(session.scanRun, results, rep)
+	printFindingsTable(rep)
 
 	return errors.Join(runErr, manifestErr, session.reportErr)
 }
@@ -196,7 +214,7 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 	}
 
 	ascii.PrintBanner()
-	fmt.Println(ui.Dim("  by MikeRoss"))
+	fmt.Println(ui.Dim("  by MikeRoss · v" + version.Version))
 	fmt.Println()
 
 	printRunInfoPanel(s.opts, s.profile, s.scanRun, *s.effective)
@@ -229,12 +247,15 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 			Proxy:           s.opts.Proxy,
 			Headers:         s.opts.Headers,
 			Nuclei:          s.opts.Nuclei,
+			Ffuf:            s.opts.Ffuf,
 			NmapConcurrency: s.opts.NmapConcurrency,
 		}, eventChan)
 	}()
 
 	if err := s.consumeEvents(cancel, eventChan, done); err != nil {
-		return nil, err
+		// The TUI failed, but the orchestrator still ran: keep its results so
+		// the manifest and reports reflect what actually happened.
+		return results, errors.Join(runErr, err)
 	}
 	return results, runErr
 }
@@ -278,25 +299,37 @@ func drainEvents(eventChan <-chan orchestrator.Event) {
 func (s *runSession) printEvent(event orchestrator.Event) {
 	switch e := event.(type) {
 	case orchestrator.WaveStartEvent:
-		if s.opts.Verbose || !s.opts.DryRun {
-			ui.Info("Wave %d: %s", e.Wave, strings.Join(e.Modules, ", "))
-		}
+		fmt.Println(ui.WaveHeader(e.Wave, strings.Join(e.Modules, ", ")))
 	case orchestrator.ModuleStartEvent:
 		if s.opts.Verbose {
 			ui.Info("Running module %q...", e.Name)
 		}
 	case orchestrator.ModuleDoneEvent:
 		if s.opts.Verbose || !s.opts.DryRun {
-			msg := fmt.Sprintf("%s: %s (%s)", e.Name, e.Status, e.Dur.Round(time.Millisecond))
-			if e.Failed {
-				ui.Error("%s", msg)
-			} else {
-				ui.Success("%s", msg)
-			}
+			printModuleResult(e)
 		}
 	case orchestrator.DeadlockEvent:
 		ui.Warn("%s", e.Message)
 	}
+}
+
+// printModuleResult renders a compact, aligned completion line for a module,
+// e.g. "  ✓ subfinder      2.1s · 8 subdomains". When no artifacts were
+// produced (dry runs, failures) the line degrades to status + duration.
+func printModuleResult(e orchestrator.ModuleDoneEvent) {
+	mark := "✓"
+	color := ui.Green
+	if e.Failed {
+		mark = "✗"
+		color = ui.Red
+	}
+	name := color(ui.Bold(fmt.Sprintf("%-13s", e.Name)))
+	dur := ui.Dim(e.Dur.Round(time.Millisecond).String())
+	summary := ""
+	if e.Summary != "" {
+		summary = ui.Secondary(" · " + e.Summary)
+	}
+	fmt.Printf("  %s %s %s%s\n", color(mark), name, dur, summary)
 }
 
 // finalizeManifest records completion time, per-module results and the run
@@ -309,13 +342,18 @@ func (s *runSession) finalizeManifest(results []*modules.Result, runErr error) e
 			completedModules++
 		}
 	}
-	switch {
-	case runErr == nil && completedModules == len(results):
-		s.scanRun.Manifest.Status = "completed"
-	case completedModules == 0:
-		s.scanRun.Manifest.Status = "failed"
-	default:
-		s.scanRun.Manifest.Status = "partial"
+	// A user-initiated abort is recorded as such, not as a failure.
+	if errors.Is(runErr, orchestrator.ErrRunAborted) {
+		s.scanRun.Manifest.Status = "aborted"
+	} else {
+		switch {
+		case runErr == nil && completedModules == len(results):
+			s.scanRun.Manifest.Status = "completed"
+		case completedModules == 0:
+			s.scanRun.Manifest.Status = "failed"
+		default:
+			s.scanRun.Manifest.Status = "partial"
+		}
 	}
 
 	for _, result := range results {
@@ -350,8 +388,6 @@ func (s *runSession) generateReports() *report.Report {
 	if err := errors.Join(rep.WriteJSON(jsonPath), rep.WriteMarkdown(mdPath)); err != nil {
 		ui.Warn("Failed to write report: %v", err)
 		s.reportErr = err
-	} else {
-		report.PrintTerminalSummary(rep)
 	}
 	return rep
 }
@@ -419,6 +455,9 @@ func printRunSummaryBox(scanRun *storage.Run, results []*modules.Result, rep *re
 	fmt.Fprintf(&b, "%s\n", statusLine(scanRun.Manifest.Status))
 	fmt.Fprintf(&b, "%s\n", kv("DURATION", ui.Dim(duration)))
 	fmt.Fprintf(&b, "%s\n", kv("MODULES", ui.ProgressBar(completedCount, len(results), 20)))
+	if stats := formatRunStats(rep); stats != "" {
+		fmt.Fprintf(&b, "%s\n", kv("STATS", stats))
+	}
 	fmt.Fprintf(&b, "%s\n", kv("FINDINGS", formatSeverityCounts(countBySeverity(rep))))
 	if len(failedModules) > 0 {
 		fmt.Fprintf(&b, "%s\n", kv("FAILED", ui.Red(strings.Join(failedModules, ", "))))
@@ -426,6 +465,61 @@ func printRunSummaryBox(scanRun *storage.Run, results []*modules.Result, rep *re
 	fmt.Fprintf(&b, "%s", kv("OUTPUT", ui.Dim(scanRun.RootDir)))
 
 	fmt.Println(ui.PanelWith("🏁 SCAN SUMMARY", b.String(), border, border))
+}
+
+// printFindingsTable renders the severity-sorted findings table below the
+// summary box when the run produced any vulnerabilities.
+func printFindingsTable(rep *report.Report) {
+	if table := report.FormatFindingsTable(rep); table != "" {
+		fmt.Println()
+		fmt.Println(table)
+	}
+}
+
+// formatRunStats builds a compact one-line inventory of what the scan found,
+// e.g. "3 assets · 5 ports · 12 paths · nginx, React". Returns an empty
+// string when nothing was discovered so the summary box stays clean.
+func formatRunStats(rep *report.Report) string {
+	if rep == nil {
+		return ""
+	}
+
+	var assets, ports, paths int
+	techSet := make(map[string]bool)
+	for _, asset := range rep.Assets {
+		assets++
+		ports += len(asset.Ports)
+		paths += len(asset.Paths)
+		for _, t := range asset.Technologies {
+			techSet[t] = true
+		}
+	}
+
+	var parts []string
+	if assets > 0 {
+		parts = append(parts, fmt.Sprintf("%d asset(s)", assets))
+	}
+	if ports > 0 {
+		parts = append(parts, fmt.Sprintf("%d port(s)", ports))
+	}
+	if paths > 0 {
+		parts = append(parts, fmt.Sprintf("%d path(s)", paths))
+	}
+
+	techs := make([]string, 0, len(techSet))
+	for t := range techSet {
+		techs = append(techs, t)
+	}
+	sort.Strings(techs)
+	if len(techs) > 0 {
+		const maxTechs = 4
+		if len(techs) > maxTechs {
+			techs = append(techs[:maxTechs], "…")
+		}
+		parts = append(parts, ui.Secondary(strings.Join(techs, ", ")))
+	}
+
+	return strings.Join(parts, " · ")
 }
 
 func statusLine(status string) string {
@@ -482,10 +576,15 @@ func buildRegistry(cfg *config.Config) *modules.Registry {
 	registry.Register(wafw00f.New(cfg.ToolPath("wafw00f")))
 	registry.Register(katana.New(cfg.ToolPath("katana")))
 	registry.Register(jssecrets.New())
+	registry.Register(jsverify.New(cfg.ToolPath("chromium")))
+	registry.Register(attacksurface.New())
 	registry.Register(ffuf.New(cfg.ToolPath("ffuf")))
 	registry.Register(nuclei.New(cfg.ToolPath("nuclei")))
 	registry.Register(gau.New(cfg.ToolPath("gau")))
 	registry.Register(tlsx.New(cfg.ToolPath("tlsx")))
+	registry.Register(techcve.New())
+	registry.Register(httpcheck.New())
+	registry.Register(payloadgen.New())
 	return registry
 }
 
@@ -519,7 +618,7 @@ func (a *App) Doctor(ctx context.Context, opts DoctorOptions) error {
 	}
 
 	if exitCode != 0 {
-		os.Exit(exitCode)
+		return ExitCodeError{Code: exitCode}
 	}
 
 	return nil

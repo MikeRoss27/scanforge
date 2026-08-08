@@ -123,6 +123,9 @@ func (r *Run) WriteManifest() error {
 	return os.WriteFile(r.ManifestPath, data, 0644)
 }
 
+// safeTargetName turns a target into a filesystem-safe directory label. The
+// cleaned label must never be "." or ".." or contain a ".." path element,
+// otherwise filepath.Join could escape the workspace.
 func safeTargetName(target string) string {
 	target = strings.TrimSpace(target)
 	target = strings.TrimPrefix(target, "https://")
@@ -132,7 +135,7 @@ func safeTargetName(target string) string {
 	re := regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 	clean := re.ReplaceAllString(target, "_")
 
-	if clean == "" {
+	if clean == "" || clean == "." || clean == ".." || strings.Contains(clean, "..") {
 		return "target"
 	}
 

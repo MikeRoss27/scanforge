@@ -1,0 +1,39 @@
+id: scanforge-swagger-openapi-exposed
+
+info:
+  name: Swagger UI / OpenAPI Specification Exposed
+  author: ScanForge
+  severity: medium
+  description: An interactive API documentation interface or machine-readable OpenAPI specification is publicly reachable, mapping the full API attack surface for an attacker.
+  tags: exposure,swagger,openapi,api
+  reference:
+    - https://swagger.io/specification/
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/swagger-ui/index.html"
+      - "{{BaseURL}}/swagger-ui.html"
+      - "{{BaseURL}}/swagger/index.html"
+      - "{{BaseURL}}/v3/api-docs"
+      - "{{BaseURL}}/v2/api-docs"
+      - "{{BaseURL}}/openapi.json"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "swagger-ui"
+          - "Swagger UI"
+          - "SwaggerUIBundle"
+          - "openapi"
+          - "OpenAPI"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?i)(swagger-ui|openapi)[^<]{0,80}"

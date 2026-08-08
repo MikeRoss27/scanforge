@@ -1,0 +1,32 @@
+id: scanforge-spring-actuator-exposed
+
+info:
+  name: Spring Boot Actuator Exposed
+  author: ScanForge
+  severity: high
+  description: Spring Boot actuator endpoints are reachable without authentication, leaking configuration, environment secrets and runtime state (heap dumps, env, beans).
+  tags: exposure,spring,actuator,misconfig
+  reference:
+    - https://docs.spring.io/spring-boot/reference/actuator/index.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/actuator"
+      - "{{BaseURL}}/actuator/env"
+      - "{{BaseURL}}/actuator/heapdump"
+      - "{{BaseURL}}/actuator/beans"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: regex
+        part: body
+        regex:
+          - "(?i)activeProfiles|propertySources|spring-boot|_links.{0,40}health|heapdump"
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - '(?i)(activeProfiles|propertySources|spring\.application\.name)["'']?\s*:\s*[^,}]+'

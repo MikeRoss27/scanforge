@@ -32,6 +32,7 @@ type Tools struct {
 	Nuclei    string `yaml:"nuclei"`
 	Gau       string `yaml:"gau"`
 	Tlsx      string `yaml:"tlsx"`
+	Chromium  string `yaml:"chromium"`
 }
 
 func ResolvePath(explicitPath string) string {
@@ -76,11 +77,6 @@ func LoadResolved(explicitPath string) (*Config, string, error) {
 	if err != nil {
 		return nil, path, err
 	}
-
-	if _, err := os.Stat(path); err == nil {
-		return cfg, path, nil
-	}
-
 	return cfg, path, nil
 }
 
@@ -134,6 +130,10 @@ func (c *Config) ToolPath(name string) string {
 		if c.Tools.Tlsx != "" {
 			return c.Tools.Tlsx
 		}
+	case "chromium":
+		if c.Tools.Chromium != "" {
+			return c.Tools.Chromium
+		}
 	}
 
 	return name
@@ -162,6 +162,7 @@ tools:
   nuclei: nuclei
   gau: gau
   tlsx: tlsx
+  chromium: chromium
 
 # overrides for built-in profiles (safe, recon, web, ports, vuln, deep, full)
 # profiles:

@@ -1,6 +1,29 @@
 package storage
 
-import "testing"
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestSafeTargetNameRejectsTraversal(t *testing.T) {
+	for _, target := range []string{"..", ".", "../..", "a/../b", "https://../"} {
+		clean := safeTargetName(target)
+		if clean == "" || strings.Contains(clean, "/") || strings.Contains(clean, "..") {
+			t.Fatalf("safeTargetName(%q) = %q, must be a safe label", target, clean)
+		}
+		// Creating the run must never escape the workspace.
+		store := NewRunStore(t.TempDir())
+		run, err := store.Create(target)
+		if err != nil {
+			t.Fatalf("Create(%q) error = %v", target, err)
+		}
+		rel, err := filepath.Rel(store.Workspace, run.RootDir)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			t.Fatalf("Create(%q) wrote outside workspace: %q", target, run.RootDir)
+		}
+	}
+}
 
 func TestCreateUniqueRunDirectories(t *testing.T) {
 	store := NewRunStore(t.TempDir())

@@ -4,6 +4,8 @@ package nuclei
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -31,7 +33,7 @@ func (m *Module) Description() string {
 }
 
 func (m *Module) Requires() []string {
-	return []string{"alive_urls"}
+	return []string{"attack_surface_urls"}
 }
 
 func (m *Module) Produces() []string {
@@ -39,7 +41,7 @@ func (m *Module) Produces() []string {
 }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
-	inputArt, err := runCtx.MustArtifact("alive_urls")
+	inputArt, err := runCtx.MustArtifact("attack_surface_urls")
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +82,11 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		"-severity", severity,
 		"-rate-limit", strconv.Itoa(rateLimit),
 		"-jsonl",
+		"-matcher-status",
+		"-no-mhe",
+	}
+	if opts.Headless {
+		args = append(args, "-headless")
 	}
 	if opts.ExcludeSeverity != "" {
 		args = append(args, "-exclude-severity", opts.ExcludeSeverity)
@@ -92,6 +99,15 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 	if opts.TemplatesDir != "" {
 		args = append(args, "-t", opts.TemplatesDir)
+	}
+	if opts.IncludeCustomTemplates {
+		customDir := opts.CustomTemplatesDir
+		if customDir == "" {
+			customDir = defaultCustomTemplatesDir()
+		}
+		if customDir != "" {
+			args = append(args, "-t", customDir)
+		}
 	}
 	args = append(args, runCtx.ProxyArgs("-proxy")...)
 	args = append(args, runCtx.HeaderArgs("-H")...)
@@ -136,4 +152,32 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			"nuclei_stderr": "00_meta/nuclei.stderr.log",
 		},
 	}, nil
+}
+
+// defaultCustomTemplatesDir locates the bundled custom template directory via
+// SCANFORGE_TEMPLATES_DIR, the working directory or the executable directory,
+// or "" when absent.
+func defaultCustomTemplatesDir() string {
+	if fromEnv := os.Getenv("SCANFORGE_TEMPLATES_DIR"); fromEnv != "" {
+		if info, err := os.Stat(fromEnv); err == nil && info.IsDir() {
+			return fromEnv
+		}
+	}
+	for _, rel := range []string{"templates", filepath.Join("..", "templates")} {
+		if abs, err := filepath.Abs(rel); err == nil {
+			if info, err := os.Stat(abs); err == nil && info.IsDir() {
+				return abs
+			}
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		for _, rel := range []string{"templates", filepath.Join("..", "templates")} {
+			p := filepath.Join(dir, rel)
+			if info, err := os.Stat(p); err == nil && info.IsDir() {
+				return p
+			}
+		}
+	}
+	return ""
 }

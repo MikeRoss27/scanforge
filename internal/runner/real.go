@@ -73,11 +73,13 @@ func (e *RealExecutor) Run(ctx context.Context, command Command) (*CommandResult
 	}
 
 	if e.verbose {
+		// Diagnostics go to stderr so they never corrupt a Bubble Tea render
+		// loop that owns stdout.
 		if command.StdoutFile != "" {
-			fmt.Println("stdout:", command.StdoutFile)
+			fmt.Fprintln(os.Stderr, "stdout:", command.StdoutFile)
 		}
 		if command.StderrFile != "" {
-			fmt.Println("stderr:", command.StderrFile)
+			fmt.Fprintln(os.Stderr, "stderr:", command.StderrFile)
 		}
 	}
 

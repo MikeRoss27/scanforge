@@ -243,14 +243,19 @@ func Panel(title, body string) string {
 // ProgressBar renders a block-based progress bar with a count, e.g.
 // "█████░░░░░░░░░░░░░░░ 3/5". The bar turns green when complete.
 func ProgressBar(completed, total, width int) string {
+	if width <= 0 {
+		width = 20
+	}
 	if total <= 0 {
 		total = completed
 	}
+	if total <= 0 {
+		// Nothing to count (failed or empty run): render an empty bar instead
+		// of dividing by zero.
+		return fmt.Sprintf("%s 0/0", strings.Repeat("░", width))
+	}
 	if completed > total {
 		completed = total
-	}
-	if width <= 0 {
-		width = 20
 	}
 	filled := int(float64(completed) / float64(total) * float64(width))
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
@@ -259,6 +264,30 @@ func ProgressBar(completed, total, width int) string {
 		barStyle = lipgloss.NewStyle().Foreground(colorGreen)
 	}
 	return fmt.Sprintf("%s %d/%d", barStyle.Render(bar), completed, total)
+}
+
+// WaveHeader renders a full-width section header for an execution wave, e.g.
+// "────── Wave 1 · subfinder, dnsx ──────".
+func WaveHeader(wave int, modules string) string {
+	label := fmt.Sprintf("Wave %d", wave)
+	if modules != "" {
+		label += " · " + modules
+	}
+	head := lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(label)
+	width := terminalWidth()
+	fill := width - lipgloss.Width(head) - 4
+	if fill < 2 {
+		fill = 2
+	}
+	rule := lipgloss.NewStyle().Foreground(colorBorder).Render(strings.Repeat("─", fill))
+	return rule + " " + head + " " + rule
+}
+
+// CommandLine renders a shell command dimmed with a colored prompt, as used
+// by dry runs and the commands log.
+func CommandLine(command string) string {
+	prompt := lipgloss.NewStyle().Bold(true).Foreground(colorMagenta).Render("$")
+	return prompt + " " + lipgloss.NewStyle().Foreground(colorDim).Render(command)
 }
 
 // Table renders a bordered, header-having table, replacing

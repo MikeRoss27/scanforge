@@ -67,7 +67,7 @@ func TestRunBuildsWhatwebCommandWithProxyAndHeaders(t *testing.T) {
 			t.Errorf("args %q missing %q", args, want)
 		}
 	}
-	if _, ok := runCtx.GetArtifact("technologies_raw"); !ok {
-		t.Fatal("technologies_raw artifact was not published")
+	if _, ok := runCtx.GetArtifact("whatweb_raw"); !ok {
+		t.Fatal("whatweb_raw artifact was not published")
 	}
 }

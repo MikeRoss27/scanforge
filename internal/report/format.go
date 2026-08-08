@@ -21,9 +21,9 @@ func (r *Report) WriteJSON(path string) error {
 func (r *Report) WriteMarkdown(path string) error {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("# ScanForge Report: %s\n\n", r.Target))
-	b.WriteString(fmt.Sprintf("- **Profile:** %s\n", r.Profile))
-	b.WriteString(fmt.Sprintf("- **Status:** %s\n", r.Status))
+	b.WriteString(fmt.Sprintf("# ScanForge Report: %s\n\n", mdInline(r.Target)))
+	b.WriteString(fmt.Sprintf("- **Profile:** %s\n", mdInline(r.Profile)))
+	b.WriteString(fmt.Sprintf("- **Status:** %s\n", mdInline(r.Status)))
 	b.WriteString(fmt.Sprintf("- **Started:** %s\n", r.StartedAt.Format("2006-01-02 15:04:05")))
 	b.WriteString(fmt.Sprintf("- **Completed:** %s\n\n", r.CompletedAt.Format("2006-01-02 15:04:05")))
 
@@ -36,7 +36,7 @@ func (r *Report) WriteMarkdown(path string) error {
 
 	for _, name := range assetNames {
 		asset := r.Assets[name]
-		b.WriteString(fmt.Sprintf("## Asset: %s\n\n", asset.Name))
+		b.WriteString(fmt.Sprintf("## Asset: %s\n\n", mdInline(asset.Name)))
 
 		if len(asset.IPs) > 0 {
 			b.WriteString(fmt.Sprintf("**IPs:** %s\n\n", strings.Join(asset.IPs, ", ")))
@@ -95,26 +95,58 @@ func (r *Report) WriteMarkdown(path string) error {
 		if len(asset.Paths) > 0 {
 			b.WriteString("### Discovered Paths\n\n")
 			for _, p := range asset.Paths {
-				b.WriteString(fmt.Sprintf("- %s\n", p))
+				b.WriteString(fmt.Sprintf("- %s\n", mdInline(p)))
 			}
 			b.WriteString("\n")
 		}
 
 		if len(asset.Vulnerabilities) > 0 {
 			b.WriteString("### Vulnerabilities\n\n")
-			b.WriteString("| Severity | Template | Title |\n")
-			b.WriteString("|----------|----------|-------|\n")
+			b.WriteString("| Severity | Template | Title | Matched At | Evidence |\n")
+			b.WriteString("|----------|----------|-------|------------|----------|\n")
 			for _, v := range asset.Vulnerabilities {
-				b.WriteString(fmt.Sprintf("| %s | %s | %s |\n",
-					markdownCell(v.Severity), markdownCell(v.TemplateID), markdownCell(v.Title)))
+				b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+					markdownCell(v.Severity), markdownCell(v.TemplateID), markdownCell(v.Title),
+					markdownCell(v.MatchedAt), markdownCell(v.Evidence)))
 			}
 			b.WriteString("\n")
 		}
+	}
+
+	if len(r.JSVerified) > 0 {
+		b.WriteString("## JavaScript PoC Verification (jsverify)\n\n")
+		b.WriteString("| Verdict | Severity | Pattern | Page | Evidence |\n")
+		b.WriteString("|---------|----------|---------|------|----------|\n")
+		for _, v := range r.JSVerified {
+			b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+				markdownCell(v.Verdict), markdownCell(v.Severity), markdownCell(v.Pattern),
+				markdownCell(v.Page), markdownCell(v.Evidence)))
+		}
+		b.WriteString("\n")
 	}
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }
 
 func markdownCell(value string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(value, "|", "\\|"), "\n", " ")
+	return mdInline(value)
+}
+
+// mdInline neutralizes Markdown/HTML metacharacters in user-supplied strings
+// (targets, titles, evidence) so the report cannot be corrupted or inject
+// HTML. Pipes and newlines are handled for table cells; Backticks, "<" and
+// the emphasis chars are escaped so raw HTML/JS cannot pass through.
+func mdInline(value string) string {
+	replacer := strings.NewReplacer(
+		"\\", "\\\\",
+		"`", "\\`",
+		"*", "\\*",
+		"_", "\\_",
+		"[", "\\[",
+		"]", "\\]",
+		"<", "&lt;",
+		"|", "\\|",
+	)
+	value = replacer.Replace(value)
+	return strings.ReplaceAll(value, "\n", " ")
 }

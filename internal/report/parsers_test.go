@@ -3,6 +3,7 @@ package report
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -94,6 +95,28 @@ func TestParseTlsx(t *testing.T) {
 	}
 }
 
+func TestParseJSVerify(t *testing.T) {
+	content := `{"url":"https://example.com/app.js","kind":"dom-sink","pattern":"eval-call","severity":"high","payload":"alert(1)","verdict":"executed","evidence":"payload executed JavaScript (alert dialog with marker)"}
+{"url":"https://example.com/app.js","kind":"dom-sink","pattern":"html-assignment","severity":"high","payload":"<img src=x>","verdict":"sink-reached","evidence":""}
+{"url":"https://example.com/app.js","kind":"dom-sink","pattern":"location-assignment","severity":"medium","payload":"https://evil.example/","verdict":"not-observed","evidence":""}
+`
+	path := writeTempFile(t, content)
+
+	rep := NewReport("example.com", "test")
+	if err := ParseJSVerify(path, rep); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rep.JSVerified) != 2 {
+		t.Fatalf("JSVerified = %d, want 2 (not-observed dropped): %+v", len(rep.JSVerified), rep.JSVerified)
+	}
+	if rep.JSVerified[0].Verdict != "executed" || rep.JSVerified[1].Verdict != "sink-reached" {
+		t.Fatalf("unexpected verdicts: %+v", rep.JSVerified)
+	}
+	if rep.JSVerified[0].Payload != "alert(1)" {
+		t.Fatalf("payload not carried: %+v", rep.JSVerified[0])
+	}
+}
+
 func TestParseNmapCollection(t *testing.T) {
 	dir := t.TempDir()
 	xml := `<nmaprun><host><address addr="192.0.2.10" addrtype="ipv4"/><hostnames><hostname name="example.com"/></hostnames><ports><port protocol="tcp" portid="443"><state state="open"/><service name="https" product="nginx" version="1.25"/></port></ports></host></nmaprun>`
@@ -180,6 +203,41 @@ func TestParseNuclei(t *testing.T) {
 	}
 }
 
+func TestParseNucleiFiltersDedupsAndExtractsEvidence(t *testing.T) {
+	content := `{"template-id":"tpl-1","matched-at":"https://example.com/x","host":"https://example.com","info":{"name":"Real","severity":"high","description":"Desc"}}
+{"template-id":"tpl-1","matched-at":"https://example.com/x","host":"https://example.com","info":{"name":"Real","severity":"high"}}
+{"template-id":"tpl-2","matched-at":"https://example.com/x","host":"https://example.com","matcher-status":false,"info":{"name":"NoMatch","severity":"info"}}
+{"template-id":"tpl-3","matched-at":"https://example.com/y","host":"https://example.com","matcher-status":true,"extractor":["a=b","c=d"],"info":{"name":"Extracted","severity":"medium"}}
+`
+	path := writeTempFile(t, content)
+
+	rep := NewReport("example.com", "test")
+	if err := ParseNuclei(path, rep); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	asset := rep.GetOrCreateAsset("example.com")
+	if len(asset.Vulnerabilities) != 2 {
+		t.Fatalf("expected 2 vulns (dedup + no-match filtered), got %d", len(asset.Vulnerabilities))
+	}
+
+	var real, extracted *Vulnerability
+	for _, v := range asset.Vulnerabilities {
+		switch v.TemplateID {
+		case "tpl-1":
+			real = v
+		case "tpl-3":
+			extracted = v
+		}
+	}
+	if real == nil || real.Description != "Desc" {
+		t.Fatalf("bad deduplicated finding: %+v", real)
+	}
+	if extracted == nil || extracted.Evidence != "a=b; c=d" {
+		t.Fatalf("bad extractor evidence: %+v", extracted)
+	}
+}
+
 func TestParseJSSecrets(t *testing.T) {
 	content := `{"url":"https://example.com/app.js","kind":"secret","pattern":"aws-access-key-id","severity":"critical","match":"AKIAIOSFODNN7EXAMPLE"}
 {"url":"https://example.com/app.js","kind":"endpoint","pattern":"sensitive-api-endpoint","severity":"info","match":"/api/v1/admin/export"}
@@ -214,6 +272,49 @@ func TestParseJSSecrets(t *testing.T) {
 	}
 	if bucket == nil || bucket.Severity != "medium" || bucket.Title != "Cloud storage bucket referenced in JavaScript: aws-s3-bucket" {
 		t.Fatalf("bad cloud-storage vulnerability: %+v", bucket)
+	}
+}
+
+func TestParseJSDangerousPatternFindings(t *testing.T) {
+	content := `{"url":"https://example.com/app.js","kind":"dom-sink","pattern":"eval-call","severity":"high","match":"eval(userInput)","line":42,"snippet":"eval(userInput)","payloads":["alert(document.domain)"]}
+{"url":"https://example.com/app.js","kind":"proto-pollution","pattern":"proto-pollution-assignment","severity":"high","match":"obj.__proto__ = p","line":9,"snippet":"obj.__proto__ = p","payloads":["{\"__proto__\": {\"isAdmin\": true}}"]}
+{"url":"https://example.com/app.js","kind":"postmessage","pattern":"message-listener-no-origin-check","severity":"medium","match":"addEventListener(\\\"message\\\", fn)","line":3,"snippet":"addEventListener(\\\"message\\\", fn)","payloads":[]}
+`
+	path := writeTempFile(t, content)
+
+	rep := NewReport("example.com", "test")
+	if err := ParseJSSecrets(path, rep); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	asset := rep.GetOrCreateAsset("example.com")
+	if len(asset.Vulnerabilities) != 3 {
+		t.Fatalf("expected 3 vulnerabilities, got %d: %+v", len(asset.Vulnerabilities), asset.Vulnerabilities)
+	}
+
+	wantTitles := map[string]string{
+		"eval-call":                        "DOM XSS sink in JavaScript: eval-call",
+		"proto-pollution-assignment":       "Prototype pollution vector in JavaScript: proto-pollution-assignment",
+		"message-listener-no-origin-check": "Unvalidated postMessage usage in JavaScript: message-listener-no-origin-check",
+	}
+	byID := map[string]*Vulnerability{}
+	for _, v := range asset.Vulnerabilities {
+		byID[v.TemplateID] = v
+	}
+	for id, title := range wantTitles {
+		v, ok := byID[id]
+		if !ok {
+			t.Fatalf("missing vulnerability %q in %+v", id, byID)
+		}
+		if v.Title != title {
+			t.Errorf("title for %q = %q, want %q", id, v.Title, title)
+		}
+	}
+	if ev := byID["eval-call"].Evidence; !strings.Contains(ev, "PoC payloads") || !strings.Contains(ev, "alert(document.domain)") {
+		t.Fatalf("eval evidence should carry payloads, got %q", ev)
+	}
+	if ev := byID["message-listener-no-origin-check"].Evidence; strings.Contains(ev, "PoC payloads") {
+		t.Fatalf("payload-less finding should not show a payload section, got %q", ev)
 	}
 }
 

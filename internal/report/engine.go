@@ -3,16 +3,21 @@
 package report
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/storage"
 )
 
-// GenerateReport reads the manifest and runs appropriate parsers for each artifact.
+// GenerateReport reads the manifest and runs appropriate parsers for each
+// artifact. Parsing is best-effort: a corrupt or truncated tool output logs a
+// warning and is skipped, so one bad artifact never discards the whole report.
 func GenerateReport(runDir string, manifest *storage.RunManifest) (*Report, error) {
 	rep := NewReport(manifest.Target, manifest.Profile)
+	var warnings []error
 
 	if t, err := time.Parse(time.RFC3339, manifest.StartedAt); err == nil {
 		rep.StartedAt = t
@@ -23,59 +28,61 @@ func GenerateReport(runDir string, manifest *storage.RunManifest) (*Report, erro
 	rep.Status = manifest.Status
 
 	for key, relPath := range manifest.Outputs {
-		absPath := filepath.Join(runDir, relPath)
+		// Only ever parse files inside the run directory. relPath comes from
+		// the manifest, which modules write; an accidental traversal would
+		// otherwise read arbitrary files into the report.
+		absPath, err := runPath(runDir, relPath)
+		if err != nil {
+			warnings = append(warnings, err)
+			continue
+		}
 
 		switch key {
 		case "subfinder", "resolved_hosts":
-			if err := ParseHosts(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse %s: %w", key, err)
-			}
+			err = ParseHosts(absPath, rep)
 		case "open_ports":
-			if err := ParsePorts(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse ports: %w", err)
-			}
+			err = ParsePorts(absPath, rep)
 		case "httpx_raw":
-			if err := ParseHttpx(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse httpx: %w", err)
-			}
+			err = ParseHttpx(absPath, rep)
 		case "dnsx_raw":
-			if err := ParseDnsx(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse dnsx: %w", err)
-			}
+			err = ParseDnsx(absPath, rep)
 		case "tls_raw":
-			if err := ParseTlsx(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse tlsx: %w", err)
-			}
+			err = ParseTlsx(absPath, rep)
 		case "nmap_xml":
-			if err := ParseNmapCollection(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse nmap: %w", err)
-			}
+			err = ParseNmapCollection(absPath, rep)
 		case "whatweb_raw":
-			if err := ParseWhatWeb(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse whatweb: %w", err)
-			}
+			err = ParseWhatWeb(absPath, rep)
 		case "waf_raw":
-			if err := ParseWAF(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse wafw00f: %w", err)
-			}
+			err = ParseWAF(absPath, rep)
 		case "discovered_paths":
-			if err := ParseFfuf(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse ffuf: %w", err)
-			}
+			err = ParseFfuf(absPath, rep)
 		case "crawled_urls", "historical_urls":
-			if err := ParseKatana(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse katana: %w", err)
-			}
+			err = ParseKatana(absPath, rep)
 		case "js_secrets":
-			if err := ParseJSSecrets(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse JS secrets: %w", err)
-			}
+			err = ParseJSSecrets(absPath, rep)
+		case "js_verified":
+			err = ParseJSVerify(absPath, rep)
 		case "nuclei_raw":
-			if err := ParseNuclei(absPath, rep); err != nil {
-				return nil, fmt.Errorf("failed to parse nuclei: %w", err)
-			}
+			err = ParseNuclei(absPath, rep)
+		case "cve_findings":
+			err = ParseTechCVE(absPath, rep)
+		case "http_checks":
+			err = ParseHTTPChecks(absPath, rep)
+		}
+		if err != nil {
+			warnings = append(warnings, fmt.Errorf("failed to parse %s: %w", key, err))
 		}
 	}
 
-	return rep, nil
+	return rep, errors.Join(warnings...)
+}
+
+// runPath resolves a manifest-relative path inside runDir and rejects anything
+// that would escape it.
+func runPath(runDir, relPath string) (string, error) {
+	clean := filepath.Clean(relPath)
+	if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+		return "", fmt.Errorf("refusing manifest path %q outside the run directory", relPath)
+	}
+	return filepath.Join(runDir, clean), nil
 }

@@ -1,0 +1,34 @@
+id: scanforge-wordpress-debug-log-exposed
+
+info:
+  name: WordPress Debug Log Exposed
+  author: ScanForge
+  severity: high
+  description: wp-content/debug.log is publicly readable and exposes PHP errors, stack traces, SQL queries and sometimes credentials or internal paths.
+  tags: exposure,wordpress,logs
+  reference:
+    - https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-content/debug.log"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "PHP Fatal error"
+          - "PHP Warning"
+          - "PHP Notice"
+          - "WordPress database error"
+          - "Stack trace:"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - '(?m)^\[[^]]+\].{0,200}'

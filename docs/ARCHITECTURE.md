@@ -1,12 +1,12 @@
 # Architecture
 
-## Pipeline piloté par les artefacts
+## Artifact-driven pipeline
 
-Chaque module déclare les artefacts qu'il exige et produit. ScanForge construit
-un DAG, rejette les producteurs dupliqués, dépendances introuvables et cycles,
-puis exécute les modules prêts par vagues.
+Each module declares the artifacts it requires and produces. ScanForge builds
+a DAG, rejects duplicate producers, missing dependencies and cycles, then runs
+the ready modules in waves.
 
-Chaînes principales :
+Main chains:
 
 ```text
 subfinder → subdomains → dnsx → resolved_hosts
@@ -16,36 +16,36 @@ alive_urls → tlsx / whatweb / wafw00f / katana / ffuf / nuclei
 target → gau → historical_urls
 ```
 
-`scanforge plan TARGET --preset deep` affiche les vagues validées sans lancer
-d'outil ni créer de run.
+`scanforge plan TARGET --preset deep` displays the validated waves without
+running any tool or creating a run.
 
-## Frontière de sécurité
+## Security boundary
 
-Le scope effectif est construit dans la couche application et transmis au
-`RunContext`. Avant publication, les artefacts textuels contenant des hôtes,
-IP, ports ou URL sont filtrés centralement. Une valeur refusée n'atteint donc
-pas un module aval et est enregistrée dans le journal de rejets.
+The effective scope is built in the application layer and passed to the
+`RunContext`. Before publication, textual artifacts containing hosts, IPs,
+ports or URLs are centrally filtered. A rejected value therefore never reaches
+a downstream module and is recorded in the rejection log.
 
-Le mode `exact` conserve toujours la cible racine dans la sortie Subfinder afin
-que DNSX et HTTPX puissent poursuivre sans élargir implicitement le périmètre.
-Nmap reçoit les couples hôte/port validés produits par Naabu et lance des scans
-restreints à ces ports.
+The `exact` mode always keeps the root target in the Subfinder output so that
+DNSX and HTTPX can continue without implicitly widening the perimeter. Nmap
+receives the validated host/port pairs produced by Naabu and runs scans
+restricted to those ports.
 
-## Organisation des sorties
+## Output organization
 
-Un run est stocké sous `runs/<cible>/<horodatage>/` :
+A run is stored under `runs/<target>/<timestamp>/`:
 
 ```text
-00_meta/       manifeste, commandes, stderr, scope et rejets
-01_subdomains/ résultats Subfinder et DNS
-02_http/       sondes HTTP et enrichissements TLS
-03_ports/      résultats Naabu et XML Nmap
-04_web/        technologies et détection WAF
-05_content/    crawl, URL historiques et fuzzing
-06_vulns/      résultats Nuclei
-report.json    rapport normalisé
-report.md      synthèse lisible
+00_meta/       manifest, commands, stderr, scope and rejections
+01_subdomains/ Subfinder and DNS results
+02_http/       HTTP probes and TLS enrichments
+03_ports/      Naabu results and Nmap XML
+04_web/        technologies and WAF detection
+05_content/    crawl, historical URLs and fuzzing
+06_vulns/      Nuclei results
+report.json    normalized report
+report.md      readable summary
 ```
 
-Le manifeste distingue les états `completed`, `partial` et `failed`, référence
-les artefacts produits et conserve la source du scope pour audit.
+The manifest distinguishes the `completed`, `partial` and `failed` states,
+references the produced artifacts and keeps the scope source for audit.

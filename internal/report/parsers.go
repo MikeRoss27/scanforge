@@ -242,6 +242,7 @@ func ParseNuclei(path string, report *Report) error {
 	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
+	seen := make(map[string]struct{})
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -249,12 +250,15 @@ func ParseNuclei(path string, report *Report) error {
 		}
 
 		var record struct {
-			TemplateID string `json:"template-id"`
-			MatchedAt  string `json:"matched-at"`
-			Host       string `json:"host"`
-			Info       struct {
+			TemplateID    string   `json:"template-id"`
+			MatchedAt     string   `json:"matched-at"`
+			Host          string   `json:"host"`
+			MatcherStatus *bool    `json:"matcher-status"`
+			Extractor     []string `json:"extractor"`
+			Info          struct {
 				Name           string   `json:"name"`
 				Severity       string   `json:"severity"`
+				Description    string   `json:"description"`
 				Tags           []string `json:"tags"`
 				References     []string `json:"reference"`
 				Classification struct {
@@ -267,27 +271,123 @@ func ParseNuclei(path string, report *Report) error {
 			continue
 		}
 
+		// Matcher-status false records mean the template did not actually
+		// match (e.g. multiple matchers with OR semantics); keep only true.
+		if record.MatcherStatus != nil && !*record.MatcherStatus {
+			continue
+		}
+
 		host := normalizeAssetName(record.Host)
 		if host == "" {
 			host = normalizeAssetName(record.MatchedAt)
 		}
-
-		if host != "" {
-			asset := report.GetOrCreateAsset(host)
-			asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
-				Source:     "nuclei",
-				TemplateID: record.TemplateID,
-				Title:      record.Info.Name,
-				Severity:   record.Info.Severity,
-				MatchedAt:  record.MatchedAt,
-				Tags:       record.Info.Tags,
-				CVEs:       record.Info.Classification.CVE,
-				CWEs:       record.Info.Classification.CWE,
-				References: record.Info.References,
-			})
+		if host == "" {
+			continue
 		}
+
+		// The same template+host+path combination can fire repeatedly across
+		// waves or retries; keep the first occurrence per combination.
+		dedupKey := record.TemplateID + "|" + host + "|" + record.MatchedAt
+		if _, ok := seen[dedupKey]; ok {
+			continue
+		}
+		seen[dedupKey] = struct{}{}
+
+		title := record.Info.Name
+		if title == "" {
+			title = record.TemplateID
+		}
+
+		asset := report.GetOrCreateAsset(host)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+			Source:      "nuclei",
+			TemplateID:  record.TemplateID,
+			Title:       title,
+			Description: record.Info.Description,
+			Severity:    record.Info.Severity,
+			MatchedAt:   record.MatchedAt,
+			Evidence:    strings.Join(record.Extractor, "; "),
+			Tags:        record.Info.Tags,
+			CVEs:        record.Info.Classification.CVE,
+			CWEs:        record.Info.Classification.CWE,
+			References:  record.Info.References,
+		})
 	}
 	return scanner.Err()
+}
+
+// ParseTechCVE parses the techcve module's version-based CVE findings.
+func ParseTechCVE(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			Host      string `json:"host"`
+			CVEID     string `json:"cve_id"`
+			Title     string `json:"title"`
+			Severity  string `json:"severity"`
+			Reference string `json:"reference"`
+			Note      string `json:"note"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.Host == "" || record.CVEID == "" {
+			return
+		}
+		asset := report.GetOrCreateAsset(normalizeAssetName(record.Host))
+		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+			Source:      "techcve",
+			TemplateID:  record.CVEID,
+			Title:       record.Title,
+			Severity:    record.Severity,
+			MatchedAt:   record.Host,
+			Description: record.Note,
+			References:  []string{record.Reference},
+		})
+	})
+}
+
+// ParseHTTPChecks parses the httpcheck module's hardening-gap findings.
+func ParseHTTPChecks(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			URL      string `json:"url"`
+			Check    string `json:"check"`
+			Severity string `json:"severity"`
+			Detail   string `json:"detail"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.URL == "" || record.Check == "" {
+			return
+		}
+		host := normalizeAssetName(record.URL)
+		if host == "" {
+			return
+		}
+		asset := report.GetOrCreateAsset(host)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+			Source:      "httpcheck",
+			TemplateID:  record.Check,
+			Title:       httpCheckTitle(record.Check),
+			Severity:    record.Severity,
+			MatchedAt:   record.URL,
+			Description: record.Detail,
+		})
+	})
+}
+
+// httpCheckTitle maps a check identifier to a human-readable title.
+func httpCheckTitle(check string) string {
+	titles := map[string]string{
+		"missing-csp":                "Missing Content-Security-Policy header",
+		"clickjacking-unprotected":   "Clickjacking not mitigated (no frame-ancestors/X-Frame-Options)",
+		"missing-hsts":               "Missing Strict-Transport-Security header",
+		"missing-x-frame-options":    "Missing X-Frame-Options header",
+		"missing-nosniff":            "Missing X-Content-Type-Options: nosniff",
+		"missing-referrer-policy":    "Missing Referrer-Policy header",
+		"missing-permissions-policy": "Missing Permissions-Policy header",
+		"cookie-without-secure":      "Cookie not marked Secure",
+		"cookie-without-httponly":    "Cookie not marked HttpOnly",
+	}
+	if title, ok := titles[check]; ok {
+		return title
+	}
+	return check
 }
 
 func ParseDnsx(path string, report *Report) error {
@@ -367,11 +467,13 @@ func ParseTlsx(path string, report *Report) error {
 func ParseJSSecrets(path string, report *Report) error {
 	return scanJSONLines(path, func(line []byte) {
 		var record struct {
-			URL      string `json:"url"`
-			Kind     string `json:"kind"`
-			Pattern  string `json:"pattern"`
-			Severity string `json:"severity"`
-			Match    string `json:"match"`
+			URL      string   `json:"url"`
+			Kind     string   `json:"kind"`
+			Pattern  string   `json:"pattern"`
+			Severity string   `json:"severity"`
+			Match    string   `json:"match"`
+			Snippet  string   `json:"snippet"`
+			Payloads []string `json:"payloads"`
 		}
 		if json.Unmarshal(line, &record) != nil || record.URL == "" {
 			return
@@ -387,13 +489,20 @@ func ParseJSSecrets(path string, report *Report) error {
 			return
 		}
 
+		evidence := record.Match
+		if record.Snippet != "" {
+			evidence = record.Snippet
+		}
+		if len(record.Payloads) > 0 {
+			evidence += "\n\nPoC payloads:\n- " + strings.Join(record.Payloads, "\n- ")
+		}
 		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
 			Source:     "jssecrets",
 			TemplateID: record.Pattern,
 			Title:      jsFindingTitle(record.Kind, record.Pattern),
 			Severity:   record.Severity,
 			MatchedAt:  record.URL,
-			Evidence:   record.Match,
+			Evidence:   evidence,
 		})
 	})
 }
@@ -408,9 +517,35 @@ func jsFindingTitle(kind, pattern string) string {
 		return "Email address exposed in JavaScript"
 	case "source-map":
 		return "Source map exposed (leaks original source code)"
+	case "dom-sink":
+		return "DOM XSS sink in JavaScript: " + pattern
+	case "node-sink":
+		return "Server-side Node.js API in JavaScript: " + pattern
+	case "proto-pollution":
+		return "Prototype pollution vector in JavaScript: " + pattern
+	case "postmessage":
+		return "Unvalidated postMessage usage in JavaScript: " + pattern
+	case "env-leak":
+		return "Environment variable access in JavaScript: " + pattern
 	default:
 		return "Exposed secret in JavaScript: " + pattern
 	}
+}
+
+// ParseJSVerify loads the jsverify module's replay verdicts into the report.
+// Only actionable outcomes (executed, sink-reached) are kept so the report
+// highlights confirmed sinks rather than the full not-observed backlog.
+func ParseJSVerify(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record VerifiedFinding
+		if json.Unmarshal(line, &record) != nil || record.URL == "" {
+			return
+		}
+		if record.Verdict != "executed" && record.Verdict != "sink-reached" {
+			return
+		}
+		report.JSVerified = append(report.JSVerified, record)
+	})
 }
 
 func ParseNmapCollection(path string, report *Report) error {

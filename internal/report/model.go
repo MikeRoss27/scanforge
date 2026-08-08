@@ -12,6 +12,22 @@ type Report struct {
 	CompletedAt time.Time         `json:"completed_at"`
 	Status      string            `json:"status"`
 	Assets      map[string]*Asset `json:"assets"` // Key is the host/subdomain
+	// JSVerified holds the jsverify module's replay verdicts, one entry per
+	// attempted PoC payload (executed / sink-reached / not-observed).
+	JSVerified []VerifiedFinding `json:"js_verified,omitempty"`
+}
+
+// VerifiedFinding is the outcome of replaying one jssecrets PoC payload in a
+// headless browser.
+type VerifiedFinding struct {
+	URL      string `json:"url"`
+	Page     string `json:"page"`
+	Kind     string `json:"kind"`
+	Pattern  string `json:"pattern"`
+	Severity string `json:"severity"`
+	Payload  string `json:"payload"`
+	Verdict  string `json:"verdict"`
+	Evidence string `json:"evidence,omitempty"`
 }
 
 // Asset represents a single host or subdomain discovered during the scan.
@@ -65,16 +81,17 @@ type TLSService struct {
 
 // Vulnerability represents a security finding.
 type Vulnerability struct {
-	Source     string   `json:"source"`
-	TemplateID string   `json:"template_id"`
-	Title      string   `json:"title"`
-	Severity   string   `json:"severity"`
-	MatchedAt  string   `json:"matched_at"`
-	Evidence   string   `json:"evidence,omitempty"`
-	Tags       []string `json:"tags,omitempty"`
-	CVEs       []string `json:"cves,omitempty"`
-	CWEs       []string `json:"cwes,omitempty"`
-	References []string `json:"references,omitempty"`
+	Source      string   `json:"source"`
+	TemplateID  string   `json:"template_id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description,omitempty"`
+	Severity    string   `json:"severity"`
+	MatchedAt   string   `json:"matched_at"`
+	Evidence    string   `json:"evidence,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	CVEs        []string `json:"cves,omitempty"`
+	CWEs        []string `json:"cwes,omitempty"`
+	References  []string `json:"references,omitempty"`
 }
 
 func NewReport(target, profile string) *Report {

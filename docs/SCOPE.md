@@ -1,24 +1,24 @@
-# Gestion du scope
+# Scope management
 
-Le scope est toujours obligatoire comme garde-fou, mais le fichier
-`scope.txt` ne l'est pas. ScanForge résout un périmètre effectif avant de créer
-un run, puis filtre les artefacts transmis entre modules.
+Scope is always mandatory as a safety guard, but the `scope.txt` file is not.
+ScanForge resolves an effective perimeter before creating a run, then filters
+the artifacts passed between modules.
 
-## Scope implicite
+## Implicit scope
 
-Sans fichier applicable, le mode `exact` autorise uniquement la cible :
+Without an applicable file, the `exact` mode only allows the target:
 
 ```bash
 scanforge plan example.com --scope-mode exact
 ```
 
-Le mode `domain` autorise la racine et ses sous-domaines :
+The `domain` mode allows the root domain and its subdomains:
 
 ```bash
 scanforge plan example.com --scope-mode domain
 ```
 
-Ajoutez ou excluez des entrées avec des options répétables :
+Add or exclude entries with repeatable options:
 
 ```bash
 scanforge run example.com --scope-mode domain \
@@ -28,12 +28,12 @@ scanforge run example.com --scope-mode domain \
   --exclude '*.legacy.example.com'
 ```
 
-Les exclusions sont prioritaires. Les CIDR sont acceptés uniquement comme
-ajouts explicites ; le mode `domain` refuse les IP, CIDR et noms mono-label.
+Exclusions take priority. CIDRs are only accepted as explicit additions; the
+`domain` mode rejects IPs, CIDRs and single-label names.
 
-## Fichier de scope
+## Scope file
 
-Un fichier accepte les hôtes, wildcards, CIDR et exclusions préfixées par `!` :
+A file accepts hosts, wildcards, CIDRs and exclusions prefixed with `!`:
 
 ```text
 example.com
@@ -43,23 +43,23 @@ example.com
 !*.legacy.example.com
 ```
 
-Utilisez-le explicitement avec `--scope scope-client.txt`, ou configurez
-`default_scope`. Un fichier fourni par `--scope` est strict : si la cible n'est
-pas autorisée, le run échoue sans fallback. Il ne peut pas être combiné avec
-`--scope-mode`, `--scope-add` ou `--exclude`.
+Use it explicitly with `--scope scope-client.txt`, or configure
+`default_scope`. A file provided via `--scope` is strict: if the target is not
+allowed, the run fails without fallback. It cannot be combined with
+`--scope-mode`, `--scope-add` or `--exclude`.
 
-Si le fichier configuré par défaut est absent ou ne couvre pas la cible,
-ScanForge propose un scope implicite et demande confirmation. Un fichier valide
-qui couvre la cible ne nécessite pas de confirmation supplémentaire.
+If the default configured file is missing or does not cover the target,
+ScanForge proposes an implicit scope and asks for confirmation. A valid file
+that covers the target does not require additional confirmation.
 
-## Traçabilité et CI
+## Traceability and CI
 
-Chaque run conserve :
+Each run keeps:
 
-- `00_meta/effective-scope.txt` : règles réellement appliquées ;
-- `scope_source` et `scope_mode` dans le manifeste ;
-- `00_meta/scope-rejections.jsonl` : valeurs rejetées.
+- `00_meta/effective-scope.txt`: rules actually applied;
+- `scope_source` and `scope_mode` in the manifest;
+- `00_meta/scope-rejections.jsonl`: rejected values.
 
-En CI, prévisualisez avec `plan`, puis passez `--confirm-scope` uniquement pour
-un scope implicite. Cette option confirme le périmètre affiché ; elle ne
-désactive jamais le filtrage.
+In CI, preview with `plan`, then pass `--confirm-scope` only for an implicit
+scope. This option confirms the displayed perimeter; it never disables
+filtering.

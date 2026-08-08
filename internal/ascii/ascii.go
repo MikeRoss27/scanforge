@@ -8,9 +8,9 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/ui"
 )
 
-// Bannières disponibles
+// Available banners
 const (
-	// Style 1 : Blocs Unicode gras (issu de ascii.txt)
+	// Style 1: bold Unicode blocks (from ascii.txt)
 	BannerBlocks = `
    ▄████████  ▄████████    ▄████████ ███▄▄▄▄      ▄████████  ▄██████▄     ▄████████    ▄██████▄     ▄████████
   ███    ███ ███    ███   ███    ███ ███▀▀▀██▄   ███    ███ ███    ███   ███    ███   ███    ███   ███    ███
@@ -22,7 +22,7 @@ const (
  ▄████████▀  ████████▀    ███    █▀   ▀█   █▀    ███         ▀██████▀    ███    ███   ████████▀    ██████████
                                                                           ███    ███`
 
-	// Style 2 : Classic Slant très lisible
+	// Style 2: classic slant, very readable
 	BannerClassic = `
    _____                 ______                       
   / ___/_________ _____ / ____/___  _________ ____  
@@ -31,7 +31,7 @@ const (
 /____/\___/\__,_/_/ /_/_/    \____/_/   \__, /\___/  
                                        /____/       `
 
-	// Style 3 : 3D Ombré (issu de ascii.txt)
+	// Style 3: 3D shaded (from ascii.txt)
 	BannerSlanted = `
   ______    ______    ______   __    __  ________  ______   _______    ______   ________
  /      \  /      \  /      \ /  \  /  |/        |/      \ /       \  /      \ /        |
@@ -44,10 +44,9 @@ $$    $$/ $$    $$/ $$ |  $$ |$$ | $$$ |$$ |     $$    $$/ $$ |  $$ |$$    $$/ $
  $$$$$$/   $$$$$$/  $$/   $$/ $$/   $$/ $$/       $$$$$$/  $$/   $$/  $$$$$$/  $$$$$$$$/`
 )
 
-// PrintBanner affiche la bannière "Blocks" avec un dégradé cyan → magenta
-// constant, pour une identité visuelle cohérente à chaque exécution (le choix
-// aléatoire de bannière et de dégradé rendait la marque instable d'un run à
-// l'autre).
+// PrintBanner prints the "Blocks" banner with a constant cyan → magenta
+// gradient, for a consistent visual identity on every run (random banner and
+// gradient selection made the branding unstable from one run to the next).
 func PrintBanner() {
 	for _, line := range strings.Split(BannerBlocks, "\n") {
 		if strings.TrimSpace(line) == "" {

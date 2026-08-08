@@ -18,10 +18,11 @@ type ModuleStartEvent struct {
 }
 
 type ModuleDoneEvent struct {
-	Name   string
-	Status string
-	Dur    time.Duration
-	Failed bool
+	Name    string
+	Status  string
+	Dur     time.Duration
+	Failed  bool
+	Summary string
 }
 
 type DeadlockEvent struct {

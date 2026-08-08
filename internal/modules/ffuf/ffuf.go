@@ -34,10 +34,14 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 	inputFile := runCtx.Run.Path(inputArt.Path)
 
-	wordlist := "/usr/share/wordlists/dirb/common.txt"
+	opts := runCtx.Ffuf
+	wordlist := opts.Wordlist
+	if wordlist == "" {
+		wordlist = "/usr/share/wordlists/dirb/common.txt"
+	}
 	if !runCtx.DryRun {
 		if _, err := os.Stat(wordlist); os.IsNotExist(err) {
-			return nil, fmt.Errorf("default wordlist not found: %s", wordlist)
+			return nil, fmt.Errorf("wordlist not found: %s", wordlist)
 		}
 	}
 
@@ -52,6 +56,9 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		"-o", outputFile,
 		"-of", "json",
 		"-mc", "200,301,302,403",
+	}
+	if opts.FilterCodes != "" {
+		args = append(args, "-fc", opts.FilterCodes)
 	}
 	args = append(args, runCtx.ProxyArgs("-x")...)
 	args = append(args, runCtx.HeaderArgs("-H")...)

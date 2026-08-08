@@ -1,0 +1,30 @@
+id: scanforge-go-debug-endpoints-exposed
+
+info:
+  name: Go Debug Endpoints Exposed
+  author: ScanForge
+  severity: high
+  description: Go pprof/expvar debug endpoints are publicly reachable, exposing goroutine dumps, heap state and process variables that help an attacker profile and break the service.
+  tags: exposure,debug,golang
+  reference:
+    - https://pkg.go.dev/net/http/pprof
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/debug/pprof/"
+      - "{{BaseURL}}/debug/pprof/cmdline"
+      - "{{BaseURL}}/debug/vars"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "goroutine"
+          - "cmdline"
+          - "heap"
+          - "profil"
+        condition: or

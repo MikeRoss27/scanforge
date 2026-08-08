@@ -5,8 +5,11 @@ import (
 	"strings"
 )
 
+// AppendCommandLog records the command line of every executed step. The file
+// holds full command lines including auth headers (Cookie/Authorization), so
+// it is created 0600 to keep credentials away from other local users.
 func AppendCommandLog(path string, command Command) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return err
 	}

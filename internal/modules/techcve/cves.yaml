@@ -1,0 +1,85 @@
+# Version-based CVE correlation dataset for the techcve module.
+#
+# A tech entry matches when the detected version is >= min-version and
+# < max-version (bounds are inclusive/exclusive). Omitting min-version means
+# "any version below max-version"; omitting max-version means "any version at
+# or above min-version". This file is a curated starter set — extend it with
+# entries relevant to the targets you assess.
+
+- id: CVE-2020-11022
+  tech: jquery
+  title: XSS in jQuery's htmlPrefilter (HTML manipulation sanitization)
+  severity: medium
+  max-version: "3.5.0"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2020-11022
+
+- id: CVE-2022-31160
+  tech: jquery-ui
+  title: XSS in jQuery UI dialog and tooltip widgets
+  severity: medium
+  max-version: "1.13.2"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2022-31160
+
+- id: CVE-2023-25690
+  tech: apache
+  title: HTTP request splitting/smuggling via mod_proxy
+  severity: high
+  max-version: "2.4.56"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2023-25690
+
+- id: CVE-2023-42795
+  tech: tomcat
+  title: Request smuggling with HTTP/1.1 chunked encoding
+  severity: high
+  min-version: "9.0.0"
+  max-version: "9.0.81"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2023-42795
+
+- id: CVE-2023-42795
+  tech: tomcat
+  title: Request smuggling with HTTP/1.1 chunked encoding
+  severity: high
+  min-version: "10.0.0"
+  max-version: "10.1.18"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2023-42795
+
+- id: CVE-2023-44487
+  tech: nginx
+  title: HTTP/2 Rapid Reset denial of service (amplified reset stream handling)
+  severity: high
+  max-version: "1.25.3"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2023-44487
+
+- id: CVE-2023-3824
+  tech: php
+  title: Heap buffer overflow in phar_dir_read (phar archive parsing)
+  severity: high
+  min-version: "8.0.0"
+  max-version: "8.2.8"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2023-3824
+
+- id: CVE-2024-4577
+  tech: php
+  title: Argument injection in PHP-CGI on Windows (best-fit codepage)
+  severity: high
+  min-version: "8.2.0"
+  max-version: "8.2.19"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2024-4577
+  note: Only exploitable on Windows with PHP-CGI enabled
+
+- id: CVE-2024-4577
+  tech: php
+  title: Argument injection in PHP-CGI on Windows (best-fit codepage)
+  severity: high
+  min-version: "8.3.0"
+  max-version: "8.3.6"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2024-4577
+  note: Only exploitable on Windows with PHP-CGI enabled
+
+- id: CVE-2024-22362
+  tech: drupal
+  title: Access bypass on Drupal core (file system API)
+  severity: high
+  min-version: "10.0.0"
+  max-version: "10.2.2"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2024-22362
