@@ -26,6 +26,12 @@ import (
 // scans noisier (more simultaneous connections) than a pentester may want.
 const defaultConcurrency = 4
 
+// maxPortsPerCommand caps how many ports one nmap invocation scans. A single
+// -p list with hundreds of ports pushes past ARG_MAX on some systems and
+// slows the host's own TCP stack down, so oversized lists are chunked into
+// several per-host scans instead.
+const maxPortsPerCommand = 250
+
 type Module struct {
 	binary string
 }
@@ -87,43 +93,49 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			base := fmt.Sprintf("host-%04d", i+1)
-			cmd := runner.Command{
-				Name: m.binary,
-				Args: []string{
-					"-p", joinPorts(target.Ports),
-					"-oX", filepath.Join(outputDir, base+".xml"),
-					"-oN", filepath.Join(outputDir, base+".txt"),
-					"-sV",
-					"-T4",
-				},
-				Timeout:    1 * time.Hour,
-				StdoutFile: filepath.Join(outputDir, base+".stdout.log"),
-				StderrFile: filepath.Join(outputDir, base+".stderr.log"),
-			}
-			if ip := net.ParseIP(target.Host); ip != nil && ip.To4() == nil {
-				cmd.Args = append(cmd.Args, "-6")
-			}
-			cmd.Args = append(cmd.Args, target.Host)
+			chunks := chunkPorts(target.Ports)
+			for ci, chunk := range chunks {
+				base := fmt.Sprintf("host-%04d", i+1)
+				if len(chunks) > 1 {
+					base = fmt.Sprintf("host-%04d-%d", i+1, ci+1)
+				}
+				cmd := runner.Command{
+					Name: m.binary,
+					Args: []string{
+						"-p", joinPorts(chunk),
+						"-oX", filepath.Join(outputDir, base+".xml"),
+						"-oN", filepath.Join(outputDir, base+".txt"),
+						"-sV",
+						"-T4",
+					},
+					Timeout:    1 * time.Hour,
+					StdoutFile: filepath.Join(outputDir, base+".stdout.log"),
+					StderrFile: filepath.Join(outputDir, base+".stderr.log"),
+				}
+				if ip := net.ParseIP(target.Host); ip != nil && ip.To4() == nil {
+					cmd.Args = append(cmd.Args, "-6")
+				}
+				cmd.Args = append(cmd.Args, target.Host)
 
-			if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, cmd); err != nil {
-				mu.Lock()
-				scanErrs = append(scanErrs, fmt.Errorf("failed to write commands log for host %q: %w", target.Host, err))
-				mu.Unlock()
-				return
-			}
+				if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, cmd); err != nil {
+					mu.Lock()
+					scanErrs = append(scanErrs, fmt.Errorf("failed to write commands log for host %q: %w", target.Host, err))
+					mu.Unlock()
+					return
+				}
 
-			res, err := executor.Run(ctx, cmd)
-			if err != nil {
-				mu.Lock()
-				scanErrs = append(scanErrs, fmt.Errorf("failed to run command %q for host %q: %w", cmd.Name, target.Host, err))
-				mu.Unlock()
-				return
-			}
-			if res.ExitCode != 0 {
-				mu.Lock()
-				status = fmt.Sprintf("failed (exit code %d)", res.ExitCode)
-				mu.Unlock()
+				res, err := executor.Run(ctx, cmd)
+				if err != nil {
+					mu.Lock()
+					scanErrs = append(scanErrs, fmt.Errorf("failed to run command %q for host %q: %w", cmd.Name, target.Host, err))
+					mu.Unlock()
+					return
+				}
+				if res.ExitCode != 0 {
+					mu.Lock()
+					status = fmt.Sprintf("failed (exit code %d)", res.ExitCode)
+					mu.Unlock()
+				}
 			}
 		}(i, target)
 	}
@@ -257,6 +269,24 @@ func joinPorts(ports []int) string {
 		values[i] = strconv.Itoa(port)
 	}
 	return strings.Join(values, ",")
+}
+
+// chunkPorts splits a port list into batches of at most maxPortsPerCommand.
+// The input stays sorted (readOpenPorts sorts it), so chunks are contiguous
+// slices and the -p argument of every command remains deterministic.
+func chunkPorts(ports []int) [][]int {
+	if len(ports) <= maxPortsPerCommand {
+		return [][]int{ports}
+	}
+	chunks := make([][]int, 0, (len(ports)+maxPortsPerCommand-1)/maxPortsPerCommand)
+	for start := 0; start < len(ports); start += maxPortsPerCommand {
+		end := start + maxPortsPerCommand
+		if end > len(ports) {
+			end = len(ports)
+		}
+		chunks = append(chunks, ports[start:end])
+	}
+	return chunks
 }
 
 func completedResult(name string) *modules.Result {

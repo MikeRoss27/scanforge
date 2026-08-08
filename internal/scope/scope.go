@@ -209,6 +209,15 @@ func parseEntry(input string) (parsedEntry, error) {
 		}
 	}
 
+	// A bare "host:port" entry would silently drop the port and widen the
+	// scope to the whole host. Ports are discovered by naabu on in-scope
+	// hosts, so such entries are rejected instead of being approximated.
+	// URLs (scheme://host[:port]/path) are still accepted: the port is part
+	// of the URL authority and only the hostname is scoped.
+	if port, ok := explicitPort(value); ok {
+		return parsedEntry{}, fmt.Errorf("port-scoped entry %q is not supported (found port %s): the scope covers hosts, and open ports are discovered by naabu on in-scope hosts", value, port)
+	}
+
 	if strings.HasPrefix(strings.ToLower(value), "*.") {
 		base := strings.TrimPrefix(strings.ToLower(value), "*.")
 		host, err := validateHost(base)
@@ -274,6 +283,31 @@ func validatePort(value string) error {
 		return fmt.Errorf("invalid port %q", value)
 	}
 	return nil
+}
+
+// explicitPort reports whether a scope entry carries a bare ":port" suffix
+// (for example "example.com:443" or "[2001:db8::1]:443"). Entries with an
+// explicit port are rejected because the scope model has no port dimension:
+// the port would silently be dropped, implicitly widening the perimeter to
+// the whole host. URLs are exempt: "https://host:8443/path" keeps its port
+// inside the URL authority while only the hostname is scoped.
+func explicitPort(input string) (string, bool) {
+	value := strings.TrimSpace(input)
+	if value == "" || strings.Contains(value, "://") {
+		return "", false
+	}
+	if host, port, err := net.SplitHostPort(value); err == nil {
+		if strings.Trim(host, "[]") != "" {
+			return port, true
+		}
+	}
+	if strings.Count(value, ":") == 1 {
+		host, port, found := strings.Cut(value, ":")
+		if found && host != "" && port != "" {
+			return port, true
+		}
+	}
+	return "", false
 }
 
 func validateHost(input string) (string, error) {
@@ -398,4 +432,3 @@ func sortedCIDRs(values []*net.IPNet, prefix string) []string {
 	sort.Strings(result)
 	return result
 }
-

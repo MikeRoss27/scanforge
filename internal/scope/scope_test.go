@@ -249,6 +249,11 @@ func TestFromTargetRejectsMalformedInput(t *testing.T) {
 		{name: "bad hostname", target: "bad_host.example", mode: ModeExact},
 		{name: "empty label", target: "api..example.com", mode: ModeExact},
 		{name: "bad port", target: "example.com:99999", mode: ModeExact},
+		{name: "port-scoped target", target: "example.com:443", mode: ModeExact},
+		{name: "port-scoped IP", target: "192.0.2.10:443", mode: ModeExact},
+		{name: "port-scoped IPv6", target: "[2001:db8::1]:443", mode: ModeExact},
+		{name: "port-scoped addition", target: "example.com", mode: ModeExact, additions: []string{"api.other.test:8080"}},
+		{name: "port-scoped exclusion", target: "example.com", mode: ModeExact, exclusions: []string{"admin.example.com:8443"}},
 		{name: "URL credentials", target: "https://user:pass@example.com", mode: ModeExact},
 		{name: "bad addition", target: "example.com", mode: ModeExact, additions: []string{"*.bad_host.test"}},
 		{name: "bad CIDR", target: "example.com", mode: ModeExact, additions: []string{"10.0.0.0/99"}},
@@ -310,6 +315,10 @@ func TestLoadFromFileRejectsMalformedEntries(t *testing.T) {
 		"*.192.0.2.1",
 		"10.0.0.0/99",
 		"!",
+		"example.com:443",
+		"192.0.2.10:8080",
+		"[2001:db8::1]:8443",
+		"!admin.example.com:9443",
 	} {
 		t.Run(strings.ReplaceAll(entry, "/", "_"), func(t *testing.T) {
 			path := writeScopeFile(t, entry+"\n")
@@ -342,4 +351,35 @@ func assertAllowed(t *testing.T, s *Scope, targets []string, want bool) {
 			t.Errorf("IsAllowed(%q) = %v, want %v", target, got, want)
 		}
 	}
+}
+
+// TestPortScopedFilteringStillWorks guards the scope filter used on open_ports
+// artifacts: rejecting "host:port" as a scope entry must not break filtering
+// "host:port" values against the host part.
+func TestPortScopedFilteringStillWorks(t *testing.T) {
+	s, err := FromTarget("example.com", ModeDomain, []string{"192.0.2.0/24"}, nil)
+	if err != nil {
+		t.Fatalf("FromTarget() error = %v", err)
+	}
+	assertAllowed(t, s, []string{
+		"example.com:443",
+		"www.example.com:8080",
+		"192.0.2.10:8443",
+	}, true)
+	assertAllowed(t, s, []string{
+		"outside.test:443",
+		"192.0.3.1:8080",
+	}, false)
+}
+
+// TestURLWithPortEntryAccepted: a URL carries its port inside the authority,
+// so the hostname is what gets scoped and the URL itself stays a valid entry.
+func TestURLWithPortEntryAccepted(t *testing.T) {
+	path := writeScopeFile(t, "https://example.com:8443/path\n")
+	s, err := LoadFromFile(path)
+	if err != nil {
+		t.Fatalf("LoadFromFile() error = %v", err)
+	}
+	assertAllowed(t, s, []string{"example.com:8443", "example.com"}, true)
+	assertAllowed(t, s, []string{"other.test"}, false)
 }

@@ -2,6 +2,7 @@ package nmap
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -116,6 +117,90 @@ func TestRunSupportsBracketedIPv6(t *testing.T) {
 func TestParseHostPortRejectsInvalidPort(t *testing.T) {
 	if _, _, err := parseHostPort("example.com:70000"); err == nil {
 		t.Fatal("parseHostPort() expected an invalid port error")
+	}
+}
+
+func TestChunkPortsSplitsOversizedLists(t *testing.T) {
+	ports := make([]int, 0, 600)
+	for i := 1; i <= 600; i++ {
+		ports = append(ports, i)
+	}
+	chunks := chunkPorts(ports)
+	if len(chunks) != 3 {
+		t.Fatalf("chunkPorts(600) = %d chunks, want 3", len(chunks))
+	}
+	if len(chunks[0]) != maxPortsPerCommand || len(chunks[1]) != maxPortsPerCommand || len(chunks[2]) != 100 {
+		t.Fatalf("chunk sizes = %d/%d/%d, want 250/250/100", len(chunks[0]), len(chunks[1]), len(chunks[2]))
+	}
+	if chunks[0][0] != 1 || chunks[1][0] != maxPortsPerCommand+1 || chunks[2][0] != 501 {
+		t.Fatalf("chunk boundaries wrong: starts = %d/%d/%d", chunks[0][0], chunks[1][0], chunks[2][0])
+	}
+
+	if got := chunkPorts([]int{80, 443}); len(got) != 1 || !reflect.DeepEqual(got[0], []int{80, 443}) {
+		t.Fatalf("chunkPorts(small) = %v, want single unchanged chunk", got)
+	}
+}
+
+func TestRunChunksLargePortListsPerHost(t *testing.T) {
+	root := t.TempDir()
+	run := testRun(t, root)
+	naabuPath := run.Path("03_ports", "naabu.txt")
+	var lines []string
+	for i := 1; i <= 600; i++ {
+		lines = append(lines, fmt.Sprintf("alpha.example.com:%d", i))
+	}
+	if err := os.WriteFile(naabuPath, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	runCtx := modules.NewRunContext("example.com", "ports", false, run)
+	if err := runCtx.AddArtifact("open_ports", modules.Artifact{
+		Name: "open_ports",
+		Type: "text",
+		Path: "03_ports/naabu.txt",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	executor := &recordingExecutor{}
+
+	if _, err := New("nmap-test").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	var alphaCmds []runner.Command
+	for _, cmd := range executor.commands {
+		if len(cmd.Args) > 0 && cmd.Args[len(cmd.Args)-1] == "alpha.example.com" {
+			alphaCmds = append(alphaCmds, cmd)
+		}
+	}
+	if len(alphaCmds) != 3 {
+		t.Fatalf("alpha.example.com commands = %d, want 3 chunks; all commands = %v", len(alphaCmds), executor.commands)
+	}
+	var allPorts []string
+	for _, cmd := range alphaCmds {
+		portIndex := index(cmd.Args, "-p")
+		if portIndex < 0 {
+			t.Fatalf("command missing -p: %v", cmd.Args)
+		}
+		list := strings.Split(cmd.Args[portIndex+1], ",")
+		if len(list) > maxPortsPerCommand {
+			t.Fatalf("chunk has %d ports, exceeds max %d", len(list), maxPortsPerCommand)
+		}
+		allPorts = append(allPorts, list...)
+	}
+	if len(allPorts) != 600 {
+		t.Fatalf("total scanned ports = %d, want 600", len(allPorts))
+	}
+	// Every chunk writes its own XML so no output file is overwritten.
+	xmlNames := make(map[string]struct{})
+	for _, cmd := range alphaCmds {
+		oXIndex := index(cmd.Args, "-oX")
+		if oXIndex >= 0 {
+			xmlNames[filepath.Base(cmd.Args[oXIndex+1])] = struct{}{}
+		}
+	}
+	if len(xmlNames) != 3 {
+		t.Fatalf("distinct XML outputs = %d, want 3: %v", len(xmlNames), xmlNames)
 	}
 }
 
