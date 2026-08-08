@@ -1,7 +1,37 @@
-FROM golang:1.25-bookworm
+# Stage 1 : compilation de ScanForge et des outils Go
+FROM golang:1.25-bookworm AS build
 
-# Mise à jour et installation des dépendances système
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Versions épinglées des outils (source unique : .tools-version)
+COPY .tools-version /tmp/tools-version
+
+# Binaires des outils de ProjectDiscovery et ffuf, installés dans un répertoire dédié
+RUN . /tmp/tools-version && \
+    GOBIN=/out go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@${SUBFINDER_VERSION} && \
+    GOBIN=/out go install github.com/projectdiscovery/dnsx/cmd/dnsx@${DNSX_VERSION} && \
+    GOBIN=/out go install github.com/projectdiscovery/httpx/cmd/httpx@${HTTPX_VERSION} && \
+    GOBIN=/out go install github.com/projectdiscovery/naabu/v2/cmd/naabu@${NAABU_VERSION} && \
+    GOBIN=/out go install github.com/projectdiscovery/katana/cmd/katana@${KATANA_VERSION} && \
+    GOBIN=/out go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@${NUCLEI_VERSION} && \
+    GOBIN=/out go install github.com/projectdiscovery/tlsx/cmd/tlsx@${TLSX_VERSION} && \
+    GOBIN=/out go install github.com/lc/gau/v2/cmd/gau@${GAU_VERSION} && \
+    GOBIN=/out go install github.com/ffuf/ffuf/v2@${FFUF_VERSION}
+
+# Compilation de ScanForge (binaire statique, sans cache)
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/scanforge ./cmd/scanforge
+
+# Stage 2 : image d'exécution minimale
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     nmap \
     python3 \
     python3-pip \
@@ -10,30 +40,9 @@ RUN apt-get update && apt-get install -y \
     wafw00f \
     && rm -rf /var/lib/apt/lists/*
 
-# Fix pour Wafw00f dans les environnements récents (PEP 668)
-# Ou utiliser apt install wafw00f si disponible sur bookworm (c'est le cas)
+COPY --from=build /out/ /usr/local/bin/
 
-# Installer les outils de ProjectDiscovery et ffuf
-RUN go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
-    go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
-    go install github.com/projectdiscovery/httpx/cmd/httpx@latest && \
-    go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
-    go install github.com/projectdiscovery/katana/cmd/katana@latest && \
-    go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    go install github.com/projectdiscovery/tlsx/cmd/tlsx@latest && \
-    go install github.com/lc/gau/v2/cmd/gau@latest && \
-    go install github.com/ffuf/ffuf/v2@latest
-
-# Création du répertoire de travail pour la compilation
-WORKDIR /src
-COPY . .
-RUN go build -o /usr/local/bin/scanforge ./cmd/scanforge
-
-# Nettoyage
-RUN rm -rf /src
-
-# Définition du répertoire de travail final (celui qui sera monté par l'utilisateur)
+# Répertoire de travail final (celui qui sera monté par l'utilisateur)
 WORKDIR /workspace
 
-# Point d'entrée
 ENTRYPOINT ["scanforge"]

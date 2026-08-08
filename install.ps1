@@ -25,16 +25,24 @@ try {
     exit 1
 }
 
+# Versions épinglées des outils (source unique : .tools-version)
+$toolsVersion = @{}
+Get-Content "$PSScriptRoot\.tools-version" | ForEach-Object {
+    if ($_ -match "^([A-Z_]+)=(.+)$") {
+        $toolsVersion[$Matches[1]] = $Matches[2]
+    }
+}
+
 $goTools = @(
-    "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
-    "github.com/projectdiscovery/dnsx/cmd/dnsx@latest",
-    "github.com/projectdiscovery/httpx/cmd/httpx@latest",
-    "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest",
-    "github.com/projectdiscovery/katana/cmd/katana@latest",
-    "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
-    "github.com/projectdiscovery/tlsx/cmd/tlsx@latest",
-    "github.com/lc/gau/v2/cmd/gau@latest",
-    "github.com/ffuf/ffuf/v2@latest"
+    "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@$($toolsVersion['SUBFINDER_VERSION'])",
+    "github.com/projectdiscovery/dnsx/cmd/dnsx@$($toolsVersion['DNSX_VERSION'])",
+    "github.com/projectdiscovery/httpx/cmd/httpx@$($toolsVersion['HTTPX_VERSION'])",
+    "github.com/projectdiscovery/naabu/v2/cmd/naabu@$($toolsVersion['NAABU_VERSION'])",
+    "github.com/projectdiscovery/katana/cmd/katana@$($toolsVersion['KATANA_VERSION'])",
+    "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@$($toolsVersion['NUCLEI_VERSION'])",
+    "github.com/projectdiscovery/tlsx/cmd/tlsx@$($toolsVersion['TLSX_VERSION'])",
+    "github.com/lc/gau/v2/cmd/gau@$($toolsVersion['GAU_VERSION'])",
+    "github.com/ffuf/ffuf/v2@$($toolsVersion['FFUF_VERSION'])"
 )
 
 Write-Host "`nInstallation des outils Go... Cela peut prendre quelques minutes." -ForegroundColor Cyan

@@ -1,0 +1,10 @@
+# Versions épinglées des outils externes (source unique : install.sh et Dockerfile)
+SUBFINDER_VERSION=v2.15.0
+DNSX_VERSION=v1.3.0
+HTTPX_VERSION=v1.10.0
+NAABU_VERSION=v2.6.1
+KATANA_VERSION=v1.7.0
+NUCLEI_VERSION=v3.11.0
+TLSX_VERSION=v1.3.2
+GAU_VERSION=v2.2.4
+FFUF_VERSION=v2.2.1

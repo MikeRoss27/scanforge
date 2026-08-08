@@ -6,13 +6,16 @@ ScanForge is a Go CLI. The executable entry point is `cmd/scanforge/main.go`, wh
 
 ## Build, Test, and Development Commands
 
-- `go build -o scanforge ./cmd/scanforge` builds the local CLI binary.
+- `make build` builds the local CLI binary with version ldflags (equivalent to `go build -ldflags ... -o scanforge ./cmd/scanforge`).
+- `make test`, `make race`, `make vet`, `make lint` and `make fmt` wrap the corresponding Go toolchain commands.
+- `make lint` requires `golangci-lint` (v2.x); the configuration lives in `.golangci.yml` and is part of CI.
 - `go run ./cmd/scanforge --help` runs the CLI without creating a binary.
 - `go test ./...` runs the full test suite; this is the same test command used by CI.
 - `go test ./internal/orchestrator -run TestOrchestratorSuccess` runs one focused test.
 - `go vet ./...` checks common Go correctness issues.
 - `go fmt ./...` formats all Go packages before review.
 - `docker compose run scanforge run example.com --profile web` exercises the containerized workflow. Use only targets explicitly listed in the mounted scope file.
+- External tool versions are pinned in `.tools-version` (single source shared by `install.sh`, `install.ps1` and the `Dockerfile`); update it when bumping a tool.
 
 Go 1.25.x is expected, as declared in `go.mod` and CI.
 
