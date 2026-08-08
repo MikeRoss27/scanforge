@@ -6,6 +6,7 @@ import (
 
 	"github.com/MikeRoss27/scanforge/internal/app"
 	"github.com/MikeRoss27/scanforge/internal/auth"
+	"github.com/MikeRoss27/scanforge/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -34,8 +35,8 @@ func NewAuthCommand(app *app.App) *cobra.Command {
 				return fmt.Errorf("failed to save auth config: %w", err)
 			}
 
-			fmt.Printf("API key for %q saved successfully.\n", provider)
-			fmt.Println("Run 'scanforge auth sync' to apply the keys to the tools.")
+			ui.Success("API key for %q saved successfully.", provider)
+			fmt.Println(ui.Dim("Run 'scanforge auth sync' to apply the keys to the tools."))
 			return nil
 		},
 	}
@@ -50,18 +51,18 @@ func NewAuthCommand(app *app.App) *cobra.Command {
 			}
 
 			if len(cfg.Providers) == 0 {
-				fmt.Println("No API keys configured.")
+				fmt.Println(ui.Dim("No API keys configured."))
 				return nil
 			}
 
-			fmt.Println("Configured API Providers:")
+			fmt.Println(ui.Bold(ui.Primary("Configured API Providers:")))
 			for provider, keys := range cfg.Providers {
 				if key, ok := keys["api_key"]; ok {
 					masked := "****"
 					if len(key) > 4 {
 						masked += key[len(key)-4:]
 					}
-					fmt.Printf("- %s: %s\n", provider, masked)
+					fmt.Printf("- %s: %s\n", ui.Secondary(provider), ui.Dim(masked))
 				}
 			}
 			return nil

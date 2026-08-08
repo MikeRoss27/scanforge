@@ -1,3 +1,5 @@
+// Package app wires configuration, scope validation, orchestration and
+// reporting together behind the CLI commands.
 package app
 
 import (
@@ -152,7 +154,7 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	}
 
 	ascii.PrintBanner()
-	fmt.Println(ui.Gray("  by MikeRoss"))
+	fmt.Println(ui.Dim("  by MikeRoss"))
 	fmt.Println()
 
 	printRunInfoPanel(opts, profile, scanRun, *effective)
@@ -165,8 +167,19 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	var results []*modules.Result
 	var runErr error
 
+	// runCtx is cancelled when the user quits the TUI early so the scan
+	// actually stops instead of lingering in the background.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// done synchronizes the results assignment with the consumer below: the
+	// event channel is closed by orchestrator.Run before it returns, so
+	// waiting on the channel alone would still race with the write to
+	// results/runErr.
+	done := make(chan struct{})
 	go func() {
-		results, runErr = orch.Run(ctx, scanRun, orchestrator.Options{
+		defer close(done)
+		results, runErr = orch.Run(runCtx, scanRun, orchestrator.Options{
 			Target:          opts.Target,
 			Profile:         profile,
 			Config:          cfg,
@@ -185,8 +198,22 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	if !opts.DryRun && isInteractive {
 		model := tui.NewScanModel(eventChan)
 		if _, err := tea.NewProgram(model).Run(); err != nil {
+			cancel()
+			go func() {
+				for range eventChan {
+				}
+			}()
+			<-done
 			return err
 		}
+		// The user may have quit the UI before the scan finished: cancel the
+		// run and drain the remaining events so the orchestrator can return.
+		cancel()
+		go func() {
+			for range eventChan {
+			}
+		}()
+		<-done
 	} else {
 		for event := range eventChan {
 			switch e := event.(type) {
@@ -211,6 +238,7 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 				ui.Warn("%s", e.Message)
 			}
 		}
+		<-done
 	}
 
 	scanRun.Manifest.CompletedAt = time.Now().Format(time.RFC3339)
@@ -267,8 +295,8 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 // printRunInfoPanel renders a sleek bordered panel with the run configuration
 // instead of the old full-width cyan block.
 func printRunInfoPanel(opts RunOptions, profile string, scanRun *storage.Run, effective effectiveScope) {
-	label := func(key, val string) string {
-		return ui.Bold(ui.Cyan(key)) + " " + val
+	kv := func(key, val string) string {
+		return fmt.Sprintf("%-9s %s", ui.DimBold(key), val)
 	}
 
 	dryTag := ui.Green("OFF")
@@ -277,13 +305,13 @@ func printRunInfoPanel(opts RunOptions, profile string, scanRun *storage.Run, ef
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", label("TARGET ", opts.Target))
-	fmt.Fprintf(&b, "%s\n", label("PROFILE", profile))
-	fmt.Fprintf(&b, "%s\n", label("SCOPE  ", fmt.Sprintf("%s (%s, mode %s)", scanRun.Manifest.ScopePath, effective.proposal.Source, effective.proposal.Mode)))
-	fmt.Fprintf(&b, "%s\n", label("DRY RUN", dryTag))
-	fmt.Fprintf(&b, "%s", label("OUTPUT ", scanRun.RootDir))
+	fmt.Fprintf(&b, "%s\n", kv("TARGET", ui.Primary(opts.Target)))
+	fmt.Fprintf(&b, "%s\n", kv("PROFILE", ui.Secondary(profile)))
+	fmt.Fprintf(&b, "%s\n", kv("SCOPE", ui.Dim(fmt.Sprintf("%s (%s, mode %s)", scanRun.Manifest.ScopePath, effective.proposal.Source, effective.proposal.Mode))))
+	fmt.Fprintf(&b, "%s\n", kv("DRY RUN", dryTag))
+	fmt.Fprintf(&b, "%s", kv("OUTPUT", ui.Dim(scanRun.RootDir)))
 
-	fmt.Println(ui.Box("⚡ Run Started", b.String()))
+	fmt.Println(ui.PanelWith("⚡ RUN STARTED", b.String(), ui.Accent, ui.Accent))
 	fmt.Println()
 }
 
@@ -309,32 +337,43 @@ func printRunSummaryBox(scanRun *storage.Run, results []*modules.Result, rep *re
 		}
 	}
 
-	label := func(key, val string) string {
-		return ui.Bold(ui.Magenta(key)) + " " + val
+	kv := func(key, val string) string {
+		return fmt.Sprintf("%-9s %s", ui.DimBold(key), val)
+	}
+
+	border := ui.Accent
+	switch scanRun.Manifest.Status {
+	case "completed":
+		border = ui.AccentGreen
+	case "partial":
+		border = ui.AccentYellow
+	case "failed":
+		border = ui.AccentRed
 	}
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", statusLine(scanRun.Manifest.Status))
-	fmt.Fprintf(&b, "%s\n", label("DURATION ", duration))
-	fmt.Fprintf(&b, "%s\n", label("MODULES  ", fmt.Sprintf("%d/%d completed", completedCount, len(results))))
+	fmt.Fprintf(&b, "%s\n", kv("DURATION", ui.Dim(duration)))
+	fmt.Fprintf(&b, "%s\n", kv("MODULES", ui.ProgressBar(completedCount, len(results), 20)))
+	fmt.Fprintf(&b, "%s\n", kv("FINDINGS", formatSeverityCounts(countBySeverity(rep))))
 	if len(failedModules) > 0 {
-		fmt.Fprintf(&b, "%s\n", label("FAILED   ", ui.Red(strings.Join(failedModules, ", "))))
+		fmt.Fprintf(&b, "%s\n", kv("FAILED", ui.Red(strings.Join(failedModules, ", "))))
 	}
-	fmt.Fprintf(&b, "%s\n", label("FINDINGS ", formatSeverityCounts(countBySeverity(rep))))
-	fmt.Fprintf(&b, "%s", label("OUTPUT   ", scanRun.RootDir))
+	fmt.Fprintf(&b, "%s", kv("OUTPUT", ui.Dim(scanRun.RootDir)))
 
-	fmt.Println(ui.Box("🏁 Scan Summary", b.String()))
+	fmt.Println(ui.PanelWith("🏁 SCAN SUMMARY", b.String(), border, border))
 }
 
 func statusLine(status string) string {
-	text := "Status:    " + status
 	switch status {
 	case "completed":
-		return ui.Green(text)
+		return ui.Green(ui.Bold("✓ COMPLETED"))
 	case "partial":
-		return ui.Yellow(text)
+		return ui.Yellow(ui.Bold("◐ PARTIAL"))
+	case "failed":
+		return ui.Red(ui.Bold("✗ FAILED"))
 	default:
-		return ui.Red(text)
+		return ui.DimBold(strings.ToUpper(status))
 	}
 }
 
@@ -352,22 +391,13 @@ func countBySeverity(rep *report.Report) map[string]int {
 }
 
 func formatSeverityCounts(counts map[string]int) string {
-	levels := []struct {
-		key   string
-		color func(string) string
-	}{
-		{"critical", ui.Red},
-		{"high", ui.Red},
-		{"medium", ui.Yellow},
-		{"low", ui.Cyan},
-		{"info", ui.Gray},
-	}
+	levels := []string{"critical", "high", "medium", "low", "info"}
 
 	var parts []string
 	total := 0
-	for _, level := range levels {
-		if n := counts[level.key]; n > 0 {
-			parts = append(parts, level.color(fmt.Sprintf("%d %s", n, level.key)))
+	for _, key := range levels {
+		if n := counts[key]; n > 0 {
+			parts = append(parts, ui.Severity(fmt.Sprintf("%d %s", n, key)))
 			total += n
 		}
 	}
@@ -419,7 +449,8 @@ func (a *App) Doctor(ctx context.Context, opts DoctorOptions) error {
 		}
 		fmt.Println(output)
 	} else {
-		fmt.Printf("ScanForge Doctor v%s\n\n", version.Version)
+		fmt.Println(ui.Bold(ui.Primary("ScanForge Doctor v" + version.Version)))
+		fmt.Println()
 		fmt.Print(doctor.FormatChecks(checks))
 	}
 
@@ -453,10 +484,10 @@ func (a *App) Init(ctx context.Context, opts InitOptions) error {
 	fmt.Println(ui.Header("Initialization Complete", ui.AccentGreen))
 
 	ui.Info("Next steps:")
-	fmt.Println("  1. Optionally edit scope.txt with your authorized targets")
-	fmt.Println("  2. Run: scanforge doctor")
-	fmt.Println("  3. Review: scanforge plan example.com")
-	fmt.Println("  4. Run: scanforge run example.com --dry-run")
+	fmt.Printf("  %s %s\n", ui.Primary("1."), ui.Bold("scanforge doctor"))
+	fmt.Printf("  %s %s\n", ui.Primary("2."), ui.Bold("scanforge plan example.com"))
+	fmt.Printf("  %s %s\n", ui.Primary("3."), ui.Bold("scanforge run example.com --dry-run"))
+	fmt.Printf("  %s %s\n", ui.Primary("4."), ui.Bold("scanforge run example.com"))
 
 	return nil
 }

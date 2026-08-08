@@ -1,7 +1,7 @@
+// Package tui renders the live scan progress view with Bubble Tea.
 package tui
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -14,29 +14,19 @@ import (
 )
 
 var (
-	// Theming
-	colorMagenta = lipgloss.Color("13")
-	colorCyan    = lipgloss.Color("14")
-
 	borderStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorMagenta).
+			BorderForeground(ui.BorderColor).
 			Padding(1, 2)
-
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("0")).
-			Background(colorMagenta).
-			Padding(0, 2)
 
 	headerStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(colorCyan)
+			Foreground(ui.Accent)
 
 	rowStyle = lipgloss.NewStyle().Padding(0, 1)
 
 	warnStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("9")).
+			Foreground(ui.AccentOrange).
 			Bold(true)
 )
 
@@ -66,7 +56,7 @@ type ScanModel struct {
 
 func NewScanModel(eventChan <-chan orchestrator.Event) ScanModel {
 	s := spinner.New(spinner.WithSpinner(spinner.MiniDot))
-	s.Style = lipgloss.NewStyle().Foreground(colorCyan).Bold(true)
+	s.Style = lipgloss.NewStyle().Foreground(ui.Accent).Bold(true)
 
 	return ScanModel{
 		eventChan: eventChan,
@@ -145,12 +135,12 @@ func (m ScanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m ScanModel) View() string {
-	// Layout assembly
 	var out strings.Builder
 
-	// Top banner
-	banner := titleStyle.Render("SCANFORGE ORCHESTRATOR")
-	out.WriteString(fmt.Sprintf("%s\n\n", banner))
+	// Top banner with the brand gradient
+	banner := ui.Gradient("SCANFORGE ORCHESTRATOR", ui.AccentCyan, ui.AccentMagenta)
+	out.WriteString(ui.Bold(banner) + "\n")
+	out.WriteString(ui.Dim(strings.Repeat("─", lipgloss.Width(banner))) + "\n\n")
 
 	// The table
 	if len(m.order) > 0 {
@@ -168,29 +158,29 @@ func (m ScanModel) View() string {
 			row := m.rows[name]
 			if row.state == stateRunning {
 				elapsed := time.Since(row.start).Round(time.Second).String()
-				t.Row(ui.Bold(name), m.spin.View()+" RUNNING", elapsed, ui.Gray("..."))
+				t.Row(ui.Bold(name), ui.Primary(m.spin.View()+" RUNNING"), ui.Dim(elapsed), ui.Dim("..."))
 			} else {
 				stateLabel := ui.SuccessTag("DONE")
 				if row.failed {
 					stateLabel = ui.ErrorTag("FAIL")
 				}
 				dur := row.dur.Round(time.Millisecond).String()
-				
-				statusText := ui.Gray(row.status)
+
+				statusText := ui.Dim(row.status)
 				if row.failed {
 					statusText = ui.Red(row.status)
 				} else if row.status == "completed" {
 					statusText = ui.Green(row.status)
 				}
 
-				t.Row(ui.Bold(name), stateLabel, dur, statusText)
+				t.Row(ui.Bold(name), stateLabel, ui.Dim(dur), statusText)
 			}
 		}
-		
+
 		out.WriteString(t.Render())
 		out.WriteString("\n")
 	} else {
-		out.WriteString(ui.Gray("  Waiting for modules to load...\n"))
+		out.WriteString(ui.Dim("  Waiting for modules to load...") + "\n")
 	}
 
 	// Warnings panel
@@ -202,6 +192,22 @@ func (m ScanModel) View() string {
 		out.WriteString("\n")
 		out.WriteString(warnStyle.Render(warnBox.String()))
 	}
+
+	// Progress bar
+	completed := 0
+	for _, row := range m.rows {
+		if row.state == stateDone {
+			completed++
+		}
+	}
+	if len(m.order) > 0 {
+		out.WriteString("\n")
+		out.WriteString(ui.DimBold("PROGRESS") + "  " + ui.ProgressBar(completed, len(m.order), 24))
+	}
+
+	// Footer
+	out.WriteString("\n\n")
+	out.WriteString(ui.Dim("q: quit  •  ctrl+c: abort"))
 
 	// Wrap in a glowing border
 	return borderStyle.Render(out.String()) + "\n"

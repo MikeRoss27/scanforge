@@ -11,12 +11,20 @@ import (
 
 func TestGenerateReport(t *testing.T) {
 	dir := t.TempDir()
-	
+
 	// Write dummy files
-	os.WriteFile(filepath.Join(dir, "subfinder.txt"), []byte("example.com\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "naabu.txt"), []byte("example.com:80\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "httpx.jsonl"), []byte(`{"url":"http://example.com","host":"example.com","tech":["Nginx"]}`+"\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "nuclei.jsonl"), []byte(`{"template-id":"test-cve","matched-at":"example.com","host":"example.com","info":{"name":"Test","severity":"high"}}`+"\n"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "subfinder.txt"), []byte("example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "naabu.txt"), []byte("example.com:80\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "httpx.jsonl"), []byte(`{"url":"http://example.com","host":"example.com","tech":["Nginx"]}`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "nuclei.jsonl"), []byte(`{"template-id":"test-cve","matched-at":"example.com","host":"example.com","info":{"name":"Test","severity":"high"}}`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	manifest := &storage.RunManifest{
 		Target:      "example.com",

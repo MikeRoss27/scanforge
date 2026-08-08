@@ -1,3 +1,4 @@
+// Package auth manages authenticated header injection for scan modules.
 package auth
 
 import (
@@ -87,7 +88,7 @@ func (c *AuthConfig) Sync() error {
 	if err := os.MkdirAll(subfinderDir, 0755); err != nil {
 		return err
 	}
-	
+
 	// Create provider config map based on available keys
 	subfinderConfig := make(map[string][]string)
 	for provider, keys := range c.Providers {
@@ -109,6 +110,6 @@ func (c *AuthConfig) Sync() error {
 	}
 
 	// Future integrations: Nuclei, Wappalyzer, etc.
-	
+
 	return nil
 }

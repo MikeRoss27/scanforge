@@ -1,3 +1,5 @@
+// Package doctor validates that the tools required by a profile are installed
+// and reachable.
 package doctor
 
 import (
@@ -294,16 +296,17 @@ func FormatChecks(checks []Check) string {
 
 	var b strings.Builder
 	b.WriteString(ui.Table([]string{"", "CHECK", "DETAILS"}, rows))
-	fmt.Fprintf(&b, "\n%d passed", passed)
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("%d %s", passed, ui.Green("passed")))
 	if failed > 0 {
-		fmt.Fprintf(&b, ", %d failed", failed)
+		b.WriteString(fmt.Sprintf(", %d %s", failed, ui.Red("failed")))
 	}
 	if warned > 0 {
-		fmt.Fprintf(&b, ", %d warning(s)", warned)
+		b.WriteString(fmt.Sprintf(", %d %s", warned, ui.Yellow("warning(s)")))
 	}
 	b.WriteString("\n")
 
-	return b.String()
+	return ui.PanelWith("🩺 DOCTOR", b.String(), ui.Accent, ui.Accent)
 }
 
 func FormatChecksJSON(checks []Check) (string, error) {

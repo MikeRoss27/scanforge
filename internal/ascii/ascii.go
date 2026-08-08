@@ -1,10 +1,11 @@
+// Package ascii renders the ScanForge ASCII banner shown at startup.
 package ascii
 
 import (
 	"fmt"
-	"math/rand"
 	"strings"
-	"time"
+
+	"github.com/MikeRoss27/scanforge/internal/ui"
 )
 
 // Bannières disponibles
@@ -19,7 +20,7 @@ const (
          ███ ███    █▄    ███    ███ ███   ███   ███        ███    ███ ▀███████████   ███    ███   ███    █▄
    ▄█    ███ ███    ███   ███    ███ ███   ███   ███        ███    ███   ███    ███   ███    ███   ███    ███
  ▄████████▀  ████████▀    ███    █▀   ▀█   █▀    ███         ▀██████▀    ███    ███   ████████▀    ██████████
-                                                                         ███    ███`
+                                                                          ███    ███`
 
 	// Style 2 : Classic Slant très lisible
 	BannerClassic = `
@@ -43,39 +44,16 @@ $$    $$/ $$    $$/ $$ |  $$ |$$ | $$$ |$$ |     $$    $$/ $$ |  $$ |$$    $$/ $
  $$$$$$/   $$$$$$/  $$/   $$/ $$/   $$/ $$/       $$$$$$/  $$/   $$/  $$$$$$/  $$$$$$$$/`
 )
 
-// ANSI Color Codes
-const (
-	Reset     = "\033[0m"
-	Cyan      = "\033[36m"
-	Blue      = "\033[34m"
-	Magenta   = "\033[35m"
-	Red       = "\033[31m"
-	Yellow    = "\033[33m"
-	Bold      = "\033[1m"
-)
-
-// PrintBanner affiche une des bannières aléatoirement ou par sélection avec un beau dégradé
+// PrintBanner affiche la bannière "Blocks" avec un dégradé cyan → magenta
+// constant, pour une identité visuelle cohérente à chaque exécution (le choix
+// aléatoire de bannière et de dégradé rendait la marque instable d'un run à
+// l'autre).
 func PrintBanner() {
-	rand.Seed(time.Now().UnixNano())
-	banners := []string{BannerBlocks, BannerClassic, BannerSlanted}
-	selected := banners[rand.Intn(len(banners))]
-
-	// Liste des dégradés de couleurs à appliquer par ligne
-	gradients := [][]string{
-		{Cyan, Blue, Magenta},
-		{Red, Yellow},
-		{Blue, Cyan},
-	}
-	selectedGradient := gradients[rand.Intn(len(gradients))]
-
-	lines := strings.Split(selected, "\n")
-	for i, line := range lines {
+	for _, line := range strings.Split(BannerBlocks, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		// Alternance ou interpolation simple de couleur sur la ligne
-		color := selectedGradient[i%len(selectedGradient)]
-		fmt.Printf("%s%s%s\n", color, line, Reset)
+		fmt.Println(ui.Gradient(line, ui.AccentCyan, ui.AccentMagenta))
 	}
 	fmt.Println()
 }

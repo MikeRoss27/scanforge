@@ -5,29 +5,20 @@ import (
 	"sort"
 	"strings"
 	"time"
-)
 
-// ANSI Color Codes
-const (
-	Reset   = "\033[0m"
-	Red     = "\033[31m"
-	Green   = "\033[32m"
-	Yellow  = "\033[33m"
-	Blue    = "\033[34m"
-	Magenta = "\033[35m"
-	Cyan    = "\033[36m"
-	Gray    = "\033[90m"
-	Bold    = "\033[1m"
+	"github.com/MikeRoss27/scanforge/internal/ui"
 )
 
 // PrintTerminalSummary prints a colorful and clean summary of the scan to stdout
 func PrintTerminalSummary(r *Report) {
+	label := func(s string) string { return ui.DimBold(s) }
+
 	fmt.Println()
-	fmt.Printf("%s%s=== SCAN SUMMARY ===%s\n", Bold, Cyan, Reset)
-	fmt.Printf("Target:  %s%s%s\n", Bold, r.Target, Reset)
-	fmt.Printf("Profile: %s\n", r.Profile)
-	fmt.Printf("Status:  %s\n", formatStatus(r.Status))
-	fmt.Printf("Time:    %s\n", r.CompletedAt.Sub(r.StartedAt).Round(time.Second))
+	fmt.Printf("%s\n", ui.Bold(ui.Primary("=== SCAN SUMMARY ===")))
+	fmt.Printf("%-8s %s\n", label("Target:"), ui.Bold(r.Target))
+	fmt.Printf("%-8s %s\n", label("Profile:"), r.Profile)
+	fmt.Printf("%-8s %s\n", label("Status:"), formatStatus(r.Status))
+	fmt.Printf("%-8s %s\n", label("Time:"), r.CompletedAt.Sub(r.StartedAt).Round(time.Second))
 
 	var totalPorts, totalPaths, totalVulns int
 	var allTechs []string
@@ -47,10 +38,10 @@ func PrintTerminalSummary(r *Report) {
 		}
 	}
 
-	fmt.Printf("\n%s--- STATISTICS ---%s\n", Bold, Reset)
-	fmt.Printf("Assets Found:      %s%d%s\n", Bold, len(r.Assets), Reset)
-	fmt.Printf("Open Ports:        %s%d%s\n", Bold, totalPorts, Reset)
-	fmt.Printf("Paths Discovered:  %s%d%s\n", Bold, totalPaths, Reset)
+	fmt.Printf("\n%s\n", ui.DimBold("--- STATISTICS ---"))
+	fmt.Printf("%-8s %s\n", label("Assets:"), ui.Bold(fmt.Sprintf("%d", len(r.Assets))))
+	fmt.Printf("%-8s %s\n", label("Ports:"), ui.Bold(fmt.Sprintf("%d", totalPorts)))
+	fmt.Printf("%-8s %s\n", label("Paths:"), ui.Bold(fmt.Sprintf("%d", totalPaths)))
 
 	// Top technologies
 	if len(allTechs) > 0 {
@@ -63,25 +54,25 @@ func PrintTerminalSummary(r *Report) {
 			uniqueTechs = append(uniqueTechs, t)
 		}
 		sort.Strings(uniqueTechs)
-		
-		fmt.Printf("Technologies:      %s%s%s\n", Magenta, strings.Join(uniqueTechs, ", "), Reset)
+
+		fmt.Printf("%-8s %s\n", label("Tech:"), ui.Secondary(strings.Join(uniqueTechs, ", ")))
 	}
 
-	fmt.Printf("\n%s--- VULNERABILITIES ---%s\n", Bold, Reset)
+	fmt.Printf("\n%s\n", ui.DimBold("--- VULNERABILITIES ---"))
 	if len(vulns) == 0 {
-		fmt.Printf("%s✅ No vulnerabilities detected!%s\n", Green, Reset)
+		fmt.Printf("%s\n", ui.Green("✓ No vulnerabilities detected!"))
 	} else {
-		fmt.Printf("Total Findings: %s%d%s\n\n", Bold, len(vulns), Reset)
-		
+		fmt.Printf("Total Findings: %s\n\n", ui.Bold(fmt.Sprintf("%d", len(vulns))))
+
 		// Sort vulnerabilities by severity (Critical > High > Medium > Low > Info)
 		sort.Slice(vulns, func(i, j int) bool {
 			return severityWeight(vulns[i].Vuln.Severity) > severityWeight(vulns[j].Vuln.Severity)
 		})
 
-		fmt.Printf("%-10s | %-30s | %-20s | %s\n", "SEVERITY", "TARGET", "TEMPLATE", "TITLE")
+		fmt.Printf("%-10s | %-30s | %-20s | %s\n", ui.Bold("SEVERITY"), ui.Bold("TARGET"), ui.Bold("TEMPLATE"), ui.Bold("TITLE"))
 		fmt.Println(strings.Repeat("-", 100))
 		for _, v := range vulns {
-			sevColor := severityColor(v.Vuln.Severity)
+			sev := ui.Severity(strings.ToUpper(v.Vuln.Severity))
 			// Truncate title if too long
 			title := v.Vuln.Title
 			if len(title) > 40 {
@@ -91,11 +82,11 @@ func PrintTerminalSummary(r *Report) {
 			if len(target) > 30 {
 				target = target[:27] + "..."
 			}
-			
-			fmt.Printf("%s%-10s%s | %-30s | %s%-20s%s | %s\n", 
-				sevColor, strings.ToUpper(v.Vuln.Severity), Reset,
+
+			fmt.Printf("%-10s | %-30s | %-20s | %s\n",
+				sev,
 				target,
-				Gray, v.Vuln.TemplateID, Reset,
+				ui.Dim(v.Vuln.TemplateID),
 				title,
 			)
 		}
@@ -109,30 +100,29 @@ type VulnerabilityWithTarget struct {
 }
 
 func formatStatus(status string) string {
-	if status == "completed" {
-		return fmt.Sprintf("%s%s%s", Green, status, Reset)
+	switch status {
+	case "completed":
+		return ui.Green("✓ " + status)
+	case "partial":
+		return ui.Yellow("◐ " + status)
+	default:
+		return ui.Red("✗ " + status)
 	}
-	return fmt.Sprintf("%s%s%s", Red, status, Reset)
 }
 
 func severityWeight(sev string) int {
 	switch strings.ToLower(sev) {
-	case "critical": return 5
-	case "high": return 4
-	case "medium": return 3
-	case "low": return 2
-	case "info": return 1
-	default: return 0
-	}
-}
-
-func severityColor(sev string) string {
-	switch strings.ToLower(sev) {
-	case "critical": return Red + Bold
-	case "high": return Red
-	case "medium": return Yellow
-	case "low": return Cyan
-	case "info": return Gray
-	default: return Reset
+	case "critical":
+		return 5
+	case "high":
+		return 4
+	case "medium":
+		return 3
+	case "low":
+		return 2
+	case "info":
+		return 1
+	default:
+		return 0
 	}
 }

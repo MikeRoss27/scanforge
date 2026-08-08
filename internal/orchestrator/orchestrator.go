@@ -102,9 +102,6 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 					results = append(results, &modules.Result{
 						Name:   m.Name(),
 						Status: "skipped",
-						OutputFiles: map[string]string{
-							"reason": "dependencies not met (upstream failure)",
-						},
 					})
 					completed[m.Name()] = true
 				}
@@ -150,9 +147,6 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 					waveResults <- &modules.Result{
 						Name:   m.Name(),
 						Status: "failed",
-						OutputFiles: map[string]string{
-							"error": err.Error(),
-						},
 					}
 					waveErrors <- fmt.Errorf("module %q failed: %w", m.Name(), err)
 					return

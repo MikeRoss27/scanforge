@@ -11,10 +11,10 @@ type mockModule struct {
 	name string
 }
 
-func (m *mockModule) Name() string { return m.name }
+func (m *mockModule) Name() string        { return m.name }
 func (m *mockModule) Description() string { return "" }
-func (m *mockModule) Requires() []string { return nil }
-func (m *mockModule) Produces() []string { return nil }
+func (m *mockModule) Requires() []string  { return nil }
+func (m *mockModule) Produces() []string  { return nil }
 func (m *mockModule) Run(ctx context.Context, runCtx *RunContext, executor runner.Executor) (*Result, error) {
 	return nil, nil
 }

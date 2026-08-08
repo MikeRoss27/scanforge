@@ -1,7 +1,9 @@
+// Package storage manages run directories, manifests and artifact layout.
 package storage
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -50,10 +52,20 @@ func NewRunStore(workspace string) *RunStore {
 }
 
 func (s *RunStore) Create(target string) (*Run, error) {
-	id := time.Now().Format("2006-01-02_15-04-05")
 	safeTarget := safeTargetName(target)
 
+	// Two runs started within the same second must not share a directory, so
+	// append a numeric suffix until the path is free.
+	baseID := time.Now().Format("2006-01-02_15-04-05")
+	id := baseID
 	rootDir := filepath.Join(s.Workspace, safeTarget, id)
+	for suffix := 2; ; suffix++ {
+		if _, err := os.Stat(rootDir); os.IsNotExist(err) {
+			break
+		}
+		id = fmt.Sprintf("%s-%d", baseID, suffix)
+		rootDir = filepath.Join(s.Workspace, safeTarget, id)
+	}
 	metaDir := filepath.Join(rootDir, "00_meta")
 
 	dirs := []string{

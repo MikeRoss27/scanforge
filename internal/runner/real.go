@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -39,7 +40,7 @@ func (e *RealExecutor) Run(ctx context.Context, command Command) (*CommandResult
 		if err != nil {
 			return nil, err
 		}
-		defer stdout.Close()
+		defer func() { _ = stdout.Close() }()
 		cmd.Stdout = stdout
 	} else {
 		cmd.Stdout = os.Stdout
@@ -50,7 +51,7 @@ func (e *RealExecutor) Run(ctx context.Context, command Command) (*CommandResult
 		if err != nil {
 			return nil, err
 		}
-		defer stderr.Close()
+		defer func() { _ = stderr.Close() }()
 		cmd.Stderr = stderr
 	} else {
 		cmd.Stderr = os.Stderr
@@ -60,10 +61,14 @@ func (e *RealExecutor) Run(ctx context.Context, command Command) (*CommandResult
 
 	exitCode := 0
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		// A non-zero exit code is not a failure of the executor: tools like
+		// nmap legitimately exit 1 when a host is down or has no open ports.
+		// Record the exit code and let the module decide. Real failures
+		// (binary missing, timeout, cancellation) still surface as errors.
+		if errors.As(err, &exitErr) && cmdCtx.Err() == nil {
 			exitCode = exitErr.ExitCode()
-		} else {
-			return nil, err
+			err = nil
 		}
 	}
 
