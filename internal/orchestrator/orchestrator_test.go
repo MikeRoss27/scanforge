@@ -29,7 +29,9 @@ func (m *mockModule) Run(ctx context.Context, runCtx *modules.RunContext, execut
 		return nil, m.runErr
 	}
 	for _, p := range m.produces {
-		runCtx.AddArtifact(p, modules.Artifact{Name: p, Type: "test", Path: p})
+		if err := runCtx.AddArtifact(p, modules.Artifact{Name: p, Type: "test", Path: p}); err != nil {
+			return nil, err
+		}
 	}
 	return &modules.Result{Name: m.name, Status: "completed"}, nil
 }

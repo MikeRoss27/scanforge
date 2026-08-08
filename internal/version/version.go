@@ -1,3 +1,5 @@
+// Package version carries the build-time version metadata injected via
+// ldflags during release builds.
 package version
 
 import "runtime"

@@ -1,3 +1,4 @@
+// Package ffuf wraps the ffuf directory and file fuzzing tool.
 package ffuf
 
 import (

@@ -1,3 +1,4 @@
+// Package gau wraps the gau passive URL collection tool.
 package gau
 
 import (

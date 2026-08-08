@@ -1,3 +1,4 @@
+// Package subfinder wraps the subfinder subdomain discovery tool.
 package subfinder
 
 import (
@@ -124,7 +125,7 @@ func ensureTargetInOutput(path, target string) error {
 	if err != nil {
 		return err
 	}
-	defer input.Close()
+	defer func() { _ = input.Close() }()
 
 	scanner := bufio.NewScanner(input)
 	hasTarget := false

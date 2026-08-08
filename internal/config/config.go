@@ -1,3 +1,4 @@
+// Package config loads scanforge.yaml and resolves tool paths and profiles.
 package config
 
 import (

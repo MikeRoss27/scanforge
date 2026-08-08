@@ -1,3 +1,4 @@
+// Package initcmd scaffolds the default scanforge.yaml and scope.txt files.
 package initcmd
 
 import (

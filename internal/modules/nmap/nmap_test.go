@@ -64,11 +64,13 @@ func TestRunBuildsOnePortRestrictedCommandPerHost(t *testing.T) {
 	}
 
 	runCtx := modules.NewRunContext("example.com", "ports", false, run)
-	runCtx.AddArtifact("open_ports", modules.Artifact{
+	if err := runCtx.AddArtifact("open_ports", modules.Artifact{
 		Name: "open_ports",
 		Type: "text",
 		Path: "03_ports/naabu.txt",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	executor := &recordingExecutor{}
 
 	result, err := New("nmap-test").Run(context.Background(), runCtx, executor)
@@ -94,7 +96,9 @@ func TestRunSupportsBracketedIPv6(t *testing.T) {
 	}
 
 	runCtx := modules.NewRunContext("2001:db8::1", "ports", false, run)
-	runCtx.AddArtifact("open_ports", modules.Artifact{Path: "03_ports/naabu.txt"})
+	if err := runCtx.AddArtifact("open_ports", modules.Artifact{Path: "03_ports/naabu.txt"}); err != nil {
+		t.Fatal(err)
+	}
 	executor := &recordingExecutor{}
 
 	if _, err := New("nmap-test").Run(context.Background(), runCtx, executor); err != nil {

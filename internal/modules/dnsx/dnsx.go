@@ -1,3 +1,4 @@
+// Package dnsx wraps the dnsx DNS resolution tool.
 package dnsx
 
 import (
@@ -97,13 +98,13 @@ func writeResolvedHosts(inputPath, outputPath string) error {
 	if err != nil {
 		return err
 	}
-	defer input.Close()
+	defer func() { _ = input.Close() }()
 
 	output, err := os.Create(outputPath)
 	if err != nil {
 		return err
 	}
-	defer output.Close()
+	defer func() { _ = output.Close() }()
 
 	seen := make(map[string]struct{})
 	scanner := bufio.NewScanner(input)

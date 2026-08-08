@@ -1,3 +1,5 @@
+// Package scope models canonical scan scopes, exclusions and the filtering
+// applied to every produced artifact.
 package scope
 
 import (
@@ -87,7 +89,7 @@ func LoadFromFile(path string) (*Scope, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to open scope file %q: %w", path, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	s := newScope()
 	scanner := bufio.NewScanner(file)
@@ -397,12 +399,3 @@ func sortedCIDRs(values []*net.IPNet, prefix string) []string {
 	return result
 }
 
-// normalizeHost is retained for package compatibility. Invalid values normalize
-// to the empty string and are therefore never allowed.
-func normalizeHost(input string) string {
-	host, err := hostFromInput(input)
-	if err != nil {
-		return ""
-	}
-	return host
-}

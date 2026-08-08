@@ -1,3 +1,5 @@
+// Package modules defines the scanner integration contract (Module, artifacts,
+// run context) and the registry used to resolve them.
 package modules
 
 import (
@@ -140,7 +142,7 @@ func (c *RunContext) filterArtifact(name string, artifact Artifact) error {
 	if err != nil {
 		return fmt.Errorf("open artifact %q: %w", path, err)
 	}
-	defer input.Close()
+	defer func() { _ = input.Close() }()
 
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".scope-filter-*")
 	if err != nil {
@@ -208,7 +210,7 @@ func (c *RunContext) appendScopeRejections(rejections []scopeRejection) error {
 	if err != nil {
 		return fmt.Errorf("open scope rejection log: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	encoder := json.NewEncoder(file)
 	for _, rejection := range rejections {

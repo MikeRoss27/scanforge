@@ -1,3 +1,4 @@
+// Package profile resolves named scan profiles and presets to module lists.
 package profile
 
 import (

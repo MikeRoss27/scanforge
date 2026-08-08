@@ -1,3 +1,4 @@
+// Package naabu wraps the naabu fast port scanner.
 package naabu
 
 import (

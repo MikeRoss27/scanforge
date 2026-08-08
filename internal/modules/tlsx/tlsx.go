@@ -1,3 +1,4 @@
+// Package tlsx wraps the tlsx TLS/certificate enrichment tool.
 package tlsx
 
 import (

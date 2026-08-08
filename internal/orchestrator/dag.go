@@ -1,3 +1,6 @@
+// Package orchestrator executes scan modules in dependency order using an
+// artifact-driven DAG, running independent modules in parallel waves while
+// enforcing scope filtering on produced artifacts.
 package orchestrator
 
 import (

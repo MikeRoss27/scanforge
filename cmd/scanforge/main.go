@@ -1,3 +1,4 @@
+// Command scanforge is the CLI entry point.
 package main
 
 import (

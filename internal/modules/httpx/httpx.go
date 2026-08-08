@@ -1,3 +1,4 @@
+// Package httpx wraps the httpx HTTP probing and technology detection tool.
 package httpx
 
 import (

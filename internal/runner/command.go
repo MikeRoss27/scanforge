@@ -1,3 +1,5 @@
+// Package runner abstracts command execution so scans can run for real or in
+// dry-run mode without sending any network traffic.
 package runner
 
 import "time"

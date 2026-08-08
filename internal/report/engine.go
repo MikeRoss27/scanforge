@@ -1,3 +1,5 @@
+// Package report consolidates raw tool outputs into a unified risk model and
+// renders report.json and report.md.
 package report
 
 import (

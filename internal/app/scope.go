@@ -52,14 +52,14 @@ func (p *terminalScopePrompter) Confirm(proposal ScopeProposal) (bool, error) {
 	if p == nil || p.input == nil {
 		return false, fmt.Errorf("scope confirmation input is unavailable")
 	}
-	fmt.Fprintf(p.output, "Effective scope (%s, mode %s):\n", proposal.Source, proposal.Mode)
+	_, _ = fmt.Fprintf(p.output, "Effective scope (%s, mode %s):\n", proposal.Source, proposal.Mode)
 	if proposal.Note != "" {
-		fmt.Fprintf(p.output, "Reason: %s\n", proposal.Note)
+		_, _ = fmt.Fprintf(p.output, "Reason: %s\n", proposal.Note)
 	}
 	for _, entry := range proposal.Entries {
-		fmt.Fprintf(p.output, "  - %s\n", entry)
+		_, _ = fmt.Fprintf(p.output, "  - %s\n", entry)
 	}
-	fmt.Fprint(p.output, "Continue with this scope? [y/N] ")
+	_, _ = fmt.Fprint(p.output, "Continue with this scope? [y/N] ")
 
 	answer, err := bufio.NewReader(p.input).ReadString('\n')
 	if err != nil && len(answer) == 0 {

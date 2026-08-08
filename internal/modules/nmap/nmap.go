@@ -1,3 +1,5 @@
+// Package nmap wraps the nmap port scanner, running hosts in parallel with a
+// bounded worker pool.
 package nmap
 
 import (
@@ -162,7 +164,7 @@ func readOpenPorts(path string) ([]hostPorts, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	portsByHost := make(map[string]map[int]struct{})
 	scanner := bufio.NewScanner(file)

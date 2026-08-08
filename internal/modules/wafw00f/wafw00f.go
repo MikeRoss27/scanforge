@@ -1,3 +1,4 @@
+// Package wafw00f wraps the wafw00f WAF detection tool.
 package wafw00f
 
 import (

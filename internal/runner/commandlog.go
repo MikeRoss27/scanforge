@@ -10,7 +10,7 @@ func AppendCommandLog(path string, command Command) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	line := "$ " + command.Name
 

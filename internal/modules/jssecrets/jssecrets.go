@@ -1,3 +1,5 @@
+// Package jssecrets scans crawled JavaScript for exposed secrets, cloud
+// buckets, internal hosts, emails and source maps.
 package jssecrets
 
 import (
@@ -263,7 +265,7 @@ func fetch(ctx context.Context, client *http.Client, target string, headers []st
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("unexpected status %d for %q", resp.StatusCode, target)
@@ -372,7 +374,7 @@ func verifyReachable(ctx context.Context, client *http.Client, target string, he
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.CopyN(io.Discard, resp.Body, 1)
 	return resp.StatusCode == http.StatusOK
 }
@@ -388,7 +390,7 @@ func readJSURLs(path string) ([]string, error) {
 		}
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var urls []string
 	seen := make(map[string]struct{})
@@ -430,7 +432,7 @@ func writeFindings(path string, findings []finding) error {
 	if err != nil {
 		return fmt.Errorf("failed to create JS secrets output: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	encoder := json.NewEncoder(file)
 	for _, item := range findings {

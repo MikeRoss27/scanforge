@@ -1,3 +1,4 @@
+// Package nuclei wraps the nuclei vulnerability scanner.
 package nuclei
 
 import (

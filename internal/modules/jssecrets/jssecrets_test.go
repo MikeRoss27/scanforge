@@ -277,7 +277,7 @@ func readFindings(t *testing.T, path string) []finding {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var findings []finding
 	scanner := bufio.NewScanner(file)

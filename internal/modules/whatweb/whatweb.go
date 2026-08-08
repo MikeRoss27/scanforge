@@ -1,3 +1,4 @@
+// Package whatweb wraps the whatweb technology fingerprinting tool.
 package whatweb
 
 import (

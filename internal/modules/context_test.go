@@ -16,11 +16,13 @@ import (
 func TestRunContextArtifacts(t *testing.T) {
 	ctx := NewRunContext("example.com", "passive", false, nil)
 
-	ctx.AddArtifact("subdomains", Artifact{
+	if err := ctx.AddArtifact("subdomains", Artifact{
 		Name: "subdomains",
 		Type: "text",
 		Path: "01_subdomains/subfinder.txt",
-	})
+	}); err != nil {
+		t.Fatalf("unexpected error from AddArtifact: %v", err)
+	}
 
 	art, ok := ctx.GetArtifact("subdomains")
 	if !ok {
@@ -102,7 +104,7 @@ func TestAddArtifactFiltersTargetsBeforePublishing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer logFile.Close()
+	defer func() { _ = logFile.Close() }()
 
 	var rejected []scopeRejection
 	scanner := bufio.NewScanner(logFile)

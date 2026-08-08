@@ -1,3 +1,4 @@
+// Package cli defines the cobra command tree for scanforge.
 package cli
 
 import (

@@ -1,3 +1,4 @@
+// Package katana wraps the katana web crawler.
 package katana
 
 import (
