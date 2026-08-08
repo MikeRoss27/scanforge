@@ -102,7 +102,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} dist/ \;
+          cp -a artifacts/. dist/
           (cd dist && sha256sum *.tar.gz *.zip 2>/dev/null > checksums.txt || true)
 
       - name: Create GitHub Release
