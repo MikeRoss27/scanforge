@@ -90,14 +90,44 @@ func (a *App) loadConfig() (*config.Config, error) {
 	return config.Load(config.ResolvePath(a.ConfigPath))
 }
 
+// runSession holds everything a single run needs after validation, so Run
+// stays a thin sequence and each phase can be reasoned about and tested on
+// its own.
+type runSession struct {
+	opts      RunOptions
+	profile   string
+	effective *effectiveScope
+	scanRun   *storage.Run
+	cfg       *config.Config
+	reportErr error
+}
+
 func (a *App) Run(ctx context.Context, opts RunOptions) error {
-	cfg, err := a.loadConfig()
+	session, err := a.prepareRun(opts)
 	if err != nil {
 		return err
 	}
 
+	results, runErr := session.execute(ctx)
+
+	manifestErr := session.finalizeManifest(results, runErr)
+	rep := session.generateReports()
+	printRunSummaryBox(session.scanRun, results, rep)
+
+	return errors.Join(runErr, manifestErr, session.reportErr)
+}
+
+// prepareRun loads the config, resolves the profile and effective scope, and
+// creates the run directory with the effective scope persisted in the
+// manifest.
+func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
+	cfg, err := a.loadConfig()
+	if err != nil {
+		return nil, err
+	}
+
 	if opts.Target == "" {
-		return fmt.Errorf("target is required")
+		return nil, fmt.Errorf("target is required")
 	}
 
 	profile := opts.Profile
@@ -114,15 +144,15 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 		opts.Exclusions,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if _, err := cfg.ProfileModules(profile); err != nil {
-		return err
+		return nil, err
 	}
 	if effective.proposal.Source == scopeSourceImplicit {
 		if err := a.confirmScope(effective.proposal, opts.ConfirmScope); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -130,38 +160,48 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 
 	scanRun, err := store.Create(opts.Target)
 	if err != nil {
-		return fmt.Errorf("failed to create run directory: %w", err)
+		return nil, fmt.Errorf("failed to create run directory: %w", err)
 	}
 	scanRun.Manifest.Profile = profile
 	effectiveScopePath := scanRun.Path("00_meta", "effective-scope.txt")
 	if err := effective.value.WriteFile(effectiveScopePath); err != nil {
-		return fmt.Errorf("failed to persist effective scope: %w", err)
+		return nil, fmt.Errorf("failed to persist effective scope: %w", err)
 	}
 	scanRun.Manifest.ScopePath = "00_meta/effective-scope.txt"
 	scanRun.Manifest.ScopeSource = effective.proposal.Source
 	scanRun.Manifest.ScopeMode = effective.proposal.Mode
 	scanRun.Manifest.Outputs["effective_scope"] = scanRun.Manifest.ScopePath
 	if err := scanRun.WriteManifest(); err != nil {
-		return fmt.Errorf("failed to record effective scope in manifest: %w", err)
+		return nil, fmt.Errorf("failed to record effective scope in manifest: %w", err)
 	}
 
-	var executor runner.Executor
+	return &runSession{
+		opts:      opts,
+		profile:   profile,
+		effective: effective,
+		scanRun:   scanRun,
+		cfg:       cfg,
+	}, nil
+}
 
-	if opts.DryRun {
-		executor = runner.NewDryRunExecutor(opts.Verbose)
+// execute builds the registry and executor, then runs the orchestrator in a
+// goroutine while its events are consumed on the terminal. The returned error
+// is the orchestrator-level failure; a TUI startup error aborts the run early.
+func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
+	var executor runner.Executor
+	if s.opts.DryRun {
+		executor = runner.NewDryRunExecutor(s.opts.Verbose)
 	} else {
-		executor = runner.NewRealExecutor(opts.Verbose)
+		executor = runner.NewRealExecutor(s.opts.Verbose)
 	}
 
 	ascii.PrintBanner()
 	fmt.Println(ui.Dim("  by MikeRoss"))
 	fmt.Println()
 
-	printRunInfoPanel(opts, profile, scanRun, *effective)
+	printRunInfoPanel(s.opts, s.profile, s.scanRun, *s.effective)
 
-	registry := buildRegistry(cfg)
-
-	orch := orchestrator.New(executor, registry)
+	orch := orchestrator.New(executor, buildRegistry(s.cfg))
 	eventChan := make(chan orchestrator.Event)
 
 	var results []*modules.Result
@@ -179,69 +219,90 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		results, runErr = orch.Run(runCtx, scanRun, orchestrator.Options{
-			Target:          opts.Target,
-			Profile:         profile,
-			Config:          cfg,
-			DryRun:          opts.DryRun,
-			Verbose:         opts.Verbose,
-			Scope:           effective.value,
-			Proxy:           opts.Proxy,
-			Headers:         opts.Headers,
-			Nuclei:          opts.Nuclei,
-			NmapConcurrency: opts.NmapConcurrency,
+		results, runErr = orch.Run(runCtx, s.scanRun, orchestrator.Options{
+			Target:          s.opts.Target,
+			Profile:         s.profile,
+			Config:          s.cfg,
+			DryRun:          s.opts.DryRun,
+			Verbose:         s.opts.Verbose,
+			Scope:           s.effective.value,
+			Proxy:           s.opts.Proxy,
+			Headers:         s.opts.Headers,
+			Nuclei:          s.opts.Nuclei,
+			NmapConcurrency: s.opts.NmapConcurrency,
 		}, eventChan)
 	}()
 
-	isInteractive := term.IsTerminal(int(os.Stdout.Fd()))
+	if err := s.consumeEvents(cancel, eventChan, done); err != nil {
+		return nil, err
+	}
+	return results, runErr
+}
 
-	if !opts.DryRun && isInteractive {
+// consumeEvents renders scan progress either through the Bubble Tea TUI (when
+// the output is a terminal and the run is real) or as plain log lines, and
+// returns once the orchestrator goroutine has finished. A non-nil error means
+// the TUI itself failed and the scan was aborted.
+func (s *runSession) consumeEvents(cancel context.CancelFunc, eventChan <-chan orchestrator.Event, done <-chan struct{}) error {
+	if !s.opts.DryRun && term.IsTerminal(int(os.Stdout.Fd())) {
 		model := tui.NewScanModel(eventChan)
 		if _, err := tea.NewProgram(model).Run(); err != nil {
 			cancel()
-			go func() {
-				for range eventChan {
-				}
-			}()
+			drainEvents(eventChan)
 			<-done
 			return err
 		}
 		// The user may have quit the UI before the scan finished: cancel the
 		// run and drain the remaining events so the orchestrator can return.
 		cancel()
-		go func() {
-			for range eventChan {
-			}
-		}()
+		drainEvents(eventChan)
 		<-done
-	} else {
-		for event := range eventChan {
-			switch e := event.(type) {
-			case orchestrator.WaveStartEvent:
-				if opts.Verbose || !opts.DryRun {
-					ui.Info("Wave %d: %s", e.Wave, strings.Join(e.Modules, ", "))
-				}
-			case orchestrator.ModuleStartEvent:
-				if opts.Verbose {
-					ui.Info("Running module %q...", e.Name)
-				}
-			case orchestrator.ModuleDoneEvent:
-				if opts.Verbose || !opts.DryRun {
-					msg := fmt.Sprintf("%s: %s (%s)", e.Name, e.Status, e.Dur.Round(time.Millisecond))
-					if e.Failed {
-						ui.Error("%s", msg)
-					} else {
-						ui.Success("%s", msg)
-					}
-				}
-			case orchestrator.DeadlockEvent:
-				ui.Warn("%s", e.Message)
+		return nil
+	}
+	for event := range eventChan {
+		s.printEvent(event)
+	}
+	<-done
+	return nil
+}
+
+// drainEvents discards remaining orchestrator events in the background so the
+// orchestrator can unblock and return after the TUI has gone away.
+func drainEvents(eventChan <-chan orchestrator.Event) {
+	go func() {
+		for range eventChan {
+		}
+	}()
+}
+
+func (s *runSession) printEvent(event orchestrator.Event) {
+	switch e := event.(type) {
+	case orchestrator.WaveStartEvent:
+		if s.opts.Verbose || !s.opts.DryRun {
+			ui.Info("Wave %d: %s", e.Wave, strings.Join(e.Modules, ", "))
+		}
+	case orchestrator.ModuleStartEvent:
+		if s.opts.Verbose {
+			ui.Info("Running module %q...", e.Name)
+		}
+	case orchestrator.ModuleDoneEvent:
+		if s.opts.Verbose || !s.opts.DryRun {
+			msg := fmt.Sprintf("%s: %s (%s)", e.Name, e.Status, e.Dur.Round(time.Millisecond))
+			if e.Failed {
+				ui.Error("%s", msg)
+			} else {
+				ui.Success("%s", msg)
 			}
 		}
-		<-done
+	case orchestrator.DeadlockEvent:
+		ui.Warn("%s", e.Message)
 	}
+}
 
-	scanRun.Manifest.CompletedAt = time.Now().Format(time.RFC3339)
+// finalizeManifest records completion time, per-module results and the run
+// status (completed/partial/failed) in the run manifest.
+func (s *runSession) finalizeManifest(results []*modules.Result, runErr error) error {
+	s.scanRun.Manifest.CompletedAt = time.Now().Format(time.RFC3339)
 	completedModules := 0
 	for _, result := range results {
 		if result.Status == "completed" {
@@ -250,46 +311,49 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	}
 	switch {
 	case runErr == nil && completedModules == len(results):
-		scanRun.Manifest.Status = "completed"
+		s.scanRun.Manifest.Status = "completed"
 	case completedModules == 0:
-		scanRun.Manifest.Status = "failed"
+		s.scanRun.Manifest.Status = "failed"
 	default:
-		scanRun.Manifest.Status = "partial"
+		s.scanRun.Manifest.Status = "partial"
 	}
 
 	for _, result := range results {
-		scanRun.Manifest.Modules = append(scanRun.Manifest.Modules, storage.ModuleResult{
+		s.scanRun.Manifest.Modules = append(s.scanRun.Manifest.Modules, storage.ModuleResult{
 			Name:   result.Name,
 			Status: result.Status,
 		})
 		for key, value := range result.OutputFiles {
-			scanRun.Manifest.Outputs[key] = value
+			s.scanRun.Manifest.Outputs[key] = value
 		}
 	}
 
-	if writeErr := scanRun.WriteManifest(); writeErr != nil {
-		return fmt.Errorf("failed to write manifest: %v (run error: %v)", writeErr, runErr)
-	}
+	return s.scanRun.WriteManifest()
+}
 
+// generateReports renders report.json and report.md from the raw artifacts
+// and prints the terminal summary. Failures are downgraded to warnings so a
+// scan always ends with the summary box.
+func (s *runSession) generateReports() *report.Report {
 	fmt.Println()
 	ui.Info("Generating report...")
-	rep, reportErr := report.GenerateReport(scanRun.RootDir, &scanRun.Manifest)
-	if reportErr != nil {
-		ui.Warn("Failed to generate report: %v", reportErr)
-	} else {
-		jsonPath := filepath.Join(scanRun.RootDir, "report.json")
-		mdPath := filepath.Join(scanRun.RootDir, "report.md")
-		reportErr = errors.Join(rep.WriteJSON(jsonPath), rep.WriteMarkdown(mdPath))
-		if reportErr != nil {
-			ui.Warn("Failed to write report: %v", reportErr)
-		} else {
-			report.PrintTerminalSummary(rep)
-		}
+
+	rep, err := report.GenerateReport(s.scanRun.RootDir, &s.scanRun.Manifest)
+	if err != nil {
+		ui.Warn("Failed to generate report: %v", err)
+		s.reportErr = err
+		return rep
 	}
 
-	printRunSummaryBox(scanRun, results, rep)
-
-	return errors.Join(runErr, reportErr)
+	jsonPath := filepath.Join(s.scanRun.RootDir, "report.json")
+	mdPath := filepath.Join(s.scanRun.RootDir, "report.md")
+	if err := errors.Join(rep.WriteJSON(jsonPath), rep.WriteMarkdown(mdPath)); err != nil {
+		ui.Warn("Failed to write report: %v", err)
+		s.reportErr = err
+	} else {
+		report.PrintTerminalSummary(rep)
+	}
+	return rep
 }
 
 // printRunInfoPanel renders a sleek bordered panel with the run configuration

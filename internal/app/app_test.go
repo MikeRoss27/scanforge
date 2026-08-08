@@ -4,63 +4,74 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestRunDryRun(t *testing.T) {
-	dir := t.TempDir()
-
-	scopePath := filepath.Join(dir, "scope.txt")
-	if err := os.WriteFile(scopePath, []byte("example.com\n"), 0644); err != nil {
-		t.Fatalf("failed to write scope file: %v", err)
-	}
-
-	workspace := filepath.Join(dir, "runs")
-	configPath := filepath.Join(dir, "scanforge.yaml")
-	configContent := "workspace: " + workspace + "\ndefault_scope: " + scopePath + "\n"
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		t.Fatalf("failed to write config file: %v", err)
-	}
-
-	app := New(configPath)
+func TestRunDryRunCompletesEndToEnd(t *testing.T) {
+	root := t.TempDir()
+	app := New(writeTestConfig(t, root))
 
 	err := app.Run(context.Background(), RunOptions{
-		Target:  "example.com",
-		Profile: "passive",
-		Scope:   scopePath,
-		DryRun:  true,
-		Verbose: true,
+		Target:       "example.com",
+		Profile:      "passive",
+		DryRun:       true,
+		ConfirmScope: true,
 	})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("Run() error = %v", err)
 	}
 
-	entries, err := os.ReadDir(workspace)
+	runs, err := os.ReadDir(filepath.Join(root, "runs", "example.com"))
 	if err != nil {
-		t.Fatalf("expected workspace to exist: %v", err)
+		t.Fatalf("expected runs/example.com directory: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected one run directory, got %d", len(runs))
+	}
+	runDir := filepath.Join(root, "runs", "example.com", runs[0].Name())
+
+	for _, file := range []string{
+		"00_meta/manifest.json",
+		"00_meta/effective-scope.txt",
+		"00_meta/commands.log",
+		"report.json",
+		"report.md",
+	} {
+		if _, err := os.Stat(filepath.Join(runDir, file)); err != nil {
+			t.Errorf("missing %s: %v", file, err)
+		}
 	}
 
-	if len(entries) == 0 {
-		t.Fatal("expected at least one run directory")
+	manifestData, err := os.ReadFile(filepath.Join(runDir, "00_meta", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := string(manifestData)
+	if !strings.Contains(manifest, `"status": "completed"`) {
+		t.Errorf("manifest status not completed: %s", manifest)
+	}
+	if !strings.Contains(manifest, `"profile": "passive"`) {
+		t.Errorf("manifest profile not set: %s", manifest)
 	}
 }
 
-func TestRunRejectsOutOfScopeTarget(t *testing.T) {
-	dir := t.TempDir()
-
-	scopePath := filepath.Join(dir, "scope.txt")
-	if err := os.WriteFile(scopePath, []byte("allowed.com\n"), 0644); err != nil {
-		t.Fatalf("failed to write scope file: %v", err)
+func TestRunRejectsMissingTarget(t *testing.T) {
+	app := New(writeTestConfig(t, t.TempDir()))
+	if err := app.Run(context.Background(), RunOptions{Profile: "passive", DryRun: true}); err == nil {
+		t.Fatal("expected error for missing target")
 	}
+}
 
-	app := New("")
-
+func TestRunRejectsUnknownProfile(t *testing.T) {
+	app := New(writeTestConfig(t, t.TempDir()))
 	err := app.Run(context.Background(), RunOptions{
-		Target: "denied.com",
-		Scope:  scopePath,
-		DryRun: true,
+		Target:       "example.com",
+		Profile:      "does-not-exist",
+		DryRun:       true,
+		ConfirmScope: true,
 	})
-	if err == nil {
-		t.Fatal("expected out-of-scope error")
+	if err == nil || !strings.Contains(err.Error(), "profile") {
+		t.Fatalf("expected profile error, got %v", err)
 	}
 }
