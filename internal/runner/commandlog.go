@@ -18,7 +18,7 @@ func AppendCommandLog(path string, command Command) error {
 	line := "$ " + command.Name
 
 	if len(command.Args) > 0 {
-		line += " " + strings.Join(command.Args, " ")
+		line += " " + strings.Join(quoteAll(command.Args), " ")
 	}
 
 	if command.StdoutFile != "" {
@@ -33,4 +33,43 @@ func AppendCommandLog(path string, command Command) error {
 
 	_, err = file.WriteString(line)
 	return err
+}
+
+// quoteAll renders args as unambiguous shell tokens. Without quoting, headers
+// such as "Authorization: Bearer <token>" would render ambiguously and a
+// config-supplied header containing a newline would inject fake log lines.
+func quoteAll(args []string) []string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = shellQuote(arg)
+	}
+	return quoted
+}
+
+// shellQuote returns arg as a POSIX-style token for the command log. Args made
+// only of safe characters stay bare; anything else is single-quoted (embedded
+// quotes become '\”), and control characters are shown as literal escape
+// sequences so a single log line cannot be forged.
+func shellQuote(arg string) string {
+	if arg != "" && !strings.ContainsAny(arg, "\n\r\t '\\\"$`<>|&;()*?[]{}~!#") {
+		return arg
+	}
+	var b strings.Builder
+	b.WriteByte('\'')
+	for _, r := range arg {
+		switch r {
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\'':
+			b.WriteString(`'\''`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('\'')
+	return b.String()
 }
