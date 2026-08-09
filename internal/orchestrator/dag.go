@@ -18,9 +18,10 @@ type DAG struct {
 
 // Node represents a single module and its dependencies in the DAG
 type Node struct {
-	Module   modules.Module
-	Requires []string
-	Produces []string
+	Module       modules.Module
+	Requires     []string
+	Produces     []string
+	SoftRequires []string
 }
 
 // BuildDAG creates a dependency graph from a list of modules
@@ -48,6 +49,9 @@ func BuildDAG(mods []modules.Module) (*DAG, error) {
 			Requires: m.Requires(),
 			Produces: m.Produces(),
 		}
+		if soft, ok := m.(modules.SoftRequires); ok {
+			node.SoftRequires = soft.SoftRequires()
+		}
 		dag.nodes[name] = node
 		dag.order = append(dag.order, name)
 
@@ -69,6 +73,11 @@ func BuildDAG(mods []modules.Module) (*DAG, error) {
 			}
 			if _, exists := dag.producers[artifact]; !exists {
 				return nil, fmt.Errorf("module %q requires artifact %q, but no selected module produces it", name, artifact)
+			}
+		}
+		for _, artifact := range dag.nodes[name].SoftRequires {
+			if artifact == "" {
+				return nil, fmt.Errorf("module %q soft-requires an artifact with an empty name", name)
 			}
 		}
 	}
@@ -97,6 +106,15 @@ func visit(dag *DAG, name string, state map[string]uint8) error {
 			return err
 		}
 	}
+	// Soft edges exist only when their producer is part of the profile; a
+	// cycle through them is a genuine ordering deadlock and is rejected.
+	for _, artifact := range dag.nodes[name].SoftRequires {
+		if producer, ok := dag.producers[artifact]; ok {
+			if err := visit(dag, producer, state); err != nil {
+				return err
+			}
+		}
+	}
 	state[name] = 2
 	return nil
 }
@@ -118,6 +136,17 @@ func (d *DAG) NextReady(completed map[string]bool, availableArtifacts map[string
 			if !availableArtifacts[req] {
 				canRun = false
 				break
+			}
+		}
+		// Soft requirements only gate execution when their producer is part
+		// of the profile: the module must then wait for it, but a profile
+		// without the producer must still run.
+		if canRun {
+			for _, req := range node.SoftRequires {
+				if _, hasProducer := d.producers[req]; hasProducer && !availableArtifacts[req] {
+					canRun = false
+					break
+				}
 			}
 		}
 

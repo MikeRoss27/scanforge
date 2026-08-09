@@ -29,11 +29,18 @@ func (m *Module) Description() string {
 	return "Consolidates alive hosts, crawled URLs, fuzzed paths and JS-discovered endpoints into one attack surface list for downstream scanners"
 }
 
-// Requires declares crawled_urls and js_secrets as hard dependencies so the
-// attack surface is assembled after their producers ran: reading them
-// optionally in the same wave as their producers would make the contents
-// nondeterministic run-to-run.
-func (m *Module) Requires() []string { return []string{"alive_urls", "crawled_urls", "js_secrets"} }
+// Requires declares alive_urls as the hard dependency (it always comes from
+// httpx, which every web-facing profile includes).
+func (m *Module) Requires() []string { return []string{"alive_urls"} }
+
+// SoftRequires keeps the attack surface deterministic when the optional
+// upstream producers are part of the profile (they must finish first, so the
+// contents never depend on scheduling), while profiles that omit katana,
+// ffuf or jssecrets still run: those sources are read conditionally below.
+func (m *Module) SoftRequires() []string {
+	return []string{"crawled_urls", "discovered_paths", "js_secrets"}
+}
+
 func (m *Module) Produces() []string { return []string{"attack_surface_urls"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.Executor) (*modules.Result, error) {

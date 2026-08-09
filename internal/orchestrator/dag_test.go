@@ -63,6 +63,72 @@ func TestBuildDAGRejectsCycle(t *testing.T) {
 	}
 }
 
+func TestBuildDAGSoftRequiresMissingProducerIsAllowed(t *testing.T) {
+	consumer := &mockModule{
+		name:         "consumer",
+		requires:     []string{"hard_output"},
+		softRequires: []string{"optional_output"},
+	}
+	producer := &mockModule{name: "producer", produces: []string{"hard_output"}}
+
+	dag, err := BuildDAG([]modules.Module{producer, consumer})
+	if err != nil {
+		t.Fatalf("BuildDAG() error = %v, want success without the optional producer", err)
+	}
+
+	// Without the optional artifact the consumer is still ready once the
+	// hard requirement is satisfied.
+	ready := dag.NextReady(
+		map[string]bool{"producer": true},
+		map[string]bool{"hard_output": true},
+	)
+	if len(ready) != 1 || ready[0].Name() != "consumer" {
+		t.Fatalf("ready modules = %v, want [consumer]", moduleNames(ready))
+	}
+}
+
+func TestBuildDAGSoftRequiresGatesWhenProducerSelected(t *testing.T) {
+	consumer := &mockModule{
+		name:         "consumer",
+		requires:     []string{"hard_output"},
+		softRequires: []string{"optional_output"},
+	}
+	producer := &mockModule{name: "producer", produces: []string{"hard_output"}}
+	optional := &mockModule{name: "optional", produces: []string{"optional_output"}}
+
+	dag, err := BuildDAG([]modules.Module{producer, optional, consumer})
+	if err != nil {
+		t.Fatalf("BuildDAG() error = %v", err)
+	}
+
+	// The consumer must wait for the selected optional producer.
+	ready := dag.NextReady(
+		map[string]bool{"producer": true, "optional": true},
+		map[string]bool{"hard_output": true},
+	)
+	if len(ready) != 0 {
+		t.Fatalf("ready modules = %v, want none while the optional artifact is missing", moduleNames(ready))
+	}
+
+	ready = dag.NextReady(
+		map[string]bool{"producer": true, "optional": true},
+		map[string]bool{"hard_output": true, "optional_output": true},
+	)
+	if len(ready) != 1 || ready[0].Name() != "consumer" {
+		t.Fatalf("ready modules = %v, want [consumer]", moduleNames(ready))
+	}
+}
+
+func TestBuildDAGRejectsCycleThroughSoftRequires(t *testing.T) {
+	_, err := BuildDAG([]modules.Module{
+		&mockModule{name: "one", requires: []string{"two_output"}, produces: []string{"one_output"}},
+		&mockModule{name: "two", softRequires: []string{"one_output"}, produces: []string{"two_output"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "dependency cycle") {
+		t.Fatalf("BuildDAG() error = %v, want cycle error through soft requires", err)
+	}
+}
+
 func moduleNames(mods []modules.Module) []string {
 	names := make([]string, len(mods))
 	for i, module := range mods {

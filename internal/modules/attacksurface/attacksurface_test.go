@@ -14,8 +14,11 @@ import (
 )
 
 func TestRequiresAndProduces(t *testing.T) {
-	if got, want := New().Requires(), []string{"alive_urls", "crawled_urls", "js_secrets"}; !reflect.DeepEqual(got, want) {
+	if got, want := New().Requires(), []string{"alive_urls"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Requires() = %v, want %v", got, want)
+	}
+	if got, want := New().SoftRequires(), []string{"crawled_urls", "discovered_paths", "js_secrets"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("SoftRequires() = %v, want %v", got, want)
 	}
 	if got, want := New().Produces(), []string{"attack_surface_urls"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Produces() = %v, want %v", got, want)
