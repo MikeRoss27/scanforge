@@ -5,11 +5,23 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/runner"
 )
+
+// defaultWordlistCandidates are searched in order when no wordlist is
+// configured, so an out-of-the-box run works on common distro layouts.
+var defaultWordlistCandidates = []string{
+	"/usr/share/wordlists/dirb/common.txt",
+	"/usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt",
+	"/usr/share/seclists/Discovery/Web-Content/common.txt",
+	"/opt/SecLists/Discovery/Web-Content/common.txt",
+	"~/tools/dirb-common.txt",
+}
 
 type Module struct {
 	binary string
@@ -35,14 +47,18 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	inputFile := runCtx.Run.Path(inputArt.Path)
 
 	opts := runCtx.Ffuf
-	wordlist := opts.Wordlist
-	if wordlist == "" {
-		wordlist = "/usr/share/wordlists/dirb/common.txt"
-	}
+	wordlist := resolveWordlist(opts.Wordlist)
 	if !runCtx.DryRun {
+		if wordlist == "" {
+			return nil, fmt.Errorf("no ffuf wordlist found (checked: %s); install wordlists (e.g. 'sudo apt install wordlists') or pass --ffuf-wordlist <path>", strings.Join(defaultWordlistCandidates, ", "))
+		}
 		if _, err := os.Stat(wordlist); os.IsNotExist(err) {
 			return nil, fmt.Errorf("wordlist not found: %s", wordlist)
 		}
+	} else if wordlist == "" {
+		// Dry runs log the command even when no wordlist is installed; keep
+		// the placeholder obvious instead of emitting an invalid "-w :FUZZ".
+		wordlist = "<wordlist: none found>"
 	}
 
 	outputFile := runCtx.Run.Path("05_content", "ffuf.json")
@@ -101,4 +117,29 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			"ffuf_stderr":      "00_meta/ffuf.stderr.log",
 		},
 	}, nil
+}
+
+// resolveWordlist returns the configured wordlist (with ~ expanded) or, when
+// none is set, the first default candidate that exists on disk.
+func resolveWordlist(configured string) string {
+	if configured != "" {
+		return expandPath(configured)
+	}
+	for _, candidate := range defaultWordlistCandidates {
+		path := expandPath(candidate)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+// expandPath resolves a leading ~ to the current user's home directory.
+func expandPath(path string) string {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, strings.TrimPrefix(path, "~"))
+		}
+	}
+	return path
 }

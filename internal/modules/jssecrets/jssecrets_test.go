@@ -193,6 +193,68 @@ func TestScanBodyDetectsEveryCategory(t *testing.T) {
 	}
 }
 
+func TestScanBodyInternalHostnameSkipsPropertyAccess(t *testing.T) {
+	cases := []struct {
+		name     string
+		body     string
+		wantFlag bool
+	}{
+		{"minified identifier property access", `const e = {internal: 1}; if (e.internal) report(e);`, false},
+		{"this property access", `const x = this.internal || {};`, false},
+		{"chained property access", `config.env.internal.value;`, false},
+		{"quoted internal hostname", `const api = "payments.internal";`, true},
+		{"url internal hostname", `fetch("https://payments.internal/charge");`, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			findings := scanBody("https://target.example/app.js", tc.body)
+			flagged := false
+			for _, f := range findings {
+				if f.Pattern == "internal-hostname" {
+					flagged = true
+				}
+			}
+			if flagged != tc.wantFlag {
+				t.Fatalf("internal-hostname flagged = %v, want %v (findings: %+v)", flagged, tc.wantFlag, findings)
+			}
+		})
+	}
+}
+
+const (
+	// tmdbPublicJWT is TMDB's well-known public API key JWT, shipped in every
+	// TMDB client integration; its aud claim is the public key itself.
+	tmdbPublicJWT = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI1ODRlMGVhYWRlMDUwODA0Mzg2OTIyNDNiNGFlMDY5ZCIsIm5iZiI6MTc1MzczMDk3MS41MzYsInN1YiI6IjY4ODdjZjliNzMwYWI1NzJiNjhhNzQyOCIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.Uq9psYif6KREYJCByaABi3Yq4WYEzeF8e-zTobEPucw"
+	// randomJWT is a syntactically valid JWT with an audience that is not
+	// whitelisted and must therefore still be reported.
+	randomJWT = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJzb21lLWNsaWVudCIsImV4cCI6MTk5OTk5OTk5OX0.RZrVbQwErTyUiOpAsDfGhJkLzXcVbNmQ1"
+)
+
+func TestScanBodyJWTWhitelistsPublicAudience(t *testing.T) {
+	body := `const tmdb = "` + tmdbPublicJWT + `";`
+	findings := scanBody("https://target.example/app.js", body)
+	for _, f := range findings {
+		if f.Pattern == "jwt" {
+			t.Fatalf("public TMDB JWT was flagged: %+v", f)
+		}
+	}
+
+	body = `const jwt = "` + randomJWT + `";`
+	findings = scanBody("https://target.example/app.js", body)
+	var flagged bool
+	for _, f := range findings {
+		if f.Pattern == "jwt" {
+			flagged = true
+			if f.Match != randomJWT {
+				t.Fatalf("jwt match = %q, want the full token", f.Match)
+			}
+		}
+	}
+	if !flagged {
+		t.Fatalf("random JWT was not flagged, findings: %+v", findings)
+	}
+}
+
 func TestScanSourceMapsOnlyWhenReachable(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/app.js", func(w http.ResponseWriter, _ *http.Request) {

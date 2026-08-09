@@ -59,6 +59,13 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	if err != nil {
 		return nil, fmt.Errorf("failed to read attack surface: %w", err)
 	}
+	if !runCtx.DryRun {
+		if _, statErr := os.Stat(inputFile); os.IsNotExist(statErr) {
+			// In a real run a missing attack surface means the upstream
+			// modules produced nothing; completing silently would hide it.
+			return nil, fmt.Errorf("attack surface file %q is missing (upstream modules produced no output)", inputFile)
+		}
+	}
 
 	if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, runner.Command{
 		Name: "httpcheck (native)",
@@ -78,6 +85,24 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 			return nil, err
 		}
 	}
+
+	// Header hardening is host-level: a missing header on one URL of a host
+	// implies it on the others, so report each check at most once per host.
+	seen := make(map[string]bool)
+	deduped := checks[:0]
+	for _, c := range checks {
+		host := c.URL
+		if u, err := url.Parse(c.URL); err == nil && u.Host != "" {
+			host = u.Host
+		}
+		key := c.Check + "|" + host
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		deduped = append(deduped, c)
+	}
+	checks = deduped
 
 	sort.Slice(checks, func(i, j int) bool {
 		if checks[i].URL != checks[j].URL {
@@ -201,7 +226,10 @@ func evaluateHeaders(target string, header http.Header) []check {
 		checks = append(checks, check{target, "missing-hsts", "info", "Strict-Transport-Security header is missing"})
 	}
 
-	if xfo == "" {
+	// X-Frame-Options and CSP frame-ancestors both block framing; either is
+	// enough, so a missing XFO is only reported when the CSP directive is
+	// absent too.
+	if xfo == "" && !strings.Contains(strings.ToLower(csp), "frame-ancestors") {
 		checks = append(checks, check{target, "missing-x-frame-options", "info", "X-Frame-Options header is missing"})
 	}
 
@@ -269,6 +297,35 @@ func applyHeaders(req *http.Request, headers []string) {
 	}
 }
 
+// staticAssetExts are the path suffixes treated as static assets. Header
+// hardening is host-level, so URLs serving these are never checked.
+var staticAssetExts = []string{
+	".js", ".mjs", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg",
+	".webp", ".avif", ".ico", ".woff", ".woff2", ".ttf", ".otf", ".eot",
+	".map", ".mp4", ".webm",
+}
+
+// isStaticAsset reports whether raw points at a static asset: its path
+// (lower-cased, query string ignored) ends with a known asset extension.
+// robots.txt, manifest.json and sw.js are not treated as assets.
+func isStaticAsset(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	path := strings.ToLower(strings.TrimPrefix(u.Path, "/"))
+	switch path {
+	case "robots.txt", "manifest.json", "sw.js":
+		return false
+	}
+	for _, ext := range staticAssetExts {
+		if strings.HasSuffix(path, ext) {
+			return true
+		}
+	}
+	return false
+}
+
 func readURLs(path string) ([]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -285,7 +342,7 @@ func readURLs(path string) ([]string, error) {
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		if line == "" || isStaticAsset(line) {
 			continue
 		}
 		if _, dup := seen[line]; dup {

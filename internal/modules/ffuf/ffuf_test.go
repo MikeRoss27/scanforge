@@ -102,6 +102,10 @@ func TestRunAppliesWordlistAndFilterCodes(t *testing.T) {
 }
 
 func TestRunRequiresExistingWordlistOutsideDryRun(t *testing.T) {
+	original := defaultWordlistCandidates
+	t.Cleanup(func() { defaultWordlistCandidates = original })
+	defaultWordlistCandidates = []string{filepath.Join(t.TempDir(), "nope.txt")}
+
 	run := testRun(t, t.TempDir())
 	if err := os.WriteFile(run.Path("02_http", "httpx.txt"), []byte("http://example.com\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -112,5 +116,93 @@ func TestRunRequiresExistingWordlistOutsideDryRun(t *testing.T) {
 	}
 	if _, err := New("ffuf").Run(context.Background(), runCtx, &recordingExecutor{}); err == nil {
 		t.Fatal("expected error for missing wordlist outside dry-run")
+	}
+}
+
+func TestRunUsesDefaultWordlistWhenAvailable(t *testing.T) {
+	original := defaultWordlistCandidates
+	t.Cleanup(func() { defaultWordlistCandidates = original })
+
+	wordlist := filepath.Join(t.TempDir(), "common.txt")
+	if err := os.WriteFile(wordlist, []byte("admin\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	defaultWordlistCandidates = []string{filepath.Join(t.TempDir(), "missing.txt"), wordlist}
+
+	run := testRun(t, t.TempDir())
+	if err := os.WriteFile(run.Path("02_http", "httpx.txt"), []byte("http://example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{Name: "alive_urls", Type: "text", Path: "02_http/httpx.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	executor := &recordingExecutor{}
+
+	if _, err := New("ffuf").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	args := strings.Join(executor.commands[0].Args, " ")
+	if !strings.Contains(args, "-w "+wordlist+":FUZZ") {
+		t.Errorf("args %q should use auto-detected wordlist %q", args, wordlist)
+	}
+}
+
+func TestResolveWordlistPicksFirstExistingCandidate(t *testing.T) {
+	original := defaultWordlistCandidates
+	t.Cleanup(func() { defaultWordlistCandidates = original })
+
+	dir := t.TempDir()
+	first := filepath.Join(dir, "missing.txt")
+	second := filepath.Join(dir, "existing.txt")
+	if err := os.WriteFile(second, []byte("admin\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	defaultWordlistCandidates = []string{first, second}
+
+	if got, want := resolveWordlist(""), second; got != want {
+		t.Fatalf("resolveWordlist(\"\") = %q, want %q", got, want)
+	}
+}
+
+func TestResolveWordlistExpandsTilde(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := expandPath("~/file.txt"), filepath.Join(home, "file.txt"); got != want {
+		t.Fatalf("expandPath(\"~/file.txt\") = %q, want %q", got, want)
+	}
+}
+
+func TestResolveWordlistNoneExistingReturnsEmpty(t *testing.T) {
+	original := defaultWordlistCandidates
+	t.Cleanup(func() { defaultWordlistCandidates = original })
+	defaultWordlistCandidates = []string{filepath.Join(t.TempDir(), "nope.txt")}
+
+	if got := resolveWordlist(""); got != "" {
+		t.Fatalf("resolveWordlist(\"\") = %q, want empty", got)
+	}
+}
+
+func TestRunErrorListsWordlistCandidates(t *testing.T) {
+	original := defaultWordlistCandidates
+	t.Cleanup(func() { defaultWordlistCandidates = original })
+	defaultWordlistCandidates = []string{filepath.Join(t.TempDir(), "nope.txt")}
+
+	run := testRun(t, t.TempDir())
+	if err := os.WriteFile(run.Path("02_http", "httpx.txt"), []byte("http://example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{Name: "alive_urls", Type: "text", Path: "02_http/httpx.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := New("ffuf").Run(context.Background(), runCtx, &recordingExecutor{})
+	if err == nil {
+		t.Fatal("expected error when no wordlist is available")
+	}
+	if !strings.Contains(err.Error(), "--ffuf-wordlist") {
+		t.Fatalf("error %q should suggest --ffuf-wordlist", err)
 	}
 }

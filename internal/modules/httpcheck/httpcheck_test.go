@@ -132,6 +132,83 @@ func TestReadURLsDeduplicates(t *testing.T) {
 	}
 }
 
+func TestReadURLsSkipsStaticAssets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "surface.txt")
+	content := "https://x.com/app.js\nhttps://x.com/assets/main.css\nhttps://x.com/logo.png?size=2\nhttps://x.com/\nhttps://x.com/api/v1\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	urls, err := readURLs(path)
+	if err != nil {
+		t.Fatalf("readURLs() error = %v", err)
+	}
+	if len(urls) != 2 || urls[0] != "https://x.com/" || urls[1] != "https://x.com/api/v1" {
+		t.Fatalf("readURLs() = %v, want static assets filtered out, keeping [https://x.com/ https://x.com/api/v1]", urls)
+	}
+}
+
+func TestIsStaticAsset(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{"js asset", "https://x.com/app.js", true},
+		{"css asset", "https://x.com/assets/main.css", true},
+		{"png asset with query", "https://x.com/logo.png?size=2", true},
+		{"robots.txt is not an asset", "https://x.com/robots.txt", false},
+		{"root path", "https://x.com/", false},
+		{"service worker is not an asset", "https://x.com/sw.js", false},
+		{"html page", "https://x.com/index.html", false},
+		{"api path", "https://x.com/api/v1", false},
+		{"json data", "https://x.com/data.json", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isStaticAsset(tc.raw); got != tc.want {
+				t.Fatalf("isStaticAsset(%q) = %v, want %v", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunDeduplicatesFindingsPerHost(t *testing.T) {
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Set-Cookie", "sid=xyz; Path=/")
+		_, _ = w.Write([]byte("ok"))
+	}
+	hostA := httptest.NewServer(http.HandlerFunc(handler))
+	defer hostA.Close()
+	hostB := httptest.NewServer(http.HandlerFunc(handler))
+	defer hostB.Close()
+
+	run := testRun(t)
+	writeURLs(t, run, hostA.URL+"/\n"+hostA.URL+"/admin\n"+hostB.URL+"/\n")
+	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := New().Run(context.Background(), runCtx, nil); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	data, err := os.ReadFile(run.Path(outputRel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := func(name string) int {
+		return strings.Count(string(data), `"check":"`+name+`"`)
+	}
+	// missing-hsts is excluded: httptest servers speak plain HTTP and HSTS is
+	// only flagged over HTTPS, but it goes through the same dedup path.
+	for _, name := range []string{"missing-csp", "missing-x-frame-options", "missing-nosniff", "missing-referrer-policy", "missing-permissions-policy", "cookie-without-secure", "cookie-without-httponly"} {
+		if got := count(name); got != 2 {
+			t.Fatalf("%s findings = %d, want 2 (one per host), data:\n%s", name, got, data)
+		}
+	}
+}
+
 func containsCheck(checks []check, name string) bool {
 	for _, c := range checks {
 		if c.Check == name {

@@ -103,7 +103,7 @@ func NewRunCommand(application *app.App) *cobra.Command {
 
 	cmd.Flags().IntVar(&nmapConcurrency, "nmap-concurrency", 0, "Max concurrent nmap processes (default 4; lower to reduce noise)")
 
-	cmd.Flags().StringVar(&ffufWordlist, "ffuf-wordlist", "", "Ffuf: wordlist of paths to fuzz (default /usr/share/wordlists/dirb/common.txt)")
+	cmd.Flags().StringVar(&ffufWordlist, "ffuf-wordlist", "", "Ffuf: wordlist of paths to fuzz (default: first existing of /usr/share/wordlists/dirb/common.txt, /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt, /usr/share/seclists/Discovery/Web-Content/common.txt)")
 	cmd.Flags().StringVar(&ffufFilterCodes, "ffuf-filter-codes", "", "Ffuf: comma-separated HTTP status codes to filter out, e.g. 404,500")
 
 	return cmd

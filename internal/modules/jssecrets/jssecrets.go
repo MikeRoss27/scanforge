@@ -5,6 +5,7 @@ package jssecrets
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -130,6 +131,14 @@ var placeholderEmailDomains = map[string]struct{}{
 	"test.com": {}, "domain.com": {}, "yourcompany.com": {},
 	"company.com": {}, "email.com": {}, "acme.com": {}, "foo.com": {},
 	"yourdomain.com": {}, "site.com": {}, "sample.com": {},
+}
+
+// jwtPublicAudiences are aud claim values of well-known public JWTs that ship
+// inside every integration of a service and therefore expose nothing. TMDB's
+// public API key is embedded in its client JS as the aud claim of a signed
+// demo JWT.
+var jwtPublicAudiences = map[string]struct{}{
+	"584e0eaade05080438692243b4ae069d": {},
 }
 
 var sourceMapCommentPattern = regexp.MustCompile(`\/\/[#@]\s*sourceMappingURL=([^\s'"]+)`)
@@ -420,15 +429,25 @@ func scanBody(target, body string) []finding {
 	reported := make(map[string]struct{})
 	for _, rule := range rules {
 		seen := make(map[string]struct{})
-		for _, groups := range rule.Regex.FindAllStringSubmatch(body, -1) {
-			value := groups[0]
-			if rule.Group > 0 && rule.Group < len(groups) {
-				value = groups[rule.Group]
+		for _, loc := range rule.Regex.FindAllStringSubmatchIndex(body, -1) {
+			start, end := loc[0], loc[1]
+			if rule.Group > 0 && rule.Group*2+1 < len(loc) {
+				start, end = loc[rule.Group*2], loc[rule.Group*2+1]
 			}
+			if start < 0 {
+				continue
+			}
+			value := body[start:end]
 			if value == "" {
 				continue
 			}
 			if rule.Kind == kindEmail && isPlaceholderEmail(value) {
+				continue
+			}
+			if rule.Kind == kindInternalHost && isInternalHostPropertyAccess(body, start, value) {
+				continue
+			}
+			if rule.Name == "jwt" && isPublicJWT(value) {
 				continue
 			}
 			if _, ok := seen[value]; ok {
@@ -447,6 +466,53 @@ func scanBody(target, body string) []finding {
 	}
 	results = append(results, scanEntropySecrets(target, body, reported)...)
 	return results
+}
+
+// isInternalHostPropertyAccess reports whether an internal-host match is
+// really a JavaScript property access in a minified bundle rather than a
+// reference to an internal host. Minified code reads properties as
+// e.internal, this.internal or via longer chains (config.env.internal), all
+// of which look like internal hostnames; real references are quoted
+// ("payments.internal") or slash-delimited (https://payments.internal/...). A
+// match counts as property access when it follows a dot (the tail of a longer
+// chain), or — for plain two-segment hostnames — when its label is the this
+// or self keyword or a short (1-2 char) minified identifier. IPv4-shaped
+// matches never qualify.
+func isInternalHostPropertyAccess(body string, start int, match string) bool {
+	if start > 0 && body[start-1] == '.' {
+		return true
+	}
+	if strings.Count(match, ".") != 1 {
+		return false
+	}
+	label, _, ok := strings.Cut(match, ".")
+	if !ok {
+		return false
+	}
+	return len(label) <= 2 || label == "this" || label == "self"
+}
+
+// isPublicJWT reports whether a JWT-shaped match is one of the well-known
+// public tokens whose aud claim is whitelisted in jwtPublicAudiences. Tokens
+// whose payload cannot be decoded are kept (fail-open) rather than silently
+// dropped.
+func isPublicJWT(value string) bool {
+	parts := strings.Split(value, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return false
+	}
+	var claims struct {
+		Aud string `json:"aud"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return false
+	}
+	_, ok := jwtPublicAudiences[claims.Aud]
+	return ok
 }
 
 // scanEntropySecrets flags high-entropy values assigned to credential-like
