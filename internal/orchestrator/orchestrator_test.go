@@ -14,17 +14,21 @@ import (
 )
 
 type mockModule struct {
-	name     string
-	requires []string
-	produces []string
-	delay    time.Duration
-	runErr   error
+	name         string
+	requires     []string
+	softRequires []string
+	produces     []string
+	delay        time.Duration
+	runErr       error
 }
 
 func (m *mockModule) Name() string        { return m.name }
 func (m *mockModule) Description() string { return "" }
 func (m *mockModule) Requires() []string  { return m.requires }
 func (m *mockModule) Produces() []string  { return m.produces }
+func (m *mockModule) SoftRequires() []string {
+	return m.softRequires
+}
 func (m *mockModule) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	time.Sleep(m.delay)
 	if err := ctx.Err(); err != nil {

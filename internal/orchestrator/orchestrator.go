@@ -153,7 +153,20 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 					outChan <- ModuleStartEvent{Name: m.Name()}
 				}
 
-				result, err := m.Run(ctx, runCtx, o.executor)
+				// A panicking module (third-party library bug, unexpected
+				// input shape) must surface as a failure, not crash the whole
+				// scan: without the recovery, the goroutine would never send
+				// its result and resultsByName below would see a nil entry.
+				var result *modules.Result
+				var err error
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							result, err = nil, fmt.Errorf("module %q panicked: %v", m.Name(), r)
+						}
+					}()
+					result, err = m.Run(ctx, runCtx, o.executor)
+				}()
 
 				// A module returning (nil, nil) violates the contract; treat it
 				// as a failure instead of letting a nil result panic downstream.
