@@ -29,10 +29,10 @@ continuité (diff entre runs, scheduling, notifications).
 
 | Phase | ScanForge | Best-in-class | Écart |
 |---|---|---|---|
-| Enum sous-domaines | subfinder + gau | + bruteforce DNS (shuffledns/puredns+massdns), permutation (gotator/altdns), feeds passifs (Chaos, CDX) | 🔴 majeur — ≤30 % de la couverture possible sans brute |
+| Enum sous-domaines | subfinder + gau + shuffledns | + permutation (gotator/altdns), feeds passifs (Chaos, CDX) | 🟡 — brute OK, permutation et feeds passifs à venir |
 | Résolution | dnsx | — | ✅ |
 | Ports | naabu + nmap | + masscan (très gros ranges) | 🟡 |
-| HTTP probing | httpx | + screenshots (natif dans httpx) | 🟡 facile |
+| HTTP probing | httpx + screenshots | — | ✅ |
 | Crawl | katana | — | ✅ |
 | Fuzz | ffuf | — | ✅ |
 | Vulnérabilités | nuclei + techcve | + priorisation EPSS / CISA KEV / CVSS | 🟡 techcve est idéalement placé |
@@ -55,12 +55,12 @@ continuité (diff entre runs, scheduling, notifications).
 
 | # | Idée |
 |---|---|
-| H2.1 | Module DNS brute + permutation : shuffledns/puredns + gotator, enrichissement passif (Chaos, CDX) via `scanforge auth` |
-| H2.2 | Screenshots : module basé sur `httpx -screenshot` — retour visuel client |
+| H2.1 | Module DNS brute : shuffledns + massdns (nouveaux outils `.tools-version`), résultats fusionnés dans dnsx, filtrés par scope | ✅ implémenté |
+| H2.2 | Screenshots : module basé sur `httpx -screenshot` — retour visuel client | ✅ implémenté |
 | H2.3 | Resume des runs interrompus : reprise à la wave courante via le manifest |
-| H2.4 | Notifications webhook (Slack/Discord/générique) en fin de run |
+| H2.4 | Notifications webhook (Slack/Discord/générique) en fin de run | ✅ implémenté |
 | H2.5 | `scanforge watch` : scheduling simple + diff auto |
-| H2.6 | CVSS dans le modèle (score/base) pour alimenter SARIF/DefectDojo et le tri |
+| H2.6 | CVSS dans le modèle (score/base) pour alimenter SARIF/DefectDojo et le tri | ✅ implémenté |
 
 ### H3 — Vision
 

@@ -153,6 +153,7 @@ type scopeRejection struct {
 
 var scopedTextArtifacts = map[string]struct{}{
 	"subdomains":          {},
+	"brute_subdomains":    {},
 	"resolved_hosts":      {},
 	"alive_urls":          {},
 	"crawled_urls":        {},

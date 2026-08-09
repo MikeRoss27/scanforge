@@ -24,14 +24,14 @@ func TestPlanBuildsValidatedReconWaves(t *testing.T) {
 		t.Fatalf("plan count = %d, want 1", len(results))
 	}
 	result := results[0]
-	if len(result.Steps) != 5 {
-		t.Fatalf("step count = %d, want 5", len(result.Steps))
+	if len(result.Steps) != 6 {
+		t.Fatalf("step count = %d, want 6", len(result.Steps))
 	}
 	waves := make(map[string]int)
 	for _, step := range result.Steps {
 		waves[step.Name] = step.Wave
 	}
-	if waves["subfinder"] != 1 || waves["gau"] != 1 || waves["dnsx"] != 2 || waves["httpx"] != 3 || waves["tlsx"] != 4 {
+	if waves["subfinder"] != 1 || waves["gau"] != 1 || waves["dnsbrute"] != 2 || waves["dnsx"] != 3 || waves["httpx"] != 4 || waves["tlsx"] != 5 {
 		t.Fatalf("unexpected plan waves: %v", waves)
 	}
 }

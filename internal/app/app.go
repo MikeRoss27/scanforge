@@ -21,6 +21,7 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/initcmd"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/modules/attacksurface"
+	"github.com/MikeRoss27/scanforge/internal/modules/dnsbrute"
 	"github.com/MikeRoss27/scanforge/internal/modules/dnsx"
 	"github.com/MikeRoss27/scanforge/internal/modules/ffuf"
 	"github.com/MikeRoss27/scanforge/internal/modules/gau"
@@ -33,6 +34,7 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/modules/nmap"
 	"github.com/MikeRoss27/scanforge/internal/modules/nuclei"
 	"github.com/MikeRoss27/scanforge/internal/modules/payloadgen"
+	"github.com/MikeRoss27/scanforge/internal/modules/screenshot"
 	"github.com/MikeRoss27/scanforge/internal/modules/subfinder"
 	"github.com/MikeRoss27/scanforge/internal/modules/techcve"
 	"github.com/MikeRoss27/scanforge/internal/modules/tlsx"
@@ -152,6 +154,12 @@ func (a *App) runOne(ctx context.Context, opts RunOptions) error {
 	rep := session.generateReports()
 	printRunSummaryBox(session.scanRun, results, rep)
 	printFindingsTable(rep)
+
+	if !opts.DryRun {
+		if err := notifyWebhook(ctx, session.cfg, session.scanRun, rep); err != nil {
+			ui.Warn("Webhook notification failed: %v", err)
+		}
+	}
 
 	return errors.Join(runErr, manifestErr, session.reportErr)
 }
@@ -589,6 +597,7 @@ func formatSeverityCounts(counts map[string]int) string {
 func buildRegistry(cfg *config.Config) *modules.Registry {
 	registry := modules.NewRegistry()
 	registry.Register(subfinder.New(cfg.ToolPath("subfinder")))
+	registry.Register(dnsbrute.New(cfg.ToolPath("shuffledns")))
 	registry.Register(dnsx.New(cfg.ToolPath("dnsx")))
 	registry.Register(httpx.New(cfg.ToolPath("httpx")))
 	registry.Register(naabu.New(cfg.ToolPath("naabu")))
@@ -606,6 +615,7 @@ func buildRegistry(cfg *config.Config) *modules.Registry {
 	registry.Register(techcve.New())
 	registry.Register(httpcheck.New())
 	registry.Register(payloadgen.New())
+	registry.Register(screenshot.New(cfg.ToolPath("httpx")))
 	return registry
 }
 

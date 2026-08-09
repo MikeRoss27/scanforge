@@ -128,6 +128,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) ([]Check, int, error) {
 		{name: "nuclei", binary: cfg.ToolPath("nuclei")},
 		{name: "gau", binary: cfg.ToolPath("gau")},
 		{name: "tlsx", binary: cfg.ToolPath("tlsx")},
+		{name: "shuffledns", binary: cfg.ToolPath("shuffledns")},
 	}
 
 	for _, tool := range requiredTools {

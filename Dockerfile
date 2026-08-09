@@ -18,7 +18,8 @@ RUN . /tmp/tools-version && \
     GOBIN=/out go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@${NUCLEI_VERSION} && \
     GOBIN=/out go install github.com/projectdiscovery/tlsx/cmd/tlsx@${TLSX_VERSION} && \
     GOBIN=/out go install github.com/lc/gau/v2/cmd/gau@${GAU_VERSION} && \
-    GOBIN=/out go install github.com/ffuf/ffuf/v2@${FFUF_VERSION}
+    GOBIN=/out go install github.com/ffuf/ffuf/v2@${FFUF_VERSION} && \
+    GOBIN=/out go install github.com/projectdiscovery/shuffledns/cmd/shuffledns@${SHUFFLEDNS_VERSION}
 
 # Compilation de ScanForge (binaire statique, sans cache)
 WORKDIR /src
@@ -34,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     chromium \
     nmap \
+    massdns \
     python3 \
     python3-pip \
     python3-venv \

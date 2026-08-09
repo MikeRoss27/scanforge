@@ -17,22 +17,31 @@ type Config struct {
 	DefaultScope   string              `yaml:"default_scope"`
 	Tools          Tools               `yaml:"tools"`
 	Profiles       map[string][]string `yaml:"profiles"`
+	Webhook        Webhook             `yaml:"webhook"`
+}
+
+// Webhook holds the end-of-run notification endpoint. The payload is a
+// generic JSON document with a "text" field, so Slack, Discord and Teams
+// webhook receivers all get a readable message.
+type Webhook struct {
+	URL string `yaml:"url"`
 }
 
 type Tools struct {
-	Subfinder string `yaml:"subfinder"`
-	Dnsx      string `yaml:"dnsx"`
-	Httpx     string `yaml:"httpx"`
-	Naabu     string `yaml:"naabu"`
-	Nmap      string `yaml:"nmap"`
-	Whatweb   string `yaml:"whatweb"`
-	Wafw00f   string `yaml:"wafw00f"`
-	Katana    string `yaml:"katana"`
-	Ffuf      string `yaml:"ffuf"`
-	Nuclei    string `yaml:"nuclei"`
-	Gau       string `yaml:"gau"`
-	Tlsx      string `yaml:"tlsx"`
-	Chromium  string `yaml:"chromium"`
+	Subfinder  string `yaml:"subfinder"`
+	Dnsx       string `yaml:"dnsx"`
+	Httpx      string `yaml:"httpx"`
+	Naabu      string `yaml:"naabu"`
+	Nmap       string `yaml:"nmap"`
+	Whatweb    string `yaml:"whatweb"`
+	Wafw00f    string `yaml:"wafw00f"`
+	Katana     string `yaml:"katana"`
+	Ffuf       string `yaml:"ffuf"`
+	Nuclei     string `yaml:"nuclei"`
+	Gau        string `yaml:"gau"`
+	Tlsx       string `yaml:"tlsx"`
+	Shuffledns string `yaml:"shuffledns"`
+	Chromium   string `yaml:"chromium"`
 }
 
 func ResolvePath(explicitPath string) string {
@@ -130,6 +139,10 @@ func (c *Config) ToolPath(name string) string {
 		if c.Tools.Tlsx != "" {
 			return c.Tools.Tlsx
 		}
+	case "shuffledns":
+		if c.Tools.Shuffledns != "" {
+			return c.Tools.Shuffledns
+		}
 	case "chromium":
 		if c.Tools.Chromium != "" {
 			return c.Tools.Chromium
@@ -220,6 +233,9 @@ func mergeDefaults(base, parsed *Config) {
 	}
 	if parsed.Tools.Tlsx == "" {
 		parsed.Tools.Tlsx = base.Tools.Tlsx
+	}
+	if parsed.Tools.Shuffledns == "" {
+		parsed.Tools.Shuffledns = base.Tools.Shuffledns
 	}
 	if len(parsed.Profiles) == 0 {
 		parsed.Profiles = base.Profiles

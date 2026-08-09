@@ -193,10 +193,10 @@ install_full() {
     if command -v apt >/dev/null 2>&1; then
         info "Installing system packages (nmap, python3, whatweb, wafw00f)..."
         sudo apt update
-        sudo apt install -y nmap python3 python3-pip whatweb wafw00f
+        sudo apt install -y nmap python3 python3-pip whatweb wafw00f massdns
     elif command -v brew >/dev/null 2>&1; then
         info "Installing system packages via Homebrew (nmap, whatweb, python3)..."
-        brew install nmap whatweb python3
+        brew install nmap whatweb python3 massdns
         pip3 install --user wafw00f || true
     else
         warn "Neither apt nor brew found. Install manually: nmap, python3, whatweb, wafw00f (pip install wafw00f)"
@@ -212,6 +212,7 @@ install_full() {
         "github.com/projectdiscovery/tlsx/cmd/tlsx@${TLSX_VERSION}"
         "github.com/lc/gau/v2/cmd/gau@${GAU_VERSION}"
         "github.com/ffuf/ffuf/v2@${FFUF_VERSION}"
+        "github.com/projectdiscovery/shuffledns/cmd/shuffledns@${SHUFFLEDNS_VERSION}"
     )
 
     info "Installing Go tools (pinned versions)... This may take a few minutes."

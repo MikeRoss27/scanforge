@@ -15,6 +15,7 @@ var builtins = map[string][]string{
 	},
 	"recon": {
 		"subfinder",
+		"dnsbrute",
 		"gau",
 		"dnsx",
 		"httpx",
@@ -27,6 +28,7 @@ var builtins = map[string][]string{
 	},
 	"web": {
 		"subfinder",
+		"dnsbrute",
 		"dnsx",
 		"httpx",
 		"whatweb",
@@ -38,6 +40,7 @@ var builtins = map[string][]string{
 		"techcve",
 		"httpcheck",
 		"payloadgen",
+		"screenshot",
 		"nuclei",
 	},
 	"ports": {
@@ -48,6 +51,7 @@ var builtins = map[string][]string{
 	},
 	"vuln": {
 		"subfinder",
+		"dnsbrute",
 		"dnsx",
 		"httpx",
 		"tlsx",
@@ -59,6 +63,7 @@ var builtins = map[string][]string{
 	},
 	"deep": {
 		"subfinder",
+		"dnsbrute",
 		"gau",
 		"dnsx",
 		"httpx",
@@ -74,11 +79,13 @@ var builtins = map[string][]string{
 		"techcve",
 		"httpcheck",
 		"payloadgen",
+		"screenshot",
 		"ffuf",
 		"nuclei",
 	},
 	"full": {
 		"subfinder",
+		"dnsbrute",
 		"gau",
 		"dnsx",
 		"httpx",
@@ -93,6 +100,7 @@ var builtins = map[string][]string{
 		"techcve",
 		"httpcheck",
 		"payloadgen",
+		"screenshot",
 		"ffuf",
 		"nuclei",
 		"tlsx",
