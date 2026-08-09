@@ -28,26 +28,32 @@ const outputRel = "06_vulns/cve-findings.jsonl"
 
 // cveEntry is one row of the embedded version-based CVE dataset.
 type cveEntry struct {
-	ID         string `yaml:"id"`
-	Tech       string `yaml:"tech"`
-	Title      string `yaml:"title"`
-	Severity   string `yaml:"severity"`
-	MinVersion string `yaml:"min-version"`
-	MaxVersion string `yaml:"max-version"`
-	Reference  string `yaml:"reference"`
-	Note       string `yaml:"note"`
+	ID             string  `yaml:"id"`
+	Tech           string  `yaml:"tech"`
+	Title          string  `yaml:"title"`
+	Severity       string  `yaml:"severity"`
+	MinVersion     string  `yaml:"min-version"`
+	MaxVersion     string  `yaml:"max-version"`
+	Reference      string  `yaml:"reference"`
+	Note           string  `yaml:"note"`
+	EPSS           float64 `yaml:"epss"`
+	EPSSPercentile float64 `yaml:"epss-percentile"`
+	KEV            bool    `yaml:"kev"`
 }
 
 // finding is one emitted record per affected host+technology pair.
 type finding struct {
-	Host      string `json:"host"`
-	Tech      string `json:"tech"`
-	Version   string `json:"version"`
-	CVEID     string `json:"cve_id"`
-	Title     string `json:"title"`
-	Severity  string `json:"severity"`
-	Reference string `json:"reference"`
-	Note      string `json:"note,omitempty"`
+	Host           string  `json:"host"`
+	Tech           string  `json:"tech"`
+	Version        string  `json:"version"`
+	CVEID          string  `json:"cve_id"`
+	Title          string  `json:"title"`
+	Severity       string  `json:"severity"`
+	Reference      string  `json:"reference"`
+	Note           string  `json:"note,omitempty"`
+	EPSS           float64 `json:"epss,omitempty"`
+	EPSSPercentile float64 `json:"epss_percentile,omitempty"`
+	KEV            bool    `json:"kev,omitempty"`
 }
 
 type techHit struct {
@@ -109,14 +115,17 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 			}
 			dedup[key] = struct{}{}
 			findings = append(findings, finding{
-				Host:      hit.host,
-				Tech:      hit.tech,
-				Version:   hit.version,
-				CVEID:     entry.ID,
-				Title:     entry.Title,
-				Severity:  entry.Severity,
-				Reference: entry.Reference,
-				Note:      entry.Note,
+				Host:           hit.host,
+				Tech:           hit.tech,
+				Version:        hit.version,
+				CVEID:          entry.ID,
+				Title:          entry.Title,
+				Severity:       entry.Severity,
+				Reference:      entry.Reference,
+				Note:           entry.Note,
+				EPSS:           entry.EPSS,
+				EPSSPercentile: entry.EPSSPercentile,
+				KEV:            entry.KEV,
 			})
 		}
 	}

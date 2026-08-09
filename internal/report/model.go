@@ -81,17 +81,20 @@ type TLSService struct {
 
 // Vulnerability represents a security finding.
 type Vulnerability struct {
-	Source      string   `json:"source"`
-	TemplateID  string   `json:"template_id"`
-	Title       string   `json:"title"`
-	Description string   `json:"description,omitempty"`
-	Severity    string   `json:"severity"`
-	MatchedAt   string   `json:"matched_at"`
-	Evidence    string   `json:"evidence,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	CVEs        []string `json:"cves,omitempty"`
-	CWEs        []string `json:"cwes,omitempty"`
-	References  []string `json:"references,omitempty"`
+	Source         string   `json:"source"`
+	TemplateID     string   `json:"template_id"`
+	Title          string   `json:"title"`
+	Description    string   `json:"description,omitempty"`
+	Severity       string   `json:"severity"`
+	MatchedAt      string   `json:"matched_at"`
+	Evidence       string   `json:"evidence,omitempty"`
+	Tags           []string `json:"tags,omitempty"`
+	CVEs           []string `json:"cves,omitempty"`
+	CWEs           []string `json:"cwes,omitempty"`
+	References     []string `json:"references,omitempty"`
+	EPSS           float64  `json:"epss,omitempty"`
+	EPSSPercentile float64  `json:"epss_percentile,omitempty"`
+	KEV            bool     `json:"kev,omitempty"`
 }
 
 func NewReport(target, profile string) *Report {

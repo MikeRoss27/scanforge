@@ -102,12 +102,12 @@ func (r *Report) WriteMarkdown(path string) error {
 
 		if len(asset.Vulnerabilities) > 0 {
 			b.WriteString("### Vulnerabilities\n\n")
-			b.WriteString("| Severity | Template | Title | Matched At | Evidence |\n")
-			b.WriteString("|----------|----------|-------|------------|----------|\n")
+			b.WriteString("| Severity | Template | Title | Matched At | Evidence | Priority |\n")
+			b.WriteString("|----------|----------|-------|------------|----------|----------|\n")
 			for _, v := range asset.Vulnerabilities {
-				b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+				b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
 					markdownCell(v.Severity), markdownCell(v.TemplateID), markdownCell(v.Title),
-					markdownCell(v.MatchedAt), markdownCell(v.Evidence)))
+					markdownCell(v.MatchedAt), markdownCell(v.Evidence), markdownCell(priorityHint(v))))
 			}
 			b.WriteString("\n")
 		}
@@ -130,6 +130,19 @@ func (r *Report) WriteMarkdown(path string) error {
 
 func markdownCell(value string) string {
 	return mdInline(value)
+}
+
+// priorityHint renders the prioritization hints (CISA KEV, EPSS) of a
+// vulnerability as a compact human-readable cell.
+func priorityHint(v *Vulnerability) string {
+	var parts []string
+	if v.KEV {
+		parts = append(parts, "KEV")
+	}
+	if v.EPSS > 0 {
+		parts = append(parts, fmt.Sprintf("EPSS %.2f", v.EPSS))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // mdInline neutralizes Markdown/HTML metacharacters in user-supplied strings

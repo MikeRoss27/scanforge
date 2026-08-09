@@ -5,6 +5,11 @@
 # "any version below max-version"; omitting max-version means "any version at
 # or above min-version". This file is a curated starter set — extend it with
 # entries relevant to the targets you assess.
+#
+# epss / epss-percentile: real values from https://api.first.org/data/v1/epss
+# (fetched 2026-08-09). kev: present in the CISA Known Exploited
+# Vulnerabilities catalog (https://www.cisa.gov/known-exploited-vulnerabilities-catalog).
+# Both are surfaced as prioritization hints in the report.
 
 - id: CVE-2020-11022
   tech: jquery
@@ -12,6 +17,8 @@
   severity: medium
   max-version: "3.5.0"
   reference: https://nvd.nist.gov/vuln/detail/CVE-2020-11022
+  epss: 0.990190
+  epss-percentile: 0.999260
 
 - id: CVE-2022-31160
   tech: jquery-ui
@@ -19,6 +26,8 @@
   severity: medium
   max-version: "1.13.2"
   reference: https://nvd.nist.gov/vuln/detail/CVE-2022-31160
+  epss: 0.024750
+  epss-percentile: 0.830080
 
 - id: CVE-2023-25690
   tech: apache
@@ -26,6 +35,8 @@
   severity: high
   max-version: "2.4.56"
   reference: https://nvd.nist.gov/vuln/detail/CVE-2023-25690
+  epss: 0.837700
+  epss-percentile: 0.996630
 
 - id: CVE-2023-42795
   tech: tomcat
@@ -34,6 +45,8 @@
   min-version: "9.0.0"
   max-version: "9.0.81"
   reference: https://nvd.nist.gov/vuln/detail/CVE-2023-42795
+  epss: 0.021600
+  epss-percentile: 0.804710
 
 - id: CVE-2023-42795
   tech: tomcat
@@ -42,6 +55,8 @@
   min-version: "10.0.0"
   max-version: "10.1.18"
   reference: https://nvd.nist.gov/vuln/detail/CVE-2023-42795
+  epss: 0.021600
+  epss-percentile: 0.804710
 
 - id: CVE-2023-44487
   tech: nginx
@@ -49,6 +64,9 @@
   severity: high
   max-version: "1.25.3"
   reference: https://nvd.nist.gov/vuln/detail/CVE-2023-44487
+  epss: 0.999990
+  epss-percentile: 0.999970
+  kev: true
 
 - id: CVE-2023-3824
   tech: php
@@ -57,6 +75,8 @@
   min-version: "8.0.0"
   max-version: "8.2.8"
   reference: https://nvd.nist.gov/vuln/detail/CVE-2023-3824
+  epss: 0.211320
+  epss-percentile: 0.973440
 
 - id: CVE-2024-4577
   tech: php
@@ -66,6 +86,9 @@
   max-version: "8.2.19"
   reference: https://nvd.nist.gov/vuln/detail/CVE-2024-4577
   note: Only exploitable on Windows with PHP-CGI enabled
+  epss: 0.999870
+  epss-percentile: 0.999840
+  kev: true
 
 - id: CVE-2024-4577
   tech: php
@@ -75,6 +98,9 @@
   max-version: "8.3.6"
   reference: https://nvd.nist.gov/vuln/detail/CVE-2024-4577
   note: Only exploitable on Windows with PHP-CGI enabled
+  epss: 0.999870
+  epss-percentile: 0.999840
+  kev: true
 
 - id: CVE-2024-22362
   tech: drupal
@@ -83,3 +109,5 @@
   min-version: "10.0.0"
   max-version: "10.2.2"
   reference: https://nvd.nist.gov/vuln/detail/CVE-2024-22362
+  epss: 0.007910
+  epss-percentile: 0.528940

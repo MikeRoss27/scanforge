@@ -320,25 +320,31 @@ func ParseNuclei(path string, report *Report) error {
 func ParseTechCVE(path string, report *Report) error {
 	return scanJSONLines(path, func(line []byte) {
 		var record struct {
-			Host      string `json:"host"`
-			CVEID     string `json:"cve_id"`
-			Title     string `json:"title"`
-			Severity  string `json:"severity"`
-			Reference string `json:"reference"`
-			Note      string `json:"note"`
+			Host           string  `json:"host"`
+			CVEID          string  `json:"cve_id"`
+			Title          string  `json:"title"`
+			Severity       string  `json:"severity"`
+			Reference      string  `json:"reference"`
+			Note           string  `json:"note"`
+			EPSS           float64 `json:"epss"`
+			EPSSPercentile float64 `json:"epss_percentile"`
+			KEV            bool    `json:"kev"`
 		}
 		if json.Unmarshal(line, &record) != nil || record.Host == "" || record.CVEID == "" {
 			return
 		}
 		asset := report.GetOrCreateAsset(normalizeAssetName(record.Host))
 		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
-			Source:      "techcve",
-			TemplateID:  record.CVEID,
-			Title:       record.Title,
-			Severity:    record.Severity,
-			MatchedAt:   record.Host,
-			Description: record.Note,
-			References:  []string{record.Reference},
+			Source:         "techcve",
+			TemplateID:     record.CVEID,
+			Title:          record.Title,
+			Severity:       record.Severity,
+			MatchedAt:      record.Host,
+			Description:    record.Note,
+			References:     []string{record.Reference},
+			EPSS:           record.EPSS,
+			EPSSPercentile: record.EPSSPercentile,
+			KEV:            record.KEV,
 		})
 	})
 }
