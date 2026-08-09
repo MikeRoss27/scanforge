@@ -116,8 +116,8 @@ func TestRunFlagsVulnerableVersions(t *testing.T) {
 		t.Fatalf("missing nginx finding, got %+v", findings)
 	}
 	nginx := byCVE["CVE-2023-44487"]
-	if !nginx.KEV || nginx.EPSS != 0.99999 {
-		t.Fatalf("nginx finding lost KEV/EPSS prioritization data: %+v", nginx)
+	if !nginx.KEV || nginx.EPSS != 0.99999 || nginx.CVSS != 7.5 {
+		t.Fatalf("nginx finding lost KEV/EPSS/CVSS prioritization data: %+v", nginx)
 	}
 	tomcat, ok := byCVE["CVE-2023-42795"]
 	if !ok || tomcat.Tech != "ApacheTomcat" || tomcat.Version != "9.0.79" {

@@ -32,6 +32,7 @@ type cveEntry struct {
 	Tech           string  `yaml:"tech"`
 	Title          string  `yaml:"title"`
 	Severity       string  `yaml:"severity"`
+	CVSS           float64 `yaml:"cvss"`
 	MinVersion     string  `yaml:"min-version"`
 	MaxVersion     string  `yaml:"max-version"`
 	Reference      string  `yaml:"reference"`
@@ -49,6 +50,7 @@ type finding struct {
 	CVEID          string  `json:"cve_id"`
 	Title          string  `json:"title"`
 	Severity       string  `json:"severity"`
+	CVSS           float64 `json:"cvss,omitempty"`
 	Reference      string  `json:"reference"`
 	Note           string  `json:"note,omitempty"`
 	EPSS           float64 `json:"epss,omitempty"`
@@ -121,6 +123,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 				CVEID:          entry.ID,
 				Title:          entry.Title,
 				Severity:       entry.Severity,
+				CVSS:           entry.CVSS,
 				Reference:      entry.Reference,
 				Note:           entry.Note,
 				EPSS:           entry.EPSS,

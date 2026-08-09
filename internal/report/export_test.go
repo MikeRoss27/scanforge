@@ -102,6 +102,7 @@ func TestWriteDefectDojo(t *testing.T) {
 		Severity string   `json:"severity"`
 		CVE      string   `json:"cve"`
 		CWE      int      `json:"cwe"`
+		CVSSv3   float64  `json:"cvssv3"`
 		Endpoint string   `json:"endpoint"`
 		Tags     []string `json:"tags"`
 	}
@@ -123,6 +124,36 @@ func TestWriteDefectDojo(t *testing.T) {
 	}
 	if findings[1].Severity != "Low" {
 		t.Fatalf("low severity mapped to %q", findings[1].Severity)
+	}
+}
+
+func TestDefectDojoCVSSv3(t *testing.T) {
+	r := NewReport("example.com", "web")
+	asset := r.GetOrCreateAsset("a.example.com")
+	asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+		Source:     "techcve",
+		TemplateID: "CVE-2023-44487",
+		Title:      "Rapid Reset",
+		Severity:   "high",
+		MatchedAt:  "a.example.com",
+		CVSS:       7.5,
+	})
+	path := filepath.Join(t.TempDir(), "findings.json")
+	if err := r.WriteDefectDojo(path); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var findings []struct {
+		CVSSv3 float64 `json:"cvssv3"`
+	}
+	if err := json.Unmarshal(data, &findings); err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || findings[0].CVSSv3 != 7.5 {
+		t.Fatalf("cvssv3 = %+v, want 7.5", findings)
 	}
 }
 

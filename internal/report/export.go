@@ -178,6 +178,7 @@ type defectDojoFinding struct {
 	Description string   `json:"description,omitempty"`
 	CWE         int      `json:"cwe,omitempty"`
 	CVE         string   `json:"cve,omitempty"`
+	CVSSv3      float64  `json:"cvssv3,omitempty"`
 	References  string   `json:"references,omitempty"`
 	Endpoint    string   `json:"endpoint,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
@@ -219,6 +220,7 @@ func (r *Report) WriteDefectDojo(path string) error {
 				Description: v.Description,
 				CWE:         cwe,
 				CVE:         cve,
+				CVSSv3:      v.CVSS,
 				References:  strings.Join(v.References, "\n"),
 				Endpoint:    v.MatchedAt,
 				Tags:        v.Tags,
