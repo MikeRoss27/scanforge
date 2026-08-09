@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
@@ -23,6 +24,10 @@ const (
 	// page loaded and the attack sources were dispatched. Polling stops as
 	// soon as the payload executes, so confirmed findings return early.
 	settleTimeout = 8 * time.Second
+	// navTimeout caps every navigation-driven CDP step. chromedp.Navigate
+	// waits for the page's load event, which may never fire on a wedged or
+	// hostile page; without a cap the whole pipeline would stall.
+	navTimeout = 30 * time.Second
 	// markerPrefix identifies payloads that have been rewritten with a unique
 	// run id; the hooks look for it in sink assignments.
 	markerPrefix = "__SF__"
@@ -199,48 +204,64 @@ func originOf(raw string) string {
 // is mutex-protected; pending dismissals are tracked so replayOne can wait for
 // them before tearing the tab down.
 type dialogCapture struct {
-	mu  sync.Mutex
-	msg string
-	wg  sync.WaitGroup
+	mu   sync.Mutex
+	msgs []string
+	// pending counts dismissal goroutines in flight. An atomic is used
+	// instead of a WaitGroup because the listener goroutine can record a new
+	// dialog while waitForDismissals polls: Add concurrent with Wait is a
+	// documented WaitGroup misuse that would panic.
+	pending atomic.Int64
 }
 
-// handle records the first dialog message and dismisses the dialog in the
+// handle records the dialog message and dismisses the dialog in the
 // background. Dismissal must not run on the listener goroutine (it would
 // deadlock chromedp), so it is tracked and awaited before the tab closes.
 func (c *dialogCapture) handle(tabCtx context.Context, message string) {
 	c.mu.Lock()
-	if c.msg == "" {
-		c.msg = message
-	}
-	c.wg.Add(1)
+	c.msgs = append(c.msgs, message)
 	c.mu.Unlock()
 
+	c.pending.Add(1)
 	go func() {
-		defer c.wg.Done()
+		defer c.pending.Add(-1)
 		_ = chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
 			return page.HandleJavaScriptDialog(false).Do(ctx)
 		}))
 	}()
 }
 
-func (c *dialogCapture) message() string {
+// containsMarker reports whether any recorded dialog message carried the
+// unique payload marker, so a marker alert is never shadowed by an earlier
+// unrelated alert from the page.
+func (c *dialogCapture) containsMarker() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.msg
+	for _, m := range c.msgs {
+		if strings.Contains(m, markerPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // waitForDismissals waits for pending dialog dismissals with a short upper
-// bound so a wedged renderer cannot stall the whole replay.
+// bound so a wedged renderer cannot stall the whole replay. Newly recorded
+// dialogs are tolerated (they just decrement the counter once dismissed).
 func (c *dialogCapture) waitForDismissals() {
-	done := make(chan struct{})
-	go func() {
-		c.wg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
+	deadline := time.Now().Add(2 * time.Second)
+	for c.pending.Load() > 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// runBounded executes CDP actions under a hard timeout so a page whose load
+// event never fires cannot block the replay (or the whole scan) indefinitely.
+// The parent tab context is unaffected: pending dialogs and later steps still
+// run on it.
+func runBounded(parent context.Context, timeout time.Duration, actions ...chromedp.Action) error {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	return chromedp.Run(ctx, actions...)
 }
 
 // replayOne drives a single payload against one page and returns the verdict.
@@ -278,7 +299,7 @@ func replayOne(browserCtx context.Context, item finding, pageURL, payload string
 		return out
 	}
 
-	if err := chromedp.Run(tabCtx, chromedp.Navigate(pageURL)); err != nil {
+	if err := runBounded(tabCtx, navTimeout, chromedp.Navigate(pageURL)); err != nil {
 		out.Verdict = "unreachable"
 		out.Evidence = err.Error()
 		return out
@@ -297,7 +318,7 @@ func replayOne(browserCtx context.Context, item finding, pageURL, payload string
 	)
 
 	for _, variant := range attackURLs(pageURL, payload) {
-		if err := chromedp.Run(tabCtx,
+		if err := runBounded(tabCtx, navTimeout,
 			chromedp.Navigate(variant),
 			chromedp.Evaluate(attackJS, nil),
 		); err != nil {
@@ -375,7 +396,7 @@ func settle(tabCtx context.Context, capture *dialogCapture, payload string) stri
 		Hits []string `json:"hits"`
 	}
 	for time.Now().Before(deadline) {
-		if strings.Contains(capture.message(), markerPrefix) {
+		if capture.containsMarker() {
 			return "executed"
 		}
 		sf.Hits = nil
