@@ -123,6 +123,34 @@ func (r *Run) WriteManifest() error {
 	return os.WriteFile(r.ManifestPath, data, 0644)
 }
 
+// ManifestRelPath is the manifest location relative to a run root directory.
+const ManifestRelPath = "00_meta/manifest.json"
+
+// OpenRun loads an existing run directory (a rootDir pointing at a
+// runs/<target>/<id> folder) by reading its manifest back from disk. The
+// manifest is authoritative: every other path is derived from it.
+func OpenRun(rootDir string) (*Run, error) {
+	manifestPath := filepath.Join(rootDir, ManifestRelPath)
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("read manifest %s: %w", manifestPath, err)
+	}
+	var manifest RunManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("parse manifest %s: %w", manifestPath, err)
+	}
+	metaDir := filepath.Join(rootDir, "00_meta")
+	return &Run{
+		ID:           manifest.ID,
+		Target:       manifest.Target,
+		RootDir:      rootDir,
+		MetaDir:      metaDir,
+		CommandsLog:  filepath.Join(metaDir, "commands.log"),
+		ManifestPath: manifestPath,
+		Manifest:     manifest,
+	}, nil
+}
+
 // safeTargetName turns a target into a filesystem-safe directory label. The
 // cleaned label must never be "." or ".." or contain a ".." path element,
 // otherwise filepath.Join could escape the workspace.
