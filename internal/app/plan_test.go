@@ -16,10 +16,14 @@ func TestPlanBuildsValidatedReconWaves(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte("default_scope: "+scopePath+"\ndefault_profile: recon\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	result, err := New(configPath).Plan(PlanOptions{Target: "example.com"})
+	results, err := New(configPath).Plan(PlanOptions{Target: "example.com"})
 	if err != nil {
 		t.Fatalf("Plan() error = %v", err)
 	}
+	if len(results) != 1 {
+		t.Fatalf("plan count = %d, want 1", len(results))
+	}
+	result := results[0]
 	if len(result.Steps) != 5 {
 		t.Fatalf("step count = %d, want 5", len(result.Steps))
 	}

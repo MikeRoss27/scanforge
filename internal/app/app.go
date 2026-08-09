@@ -61,6 +61,7 @@ func New(configPath string) *App {
 
 type RunOptions struct {
 	Target       string
+	TargetsFile  string
 	Profile      string
 	Scope        string
 	ScopeMode    string
@@ -119,7 +120,27 @@ type runSession struct {
 	reportErr error
 }
 
+// Run resolves the target(s) — one positional target or a --targets file —
+// and executes the profile against each of them, keeping per-target runs and
+// reports separated under runs/<target>/. A failing target does not abort
+// the rest of the engagement.
 func (a *App) Run(ctx context.Context, opts RunOptions) error {
+	targets, err := expandTargets(opts.Target, opts.TargetsFile)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, target := range targets {
+		one := opts
+		one.Target = target
+		if err := a.runOne(ctx, one); err != nil {
+			errs = append(errs, fmt.Errorf("target %s: %w", target, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (a *App) runOne(ctx context.Context, opts RunOptions) error {
 	session, err := a.prepareRun(opts)
 	if err != nil {
 		return err

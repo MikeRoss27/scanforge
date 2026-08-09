@@ -170,7 +170,7 @@ func TestPlanShowsImplicitScopeWithoutConfirmationOrRun(t *testing.T) {
 	prompter := &fakeScopePrompter{tty: false}
 	application.ScopePrompter = prompter
 
-	plan, err := application.Plan(PlanOptions{
+	plans, err := application.Plan(PlanOptions{
 		Target:     "example.com",
 		Profile:    "passive",
 		ScopeMode:  "domain",
@@ -179,6 +179,10 @@ func TestPlanShowsImplicitScopeWithoutConfirmationOrRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan() error = %v", err)
 	}
+	if len(plans) != 1 {
+		t.Fatalf("plan count = %d, want 1", len(plans))
+	}
+	plan := plans[0]
 	if plan.ScopeSource != scopeSourceImplicit || plan.ScopeMode != "domain" {
 		t.Fatalf("plan scope = source %q mode %q", plan.ScopeSource, plan.ScopeMode)
 	}

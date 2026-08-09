@@ -1,18 +1,18 @@
 package app
 
 import (
-	"fmt"
-
+	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/orchestrator"
 )
 
 type PlanOptions struct {
-	Target     string
-	Profile    string
-	Scope      string
-	ScopeMode  string
-	ScopeAdd   []string
-	Exclusions []string
+	Target      string
+	TargetsFile string
+	Profile     string
+	Scope       string
+	ScopeMode   string
+	ScopeAdd    []string
+	Exclusions  []string
 }
 
 type PlanStep struct {
@@ -36,21 +36,37 @@ type PlanResult struct {
 	Steps        []PlanStep
 }
 
-func (a *App) Plan(opts PlanOptions) (*PlanResult, error) {
-	cfg, err := a.loadConfig()
+// Plan validates the profile DAG and scope for every target and returns one
+// PlanResult per target (multi-target support via --targets).
+func (a *App) Plan(opts PlanOptions) ([]*PlanResult, error) {
+	targets, err := expandTargets(opts.Target, opts.TargetsFile)
 	if err != nil {
 		return nil, err
 	}
-	if opts.Target == "" {
-		return nil, fmt.Errorf("target is required")
+	cfg, err := a.loadConfig()
+	if err != nil {
+		return nil, err
 	}
 	profileName := opts.Profile
 	if profileName == "" {
 		profileName = cfg.DefaultProfile
 	}
+
+	var results []*PlanResult
+	for _, target := range targets {
+		result, err := a.planOne(cfg, target, profileName, opts)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+func (a *App) planOne(cfg *config.Config, target, profileName string, opts PlanOptions) (*PlanResult, error) {
 	effective, err := resolveScope(
 		cfg,
-		opts.Target,
+		target,
 		opts.Scope,
 		opts.ScopeMode,
 		opts.ScopeAdd,
@@ -73,7 +89,7 @@ func (a *App) Plan(opts PlanOptions) (*PlanResult, error) {
 		return nil, err
 	}
 	result := &PlanResult{
-		Target:       opts.Target,
+		Target:       target,
 		Profile:      profileName,
 		Scope:        effective.proposal.Input,
 		ScopeSource:  effective.proposal.Source,

@@ -13,6 +13,7 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var scopeMode string
 	var scopeAdd []string
 	var exclusions []string
+	var targetsFile string
 	var confirmScope bool
 	var dryRun bool
 	var verbose bool
@@ -39,15 +40,20 @@ func NewRunCommand(application *app.App) *cobra.Command {
 		Use:     "run <target>",
 		Aliases: []string{"scan"},
 		Short:   "Run a scan profile against an authorized target",
-		Args:    cobra.ExactArgs(1),
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --profile takes precedence; --preset is shorthand for one of
 			// the built-in profile names.
 			if profile == "" {
 				profile = preset
 			}
+			var target string
+			if len(args) > 0 {
+				target = args[0]
+			}
 			return application.Run(cmd.Context(), app.RunOptions{
-				Target:       args[0],
+				Target:       target,
+				TargetsFile:  targetsFile,
 				Profile:      profile,
 				Scope:        scopeFile,
 				ScopeMode:    scopeMode,
@@ -80,6 +86,7 @@ func NewRunCommand(application *app.App) *cobra.Command {
 
 	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan profile to run (default from config)")
 	cmd.Flags().StringVar(&preset, "preset", "", "User-oriented preset (safe, recon, web, ports, vuln, deep)")
+	cmd.Flags().StringVar(&targetsFile, "targets", "", "File with one target per line (multi-target engagement; exclusive with a positional target)")
 	cmd.Flags().StringVarP(&scopeFile, "scope", "s", "", "Scope file (default from config)")
 	cmd.Flags().StringVar(&scopeMode, "scope-mode", "", "Implicit scope mode: exact or domain (default exact)")
 	cmd.Flags().StringArrayVar(&scopeAdd, "scope-add", nil, "Add an entry to implicit scope (repeatable)")
