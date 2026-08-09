@@ -411,3 +411,22 @@ func writeTempFile(t *testing.T, content string) string {
 	}
 	return path
 }
+
+func TestParseScreenshots(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.example.com.png", "c.example.com.png", "b.example.com.png", "skip.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rep := NewReport("example.com", "web")
+	if err := ParseScreenshots(dir, rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Screenshots) != 3 {
+		t.Fatalf("screenshots = %v, want 3 sorted entries", rep.Screenshots)
+	}
+	if rep.Screenshots[0] != "a.example.com.png" || rep.Screenshots[2] != "c.example.com.png" {
+		t.Fatalf("screenshots not sorted: %v", rep.Screenshots)
+	}
+}

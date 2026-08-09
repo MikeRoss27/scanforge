@@ -68,6 +68,8 @@ func GenerateReport(runDir string, manifest *storage.RunManifest) (*Report, erro
 			err = ParseTechCVE(absPath, rep)
 		case "http_checks":
 			err = ParseHTTPChecks(absPath, rep)
+		case "screenshots":
+			err = ParseScreenshots(absPath, rep)
 		}
 		if err != nil {
 			warnings = append(warnings, fmt.Errorf("failed to parse %s: %w", key, err))

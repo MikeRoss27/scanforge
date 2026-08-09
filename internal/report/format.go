@@ -125,6 +125,14 @@ func (r *Report) WriteMarkdown(path string) error {
 		b.WriteString("\n")
 	}
 
+	if len(r.Screenshots) > 0 {
+		b.WriteString("## Screenshots\n\n")
+		for _, shot := range r.Screenshots {
+			b.WriteString(fmt.Sprintf("- %s\n", mdInline(shot)))
+		}
+		b.WriteString("\n")
+	}
+
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }
 
@@ -132,10 +140,13 @@ func markdownCell(value string) string {
 	return mdInline(value)
 }
 
-// priorityHint renders the prioritization hints (CISA KEV, EPSS) of a
+// priorityHint renders the prioritization hints (CVSS, CISA KEV, EPSS) of a
 // vulnerability as a compact human-readable cell.
 func priorityHint(v *Vulnerability) string {
 	var parts []string
+	if v.CVSS > 0 {
+		parts = append(parts, fmt.Sprintf("CVSS %.1f", v.CVSS))
+	}
 	if v.KEV {
 		parts = append(parts, "KEV")
 	}

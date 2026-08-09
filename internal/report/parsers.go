@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -324,6 +325,7 @@ func ParseTechCVE(path string, report *Report) error {
 			CVEID          string  `json:"cve_id"`
 			Title          string  `json:"title"`
 			Severity       string  `json:"severity"`
+			CVSS           float64 `json:"cvss"`
 			Reference      string  `json:"reference"`
 			Note           string  `json:"note"`
 			EPSS           float64 `json:"epss"`
@@ -339,6 +341,7 @@ func ParseTechCVE(path string, report *Report) error {
 			TemplateID:     record.CVEID,
 			Title:          record.Title,
 			Severity:       record.Severity,
+			CVSS:           record.CVSS,
 			MatchedAt:      record.Host,
 			Description:    record.Note,
 			References:     []string{record.Reference},
@@ -347,6 +350,26 @@ func ParseTechCVE(path string, report *Report) error {
 			KEV:            record.KEV,
 		})
 	})
+}
+
+// ParseScreenshots records the PNG snapshots captured by the screenshot
+// module. path is the screenshots directory; filenames are stored as-is so
+// report.md can list them relative to the run root.
+func ParseScreenshots(path string, report *Report) error {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return err
+	}
+	var files []string
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".png" {
+			continue
+		}
+		files = append(files, entry.Name())
+	}
+	sort.Strings(files)
+	report.Screenshots = append(report.Screenshots, files...)
+	return nil
 }
 
 // ParseHTTPChecks parses the httpcheck module's hardening-gap findings.

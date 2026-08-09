@@ -15,6 +15,8 @@ type Report struct {
 	// JSVerified holds the jsverify module's replay verdicts, one entry per
 	// attempted PoC payload (executed / sink-reached / not-observed).
 	JSVerified []VerifiedFinding `json:"js_verified,omitempty"`
+	// Screenshots lists the captured snapshots, filenames under 04_web/screenshots/.
+	Screenshots []string `json:"screenshots,omitempty"`
 }
 
 // VerifiedFinding is the outcome of replaying one jssecrets PoC payload in a
@@ -92,6 +94,7 @@ type Vulnerability struct {
 	CVEs           []string `json:"cves,omitempty"`
 	CWEs           []string `json:"cwes,omitempty"`
 	References     []string `json:"references,omitempty"`
+	CVSS           float64  `json:"cvss,omitempty"`
 	EPSS           float64  `json:"epss,omitempty"`
 	EPSSPercentile float64  `json:"epss_percentile,omitempty"`
 	KEV            bool     `json:"kev,omitempty"`
