@@ -147,6 +147,90 @@ func TestParseWhatWebAndWAF(t *testing.T) {
 	}
 }
 
+func TestStripANSI(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "plain string is unchanged", input: "plain text", want: "plain text"},
+		{name: "reset code", input: "\x1b[0m", want: ""},
+		{name: "red code", input: "\x1b[31m", want: ""},
+		{name: "colored text", input: "\x1b[1;33mtext\x1b[0m", want: "text"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stripANSI(tt.input); got != tt.want {
+				t.Fatalf("stripANSI(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeAssetNameStripsANSI(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "ansi reset after URL", input: "https://nakastream.tv\x1b[0m", want: "nakastream.tv"},
+		{name: "ansi reset after host", input: "nakastream.tv\x1b[0m", want: "nakastream.tv"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeAssetName(tt.input); got != tt.want {
+				t.Fatalf("normalizeAssetName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseWAFStripsANSI(t *testing.T) {
+	rep := NewReport("example.com", "test")
+	line := "The site https://example.com is behind \x1b[1;32mCloudflare\x1b[0m WAF."
+	if err := ParseWAF(writeTempFile(t, line+"\n"), rep); err != nil {
+		t.Fatal(err)
+	}
+	asset := rep.Assets["example.com"]
+	if asset == nil || len(asset.WAFs) != 1 {
+		t.Fatalf("WAF enrichment not parsed: %+v", asset)
+	}
+	if got := asset.WAFs[0]; got != "Cloudflare" {
+		t.Fatalf("WAF = %q, want %q (no ANSI artifacts, not truncated)", got, "Cloudflare")
+	}
+}
+
+func TestParseWhatWebStripsANSI(t *testing.T) {
+	rep := NewReport("example.com", "test")
+	line := "\x1b[32mhttps://example.com\x1b[0m [200 OK] HTTPServer[\x1b[1mnginx\x1b[0m], PHP[\x1b[33m8.3\x1b[0m]"
+	if err := ParseWhatWeb(writeTempFile(t, line+"\n"), rep); err != nil {
+		t.Fatal(err)
+	}
+	asset := rep.Assets["example.com"]
+	if asset == nil || len(asset.Technologies) == 0 {
+		t.Fatalf("web enrichment not parsed: %+v", asset)
+	}
+	for _, tech := range asset.Technologies {
+		if strings.Contains(tech, "\x1b") || strings.Contains(tech, "[0m") {
+			t.Fatalf("technology contains ANSI artifacts: %q", tech)
+		}
+	}
+	for _, want := range []string{"HTTPServer", "PHP"} {
+		if !contains(asset.Technologies, want) {
+			t.Errorf("missing technology %q in %+v", want, asset.Technologies)
+		}
+	}
+}
+
+func contains(haystack []string, needle string) bool {
+	for _, item := range haystack {
+		if item == needle {
+			return true
+		}
+	}
+	return false
+}
+
 func TestParseFfuf(t *testing.T) {
 	content := `{"results":[{"url":"https://example.com/admin","host":"example.com"}]}`
 	path := writeTempFile(t, content)

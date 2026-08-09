@@ -134,10 +134,14 @@ func markdownCell(value string) string {
 
 // mdInline neutralizes Markdown/HTML metacharacters in user-supplied strings
 // (targets, titles, evidence) so the report cannot be corrupted or inject
-// HTML. Pipes and newlines are handled for table cells; Backticks, "<" and
-// the emphasis chars are escaped so raw HTML/JS cannot pass through.
+// HTML. "&" must be escaped first: otherwise a value already carrying the
+// entity "&lt;img onerror=...&gt;" would round-trip into a live tag in
+// renderers that honor raw HTML. Pipes and newlines are handled for table
+// cells; Backticks, "<" and the emphasis chars are escaped so raw HTML/JS
+// cannot pass through.
 func mdInline(value string) string {
 	replacer := strings.NewReplacer(
+		"&", "&amp;",
 		"\\", "\\\\",
 		"`", "\\`",
 		"*", "\\*",

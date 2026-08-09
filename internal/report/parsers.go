@@ -646,6 +646,11 @@ func parseNmapXML(path string, report *Report) error {
 
 var urlPattern = regexp.MustCompile(`https?://[^\s]+`)
 var wafPattern = regexp.MustCompile(`(?i)is behind (?:a |an )?(.+?)(?: WAF)?(?:\.|$)`)
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+func stripANSI(s string) string {
+	return ansiEscapePattern.ReplaceAllString(s, "")
+}
 
 func ParseWhatWeb(path string, report *Report) error {
 	return scanLines(path, func(line string) {
@@ -694,7 +699,7 @@ func scanLines(path string, consume func(string)) error {
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := strings.TrimSpace(stripANSI(scanner.Text()))
 		if line != "" {
 			consume(line)
 		}
@@ -703,7 +708,7 @@ func scanLines(path string, consume func(string)) error {
 }
 
 func normalizeAssetName(value string) string {
-	value = strings.TrimSpace(value)
+	value = strings.TrimSpace(stripANSI(value))
 	if value == "" {
 		return ""
 	}
