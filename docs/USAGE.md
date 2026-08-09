@@ -112,7 +112,41 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge plan TARGET` | Displays the scope and the DAG waves. |
 | `scanforge run TARGET` | Runs an authorized profile. |
 | `scanforge scan TARGET` | Alias of `run`. |
+| `scanforge diff RUN1 RUN2` | Delta (assets/ports/vulns) between two runs of the same target. |
+| `scanforge export RUN --format sarif\|defectdojo` | Exports a run report for CI (SARIF) or DefectDojo (generic findings). |
 | `scanforge auth` | Manages the keys required by some tools. |
 | `scanforge version` | Displays the binary version. |
 
 See `scanforge <command> --help` for the exact list of options.
+
+## Multi-target engagements
+
+`run` and `plan` accept a targets file instead of a single positional target.
+Each target gets its own scope validation, run directory and report under
+`runs/<target>/`; a failing target does not abort the rest of the engagement.
+
+```bash
+scanforge plan --targets targets.txt --preset web
+scanforge run --targets targets.txt --preset web --confirm-scope
+```
+
+The file holds one target per line (comments with `#` and blank lines
+ignored). `--targets` is exclusive with a positional target.
+
+## Comparing runs and exporting
+
+`scanforge diff` reconsolidates two run directories and lists what changed —
+assets, ports and vulnerabilities that appeared or disappeared (a quick
+periodic ASM loop without any infrastructure):
+
+```bash
+scanforge diff runs/example.com/2026-08-09_10-00-00 runs/example.com/2026-08-10_10-00-00
+scanforge diff runs/example.com/2026-08-09_10-00-00 runs/example.com/2026-08-10_10-00-00 --json
+```
+
+`scanforge export` serializes the consolidated report for third-party tools:
+
+```bash
+scanforge export runs/example.com/2026-08-10_10-00-00 --format sarif          # GitHub/GitLab code scanning
+scanforge export runs/example.com/2026-08-10_10-00-00 --format defectdojo     # import-scan "Generic Findings Import"
+```

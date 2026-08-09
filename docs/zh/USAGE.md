@@ -101,3 +101,30 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge version` | 显示二进制版本。 |
 
 查看 `scanforge <命令> --help` 获取完整选项列表。
+
+## 多目标评估
+
+`run` 和 `plan` 接受目标文件，而非单一位置参数目标。每个目标都有独立的范围验证、运行目录和报告（`runs/<target>/`）；一个目标失败不会中断其余评估。
+
+```bash
+scanforge plan --targets targets.txt --preset web
+scanforge run --targets targets.txt --preset web --confirm-scope
+```
+
+文件每行一个目标（忽略 `#` 注释和空行）。`--targets` 与位置参数目标互斥。
+
+## 比较运行与导出
+
+`scanforge diff` 重新整合两个运行目录并列出变化——新增或消失的资产、端口和漏洞（无需基础设施的轻量周期 ASM 循环）：
+
+```bash
+scanforge diff runs/example.com/2026-08-09_10-00-00 runs/example.com/2026-08-10_10-00-00
+scanforge diff runs/example.com/2026-08-09_10-00-00 runs/example.com/2026-08-10_10-00-00 --json
+```
+
+`scanforge export` 将整合报告序列化为第三方工具格式：
+
+```bash
+scanforge export runs/example.com/2026-08-10_10-00-00 --format sarif          # GitHub/GitLab code scanning
+scanforge export runs/example.com/2026-08-10_10-00-00 --format defectdojo     # import-scan "Generic Findings Import"
+```

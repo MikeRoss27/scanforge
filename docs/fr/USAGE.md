@@ -116,3 +116,36 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge version` | Affiche la version du binaire. |
 
 Consultez `scanforge <commande> --help` pour la liste exacte des options.
+
+## Engagements multi-cibles
+
+`run` et `plan` acceptent un fichier de cibles au lieu d'une cible positionnelle
+unique. Chaque cible obtient sa propre validation de scope, son répertoire de
+run et son rapport sous `runs/<target>/` ; une cible en échec n'interrompt pas
+le reste de l'engagement.
+
+```bash
+scanforge plan --targets cibles.txt --preset web
+scanforge run --targets cibles.txt --preset web --confirm-scope
+```
+
+Le fichier contient une cible par ligne (commentaires `#` et lignes vides
+ignorés). `--targets` est exclusif avec une cible positionnelle.
+
+## Comparer des runs et exporter
+
+`scanforge diff` reconsolide deux répertoires de run et liste ce qui a changé —
+actifs, ports et vulnérabilités apparus ou disparus (une boucle ASM
+périodique légère, sans infrastructure) :
+
+```bash
+scanforge diff runs/example.com/2026-08-09_10-00-00 runs/example.com/2026-08-10_10-00-00
+scanforge diff runs/example.com/2026-08-09_10-00-00 runs/example.com/2026-08-10_10-00-00 --json
+```
+
+`scanforge export` sérialise le rapport consolidé pour des outils tiers :
+
+```bash
+scanforge export runs/example.com/2026-08-10_10-00-00 --format sarif          # code scanning GitHub/GitLab
+scanforge export runs/example.com/2026-08-10_10-00-00 --format defectdojo     # import-scan "Generic Findings Import"
+```
