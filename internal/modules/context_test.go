@@ -173,6 +173,31 @@ func TestAddArtifactDoesNotFilterNonTargetText(t *testing.T) {
 	}
 }
 
+func TestRunContextEmitFindingNoSinkIsNoop(t *testing.T) {
+	ctx := NewRunContext("example.com", "passive", false, nil)
+	// Must not panic when no sink was installed (e.g. a module test that
+	// builds a RunContext directly without going through the orchestrator).
+	ctx.EmitFinding(Finding{Module: "nuclei", Title: "test"})
+}
+
+func TestRunContextEmitFindingCallsSink(t *testing.T) {
+	ctx := NewRunContext("example.com", "passive", false, nil)
+
+	var got []Finding
+	ctx.SetFindingSink(func(f Finding) {
+		got = append(got, f)
+	})
+
+	ctx.EmitFinding(Finding{Module: "nuclei", Severity: "critical", Title: "exposed-git-config", Target: "https://example.com"})
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(got))
+	}
+	if got[0].Module != "nuclei" || got[0].Severity != "critical" || got[0].Title != "exposed-git-config" || got[0].Target != "https://example.com" {
+		t.Fatalf("unexpected finding: %+v", got[0])
+	}
+}
+
 func mustCIDRs(t *testing.T, values ...string) []*net.IPNet {
 	t.Helper()
 	var cidrs []*net.IPNet

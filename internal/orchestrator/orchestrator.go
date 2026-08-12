@@ -79,6 +79,20 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	runCtx.Ffuf = opts.Ffuf
 	runCtx.NmapConcurrency = opts.NmapConcurrency
 
+	if outChan != nil {
+		// Modules may call this concurrently (multiple modules run per wave);
+		// channel sends are inherently safe for concurrent use.
+		runCtx.SetFindingSink(func(f modules.Finding) {
+			outChan <- FindingEvent{
+				Module:   f.Module,
+				Severity: f.Severity,
+				Title:    f.Title,
+				Target:   f.Target,
+				Detail:   f.Detail,
+			}
+		})
+	}
+
 	dag, err := BuildDAG(selectedModules)
 	if err != nil {
 		return nil, err

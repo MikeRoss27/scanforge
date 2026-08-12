@@ -49,6 +49,48 @@ type RunContext struct {
 	// NmapConcurrency bounds how many nmap processes run at once. <= 0 means
 	// the module picks its own default.
 	NmapConcurrency int
+
+	onFinding func(Finding)
+}
+
+// Finding is a single vulnerability/exposure a module has just discovered.
+// Modules report these as soon as they are found (mid-scan, not only once the
+// module finishes) so an operator watching the run sees results live.
+type Finding struct {
+	// Module is the reporting module's name (e.g. "nuclei", "jssecrets").
+	Module string
+	// Severity is one of critical/high/medium/low/info; empty is allowed for
+	// informational modules that don't rate findings.
+	Severity string
+	// Title is a short human-readable label, e.g. a nuclei template name or
+	// secret pattern id.
+	Title string
+	// Target is the host/URL the finding was observed on.
+	Target string
+	// Detail is optional extra context (matched path, snippet, CVE id).
+	Detail string
+}
+
+// SetFindingSink installs the callback used to report findings live, e.g. to
+// forward them onto the orchestrator's event channel. Must be called before
+// modules start running; the sink itself must be safe for concurrent use
+// since modules run concurrently within a wave.
+func (c *RunContext) SetFindingSink(sink func(Finding)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onFinding = sink
+}
+
+// EmitFinding reports a finding the instant a module discovers it. Safe to
+// call from concurrent goroutines; a no-op when no sink is installed (e.g.
+// unit tests that construct a RunContext directly without an orchestrator).
+func (c *RunContext) EmitFinding(f Finding) {
+	c.mu.RLock()
+	sink := c.onFinding
+	c.mu.RUnlock()
+	if sink != nil {
+		sink(f)
+	}
 }
 
 // FfufOptions configures the ffuf module's fuzzing inputs.

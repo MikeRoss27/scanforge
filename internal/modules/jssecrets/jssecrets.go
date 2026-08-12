@@ -170,6 +170,34 @@ type finding struct {
 	Payloads []string `json:"payloads,omitempty"`
 }
 
+// jsFindingTitle renders a short human-readable label for a live finding
+// event; mirrors the titles the report engine assigns the same kinds when it
+// builds the final report from js-secrets.jsonl.
+func jsFindingTitle(kind, pattern string) string {
+	switch kind {
+	case kindCloudStorage:
+		return "Cloud storage bucket referenced in JavaScript: " + pattern
+	case kindInternalHost:
+		return "Internal host/IP referenced in JavaScript"
+	case kindEmail:
+		return "Email address exposed in JavaScript"
+	case kindSourceMap:
+		return "Source map exposed (leaks original source code)"
+	case kindDOMSink:
+		return "DOM XSS sink in JavaScript: " + pattern
+	case kindNodeSink:
+		return "Server-side Node.js API in JavaScript: " + pattern
+	case kindProtoPollution:
+		return "Prototype pollution vector in JavaScript: " + pattern
+	case kindPostMessage:
+		return "Unvalidated postMessage usage in JavaScript: " + pattern
+	case kindEnvLeak:
+		return "Environment variable access in JavaScript: " + pattern
+	default:
+		return "Exposed secret in JavaScript: " + pattern
+	}
+}
+
 type Module struct{}
 
 func New() *Module {
@@ -321,6 +349,22 @@ func scanURLs(ctx context.Context, runCtx *modules.RunContext, urls []string) ([
 					mu.Lock()
 					findings = append(findings, matches...)
 					mu.Unlock()
+
+					for _, match := range matches {
+						// Endpoints feed the attack surface (discovered_paths
+						// downstream), not the vulnerability list, so they're
+						// not reported as live findings either.
+						if match.Kind == kindEndpoint {
+							continue
+						}
+						runCtx.EmitFinding(modules.Finding{
+							Module:   "jssecrets",
+							Severity: match.Severity,
+							Title:    jsFindingTitle(match.Kind, match.Pattern),
+							Target:   match.URL,
+							Detail:   match.Match,
+						})
+					}
 				}
 
 				for _, candidate := range chaseImports(target, body) {

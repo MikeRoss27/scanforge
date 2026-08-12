@@ -3,6 +3,7 @@ package nuclei
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -124,7 +125,23 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to write commands log: %w", err)
 	}
 
+	// Nuclei can run for tens of minutes; tail the JSONL it streams results
+	// to so matches surface live instead of only once the whole scan ends.
+	// tailDone is awaited (not fire-and-forget) so the final flush - which
+	// picks up whatever nuclei wrote right before exiting - has actually run
+	// before this module returns.
+	stop := make(chan struct{})
+	tailDone := make(chan struct{})
+	go func() {
+		defer close(tailDone)
+		modules.TailLines(rawOutputFile, stop, 500*time.Millisecond, func(line string) {
+			emitNucleiFinding(runCtx, line)
+		})
+	}()
+
 	res, err := executor.Run(ctx, cmd)
+	close(stop)
+	<-tailDone
 	if err != nil {
 		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
 	}
@@ -152,6 +169,51 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			"nuclei_stderr": "00_meta/nuclei.stderr.log",
 		},
 	}, nil
+}
+
+// emitNucleiFinding parses one line of nuclei's JSONL stream and, if it is a
+// genuine match, reports it live via runCtx.EmitFinding. Malformed lines
+// (e.g. a line read mid-write) and non-matches (matcher-status=false, used
+// with OR-matcher templates) are silently skipped; the final report parser
+// re-reads the completed file and is the source of truth.
+func emitNucleiFinding(runCtx *modules.RunContext, line string) {
+	var record struct {
+		TemplateID    string `json:"template-id"`
+		MatchedAt     string `json:"matched-at"`
+		Host          string `json:"host"`
+		MatcherStatus *bool  `json:"matcher-status"`
+		Info          struct {
+			Name     string `json:"name"`
+			Severity string `json:"severity"`
+		} `json:"info"`
+	}
+	if err := json.Unmarshal([]byte(line), &record); err != nil {
+		return
+	}
+	if record.MatcherStatus != nil && !*record.MatcherStatus {
+		return
+	}
+
+	target := record.Host
+	if target == "" {
+		target = record.MatchedAt
+	}
+	if target == "" {
+		return
+	}
+
+	title := record.Info.Name
+	if title == "" {
+		title = record.TemplateID
+	}
+
+	runCtx.EmitFinding(modules.Finding{
+		Module:   "nuclei",
+		Severity: record.Info.Severity,
+		Title:    title,
+		Target:   target,
+		Detail:   record.MatchedAt,
+	})
 }
 
 // defaultCustomTemplatesDir locates the bundled custom template directory via

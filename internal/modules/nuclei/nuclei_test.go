@@ -169,3 +169,83 @@ func TestRunFailsWithoutAttackSurfaceArtifact(t *testing.T) {
 		t.Fatal("expected error for missing attack_surface_urls artifact")
 	}
 }
+
+// writingExecutor simulates nuclei by writing its JSONL output to
+// StdoutFile before returning, the same way the real executor's os/exec
+// redirection would have populated it by the time Run() completes.
+type writingExecutor struct {
+	stdout string
+}
+
+func (e *writingExecutor) Run(_ context.Context, command runner.Command) (*runner.CommandResult, error) {
+	if command.StdoutFile != "" {
+		if err := os.WriteFile(command.StdoutFile, []byte(e.stdout), 0644); err != nil {
+			return nil, err
+		}
+	}
+	return &runner.CommandResult{Command: command, ExitCode: 0}, nil
+}
+
+func TestRunEmitsLiveFindingsFromNucleiOutput(t *testing.T) {
+	root := t.TempDir()
+	run := testRun(t, root)
+	if err := os.MkdirAll(filepath.Join(root, "06_vulns"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(run.Path("04_surface", "attack-surface.txt"), []byte("http://example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var findings []modules.Finding
+	runCtx.SetFindingSink(func(f modules.Finding) {
+		findings = append(findings, f)
+	})
+
+	stdout := `{"template-id":"exposed-git-config","host":"http://example.com","matched-at":"http://example.com/.git/config","info":{"name":"Exposed .git Config","severity":"high"}}` + "\n" +
+		`{"template-id":"or-matcher-template","host":"http://example.com","matched-at":"http://example.com/","matcher-status":false,"info":{"name":"No Match","severity":"low"}}` + "\n" +
+		`not json` + "\n"
+
+	result, err := New("nuclei-test").Run(context.Background(), runCtx, &writingExecutor{stdout: stdout})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != "completed" {
+		t.Fatalf("status = %q, want completed", result.Status)
+	}
+
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(findings), findings)
+	}
+	got := findings[0]
+	if got.Module != "nuclei" || got.Severity != "high" || got.Title != "Exposed .git Config" || got.Target != "http://example.com" || got.Detail != "http://example.com/.git/config" {
+		t.Fatalf("unexpected finding: %+v", got)
+	}
+}
+
+func TestEmitNucleiFindingSkipsNonMatchesAndMalformedLines(t *testing.T) {
+	runCtx := modules.NewRunContext("example.com", "web", false, nil)
+	var findings []modules.Finding
+	runCtx.SetFindingSink(func(f modules.Finding) {
+		findings = append(findings, f)
+	})
+
+	emitNucleiFinding(runCtx, `not json`)
+	emitNucleiFinding(runCtx, `{"template-id":"t","matcher-status":false,"host":"h","info":{"severity":"low"}}`)
+	emitNucleiFinding(runCtx, `{"template-id":"t","host":"","matched-at":"","info":{"severity":"low"}}`)
+
+	if len(findings) != 0 {
+		t.Fatalf("expected no findings, got %+v", findings)
+	}
+
+	emitNucleiFinding(runCtx, `{"template-id":"exposed-git-config","host":"h","matched-at":"h/.git","info":{"severity":"high"}}`)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %+v", findings)
+	}
+	if findings[0].Title != "exposed-git-config" {
+		t.Fatalf("expected title to fall back to template id, got %q", findings[0].Title)
+	}
+}

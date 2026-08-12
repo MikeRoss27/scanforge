@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -57,6 +58,14 @@ func TestRunFlagsSecretInFetchedJS(t *testing.T) {
 	writeCrawledURLs(t, run, server.URL+"/app.js\n"+server.URL+"/index.html\n")
 	runCtx := newRunContext(t, run, false)
 
+	var mu sync.Mutex
+	var live []modules.Finding
+	runCtx.SetFindingSink(func(f modules.Finding) {
+		mu.Lock()
+		live = append(live, f)
+		mu.Unlock()
+	})
+
 	result, err := New().Run(context.Background(), runCtx, nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -80,6 +89,15 @@ func TestRunFlagsSecretInFetchedJS(t *testing.T) {
 	}
 	if findings[0].URL != server.URL+"/app.js" {
 		t.Fatalf("finding url = %q, want %q", findings[0].URL, server.URL+"/app.js")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(live) != 1 {
+		t.Fatalf("live findings = %+v, want exactly 1", live)
+	}
+	if live[0].Module != "jssecrets" || live[0].Severity != "critical" || live[0].Target != server.URL+"/app.js" {
+		t.Fatalf("unexpected live finding: %+v", live[0])
 	}
 }
 

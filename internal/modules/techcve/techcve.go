@@ -130,6 +130,13 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 				EPSSPercentile: entry.EPSSPercentile,
 				KEV:            entry.KEV,
 			})
+			runCtx.EmitFinding(modules.Finding{
+				Module:   "techcve",
+				Severity: entry.Severity,
+				Title:    entry.Title + " (" + entry.ID + ")",
+				Target:   hit.host,
+				Detail:   hit.tech + " " + hit.version,
+			})
 		}
 	}
 

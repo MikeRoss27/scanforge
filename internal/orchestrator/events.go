@@ -29,7 +29,19 @@ type DeadlockEvent struct {
 	Message string
 }
 
+// FindingEvent is emitted the moment a module discovers a vulnerability or
+// exposure, ahead of the module's own completion (which can be minutes away
+// for long-running scanners like nuclei).
+type FindingEvent struct {
+	Module   string
+	Severity string
+	Title    string
+	Target   string
+	Detail   string
+}
+
 func (WaveStartEvent) isEvent()   {}
 func (ModuleStartEvent) isEvent() {}
 func (ModuleDoneEvent) isEvent()  {}
 func (DeadlockEvent) isEvent()    {}
+func (FindingEvent) isEvent()     {}

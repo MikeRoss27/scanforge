@@ -339,7 +339,25 @@ func (s *runSession) printEvent(event orchestrator.Event) {
 		}
 	case orchestrator.DeadlockEvent:
 		ui.Warn("%s", e.Message)
+	case orchestrator.FindingEvent:
+		printFinding(e)
 	}
+}
+
+// printFinding renders a finding the moment a module reports it, e.g.
+// "  [nuclei] CRITICAL exposed-git-config · https://example.com/.git/config",
+// so long-running scanners like nuclei don't leave the operator staring at a
+// blank terminal for the module's entire duration.
+func printFinding(e orchestrator.FindingEvent) {
+	severity := e.Severity
+	if severity == "" {
+		severity = "info"
+	}
+	line := ui.Dim("["+e.Module+"]") + " " + ui.Severity(strings.ToUpper(severity)) + " " + ui.Bold(e.Title)
+	if e.Target != "" {
+		line += ui.Secondary(" · " + e.Target)
+	}
+	fmt.Println("  " + line)
 }
 
 // printModuleResult renders a compact, aligned completion line for a module,

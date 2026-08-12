@@ -47,11 +47,23 @@ type moduleRow struct {
 	summary string
 }
 
+// maxFindingsShown bounds the live findings feed to the most recent hits so
+// a noisy scan (hundreds of nuclei matches) doesn't blow out the terminal.
+const maxFindingsShown = 8
+
+type findingRow struct {
+	module   string
+	severity string
+	title    string
+	target   string
+}
+
 type ScanModel struct {
 	eventChan <-chan orchestrator.Event
 	order     []string
 	rows      map[string]*moduleRow
 	warnings  []string
+	findings  []findingRow
 	spin      spinner.Model
 }
 
@@ -112,6 +124,18 @@ func (m ScanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case orchestrator.DeadlockEvent:
 		m.warnings = append(m.warnings, msg.Message)
+		return m, waitForEvent(m.eventChan)
+
+	case orchestrator.FindingEvent:
+		m.findings = append(m.findings, findingRow{
+			module:   msg.Module,
+			severity: msg.Severity,
+			title:    msg.Title,
+			target:   msg.Target,
+		})
+		if len(m.findings) > maxFindingsShown {
+			m.findings = m.findings[len(m.findings)-maxFindingsShown:]
+		}
 		return m, waitForEvent(m.eventChan)
 
 	case spinner.TickMsg:
@@ -198,6 +222,24 @@ func (m ScanModel) View() string {
 		out.WriteString(warnStyle.Render(warnBox.String()))
 	}
 
+	// Live findings feed
+	if len(m.findings) > 0 {
+		var box strings.Builder
+		for _, f := range m.findings {
+			sev := orDefault(f.severity, "info")
+			line := ui.Severity(strings.ToUpper(sev))
+			line += " " + ui.Bold(f.title)
+			if f.target != "" {
+				line += ui.Dim(" · " + f.target)
+			}
+			line += ui.Dim(" (" + f.module + ")")
+			box.WriteString("  " + line + "\n")
+		}
+		out.WriteString("\n")
+		out.WriteString(ui.DimBold("FINDINGS") + "\n")
+		out.WriteString(box.String())
+	}
+
 	// Progress bar
 	completed := 0
 	for _, row := range m.rows {
@@ -216,6 +258,13 @@ func (m ScanModel) View() string {
 
 	// Wrap in a glowing border
 	return borderStyle.Render(out.String()) + "\n"
+}
+
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }
 
 func (m ScanModel) anyRunning() bool {
