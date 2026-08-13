@@ -20,6 +20,9 @@ type mockModule struct {
 	produces     []string
 	delay        time.Duration
 	runErr       error
+	// outFiles are the OutputFiles a failed module returns alongside its
+	// error, simulating partial output (e.g. nuclei killed by a timeout).
+	outFiles map[string]string
 }
 
 func (m *mockModule) Name() string        { return m.name }
@@ -35,7 +38,7 @@ func (m *mockModule) Run(ctx context.Context, runCtx *modules.RunContext, execut
 		return nil, err
 	}
 	if m.runErr != nil {
-		return nil, m.runErr
+		return &modules.Result{Name: m.name, Status: "failed", OutputFiles: m.outFiles}, m.runErr
 	}
 	for _, p := range m.produces {
 		if err := runCtx.AddArtifact(p, modules.Artifact{Name: p, Type: "test", Path: p}); err != nil {
@@ -62,6 +65,36 @@ func TestOrchestratorReturnsModuleFailuresAfterFinishingWave(t *testing.T) {
 	}
 	if results[0].Status != "failed" || results[1].Status != "completed" {
 		t.Fatalf("unexpected results: %+v", results)
+	}
+}
+
+func TestOrchestratorKeepsPartialOutputOfFailedModule(t *testing.T) {
+	reg := modules.NewRegistry()
+	reg.Register(&mockModule{
+		name:     "nuclei",
+		runErr:   errors.New("signal: killed"),
+		outFiles: map[string]string{"nuclei_raw": "06_vulns/nuclei.jsonl"},
+	})
+
+	cfg := config.Default()
+	cfg.Profiles["test"] = []string{"nuclei"}
+
+	results, err := New(runner.NewDryRunExecutor(false), reg).Run(
+		context.Background(), nil,
+		Options{Target: "example.com", Profile: "test", Config: cfg},
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected an aggregate error for the failed module")
+	}
+	if len(results) != 1 {
+		t.Fatalf("result count = %d, want 1", len(results))
+	}
+	if results[0].Status != "failed" {
+		t.Fatalf("status = %q, want failed", results[0].Status)
+	}
+	if results[0].OutputFiles["nuclei_raw"] != "06_vulns/nuclei.jsonl" {
+		t.Fatalf("partial output files lost on failure, got %+v", results[0].OutputFiles)
 	}
 }
 
