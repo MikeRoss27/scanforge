@@ -115,6 +115,17 @@ func TestUpdateDeadlockAppendsWarning(t *testing.T) {
 	}
 }
 
+func TestUpdateModuleWarningAppendsWarning(t *testing.T) {
+	m := NewScanModel(make(chan orchestrator.Event))
+	model, _ := updateModel(t, m, orchestrator.WarningEvent{Message: "jssecrets: 0 JS files"})
+	if len(model.warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %v", model.warnings)
+	}
+	if model.warnings[0] != "jssecrets: 0 JS files" {
+		t.Errorf("unexpected warning %q", model.warnings[0])
+	}
+}
+
 func TestUpdateQuitKeys(t *testing.T) {
 	tests := []struct {
 		name string
@@ -145,7 +156,7 @@ func TestUpdateClosedChannelQuits(t *testing.T) {
 	close(ch)
 	m := NewScanModel(ch)
 
-	model, cmd := updateModel(t, m, nil)
+	model, cmd := updateModel(t, m, scanFinishedMsg{})
 	if len(model.order) != 0 {
 		t.Errorf("expected unchanged model, got %v", model.order)
 	}

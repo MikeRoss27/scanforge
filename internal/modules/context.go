@@ -51,6 +51,10 @@ type RunContext struct {
 	NmapConcurrency int
 
 	onFinding func(Finding)
+	onWarn    func(string)
+	// rejected counts per-artifact how many lines the scope filter dropped,
+	// so consumers can tell an empty input apart from a filtered one.
+	rejected map[string]int
 }
 
 // Finding is a single vulnerability/exposure a module has just discovered.
@@ -93,6 +97,34 @@ func (c *RunContext) EmitFinding(f Finding) {
 	}
 }
 
+// SetWarningSink installs the callback used to surface module-level warnings
+// (empty inputs, degraded steps). Same concurrency contract as SetFindingSink.
+func (c *RunContext) SetWarningSink(sink func(string)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onWarn = sink
+}
+
+// EmitWarning surfaces a module-level warning in the live event stream. Safe
+// to call from concurrent goroutines; a no-op when no sink is installed.
+func (c *RunContext) EmitWarning(message string) {
+	c.mu.RLock()
+	sink := c.onWarn
+	c.mu.RUnlock()
+	if sink != nil {
+		sink(message)
+	}
+}
+
+// RejectedCount returns how many lines of the named artifact were dropped by
+// scope filtering. Zero means either nothing was rejected or the artifact was
+// never scope-filtered (missing scope, dry run, non-text artifact).
+func (c *RunContext) RejectedCount(name string) int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.rejected[name]
+}
+
 // FfufOptions configures the ffuf module's fuzzing inputs.
 type FfufOptions struct {
 	// Wordlist is the directory/file wordlist used for path fuzzing. Empty
@@ -112,6 +144,10 @@ type NucleiOptions struct {
 	RateLimit       int
 	TemplatesDir    string
 	UpdateTemplates bool
+	// Timeout bounds the whole nuclei invocation. Zero means the module's
+	// default (30 minutes). Long scans - big target lists, slow proxies -
+	// frequently need more headroom.
+	Timeout time.Duration
 	// Headless enables headless-mode templates (renders pages in a browser).
 	Headless bool
 	// IncludeCustomTemplates appends the repository's bundled custom template
@@ -134,6 +170,7 @@ func NewRunContext(target, profile string, dryRun bool, run *storage.Run, scopes
 		Scope:          allowedScope,
 		Artifacts:      make(map[string]Artifact),
 		artifactErrors: make(map[string]error),
+		rejected:       make(map[string]int),
 	}
 }
 
@@ -239,6 +276,7 @@ func (c *RunContext) filterArtifact(name string, artifact Artifact) error {
 			continue
 		}
 		if !c.Scope.IsAllowed(value) {
+			c.rejected[name]++
 			rejected = append(rejected, scopeRejection{
 				Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 				Artifact:  name,

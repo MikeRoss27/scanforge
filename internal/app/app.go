@@ -308,6 +308,11 @@ func (s *runSession) consumeEvents(cancel context.CancelFunc, eventChan <-chan o
 			<-done
 			return err
 		}
+		// Replay warnings collected in the scan view; once the TUI is gone
+		// nothing else would surface them.
+		for _, warning := range model.Warnings() {
+			ui.Warn("%s", warning)
+		}
 		// The user may have quit the UI before the scan finished: cancel the
 		// run and drain the remaining events so the orchestrator can return.
 		cancel()
@@ -344,6 +349,8 @@ func (s *runSession) printEvent(event orchestrator.Event) {
 			printModuleResult(e)
 		}
 	case orchestrator.DeadlockEvent:
+		ui.Warn("%s", e.Message)
+	case orchestrator.WarningEvent:
 		ui.Warn("%s", e.Message)
 	case orchestrator.FindingEvent:
 		printFinding(e)
