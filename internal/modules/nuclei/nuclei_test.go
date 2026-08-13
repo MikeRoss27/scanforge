@@ -2,11 +2,13 @@ package nuclei
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/runner"
@@ -159,6 +161,68 @@ func TestRunMarksExitCodeFailure(t *testing.T) {
 	}
 	if result.Status != "failed (exit code 1)" {
 		t.Fatalf("status = %q, want %q", result.Status, "failed (exit code 1)")
+	}
+}
+
+func TestRunUsesConfiguredTimeout(t *testing.T) {
+	run := testRun(t, t.TempDir())
+	if err := os.WriteFile(run.Path("04_surface", "attack-surface.txt"), []byte("http://example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	runCtx.Nuclei.Timeout = 12 * time.Minute
+	executor := &recordingExecutor{}
+
+	if _, err := New("nuclei").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got := executor.commands[0].Timeout; got != 12*time.Minute {
+		t.Fatalf("command timeout = %v, want 12m", got)
+	}
+}
+
+// killedExecutor writes nuclei's partial JSONL output and then returns an
+// error, simulating a timeout kill by the runner.
+type killedExecutor struct {
+	stdout string
+}
+
+func (e *killedExecutor) Run(_ context.Context, command runner.Command) (*runner.CommandResult, error) {
+	if command.StdoutFile != "" {
+		if err := os.WriteFile(command.StdoutFile, []byte(e.stdout), 0644); err != nil {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("command timed out after 30m0s: signal: killed")
+}
+
+func TestRunKeepsPartialOutputWhenCommandFails(t *testing.T) {
+	root := t.TempDir()
+	run := testRun(t, root)
+	if err := os.MkdirAll(filepath.Join(root, "06_vulns"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(run.Path("04_surface", "attack-surface.txt"), []byte("http://example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
+		t.Fatal(err)
+	}
+
+	partial := `{"template-id":"exposed-git-config","host":"http://example.com","matched-at":"http://example.com/.git/config","info":{"name":"Exposed .git Config","severity":"high"}}` + "\n"
+	result, err := New("nuclei").Run(context.Background(), runCtx, &killedExecutor{stdout: partial})
+	if err == nil {
+		t.Fatal("expected an error from the killed command")
+	}
+	if result == nil {
+		t.Fatal("expected a partial result to be returned alongside the error")
+	}
+	if result.OutputFiles["nuclei_raw"] != "06_vulns/nuclei.jsonl" {
+		t.Fatalf("expected nuclei_raw output file on the failed result, got %+v", result.OutputFiles)
 	}
 }
 
