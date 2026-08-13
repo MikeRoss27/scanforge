@@ -52,12 +52,14 @@ import (
 type App struct {
 	ConfigPath    string
 	ScopePrompter ScopePrompter
+	Wizard        WizardPrompter
 }
 
 func New(configPath string) *App {
 	return &App{
 		ConfigPath:    configPath,
 		ScopePrompter: newTerminalScopePrompter(),
+		Wizard:        newTerminalWizardPrompter(),
 	}
 }
 
@@ -127,6 +129,10 @@ type runSession struct {
 // reports separated under runs/<target>/. A failing target does not abort
 // the rest of the engagement.
 func (a *App) Run(ctx context.Context, opts RunOptions) error {
+	opts, err := a.applyWizard(opts)
+	if err != nil {
+		return err
+	}
 	targets, err := expandTargets(opts.Target, opts.TargetsFile)
 	if err != nil {
 		return err
