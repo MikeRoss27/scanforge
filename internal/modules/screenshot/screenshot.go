@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
@@ -50,8 +51,8 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	args := []string{
 		"-l", inputFile,
 		"-silent",
-		"-screenshot",
-		"-screenshot-dir", screenshotDir,
+		"-ss",
+		"-srd", screenshotDir,
 		"-timeout", "15",
 		"-retries", "1",
 	}
@@ -106,22 +107,30 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}, nil
 }
 
-// ScreenshotFiles returns the PNG snapshots captured in a screenshots dir,
-// sorted by filename for determinism.
+// ScreenshotFiles returns the PNG snapshots captured under a screenshots dir,
+// walking subdirectories because httpx (-srd) writes them as
+// <dir>/screenshot/<host>/<hash>.png. Sorted by filename for determinism.
 func ScreenshotFiles(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
 	var files []string
-	for _, entry := range entries {
+	err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 		if entry.IsDir() {
-			continue
+			return nil
 		}
 		if filepath.Ext(entry.Name()) != ".png" {
-			continue
+			return nil
 		}
-		files = append(files, entry.Name())
+		files = append(files, path)
+		return nil
+	})
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
 	}
+	sort.Strings(files)
 	return files, nil
 }

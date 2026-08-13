@@ -162,28 +162,60 @@ func readText(path string) ([]string, error) {
 }
 
 // readFfufJSON extracts the full matched URLs from an ffuf JSON output file.
+// ffuf writes a single {"results": [...]} document on completion, but a
+// killed or timed-out ffuf leaves a truncated file. A streaming decode keeps
+// every record completed before the truncation point, so the module - and
+// therefore nuclei, which consumes its output - still gets a usable surface
+// instead of dying on the corrupt file.
 func readFfufJSON(path string) ([]string, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, err
 	}
+	defer func() { _ = file.Close() }()
 
-	var output struct {
-		Results []struct {
-			URL string `json:"url"`
-		} `json:"results"`
-	}
-	if err := json.Unmarshal(data, &output); err != nil {
-		return nil, fmt.Errorf("invalid ffuf JSON: %w", err)
-	}
+	dec := json.NewDecoder(file)
 
+	// Walk to the "results" key. A file that does not parse at all (empty,
+	// garbage) yields no URLs rather than an error, matching a quiet ffuf.
+	open, err := dec.Token()
+	if err != nil {
+		return nil, nil
+	}
+	if delim, ok := open.(json.Delim); !ok || delim != '{' {
+		return nil, nil
+	}
 	var urls []string
-	for _, res := range output.Results {
-		if res.URL != "" {
-			urls = append(urls, res.URL)
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return nil, nil
+		}
+		if key != "results" {
+			var skip json.RawMessage
+			if err := dec.Decode(&skip); err != nil {
+				return nil, nil
+			}
+			continue
+		}
+		if _, err := dec.Token(); err != nil { // consume '['
+			return nil, nil
+		}
+		for dec.More() {
+			var record struct {
+				URL string `json:"url"`
+			}
+			// A truncated record ends the stream; everything decoded before
+			// it stays usable.
+			if err := dec.Decode(&record); err != nil {
+				return urls, nil
+			}
+			if record.URL != "" {
+				urls = append(urls, record.URL)
+			}
 		}
 	}
 	return urls, nil

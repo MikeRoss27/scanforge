@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"time"
+
 	"github.com/MikeRoss27/scanforge/internal/app"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/spf13/cobra"
@@ -26,6 +28,7 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var nucleiTags string
 	var nucleiExcludeTags string
 	var nucleiRateLimit int
+	var nucleiTimeout time.Duration
 	var nucleiTemplates string
 	var nucleiUpdateTemplates bool
 	var nucleiHeadless bool
@@ -70,6 +73,7 @@ func NewRunCommand(application *app.App) *cobra.Command {
 					Tags:                   nucleiTags,
 					ExcludeTags:            nucleiExcludeTags,
 					RateLimit:              nucleiRateLimit,
+					Timeout:                nucleiTimeout,
 					TemplatesDir:           nucleiTemplates,
 					UpdateTemplates:        nucleiUpdateTemplates,
 					Headless:               nucleiHeadless,
@@ -103,6 +107,7 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	cmd.Flags().StringVar(&nucleiTags, "nuclei-tags", "", "Nuclei: comma-separated template tags to run")
 	cmd.Flags().StringVar(&nucleiExcludeTags, "nuclei-exclude-tags", "", "Nuclei: comma-separated template tags to skip")
 	cmd.Flags().IntVar(&nucleiRateLimit, "nuclei-rate-limit", 0, "Nuclei: max requests per second (default 10)")
+	cmd.Flags().DurationVar(&nucleiTimeout, "nuclei-timeout", 0, "Nuclei: overall time limit, e.g. 45m (default 30m; raise it for slow proxies or large target lists)")
 	cmd.Flags().StringVar(&nucleiTemplates, "nuclei-templates", "", "Nuclei: custom template file or directory to run instead of the default set")
 	cmd.Flags().BoolVar(&nucleiUpdateTemplates, "nuclei-update-templates", false, "Nuclei: update the local template cache before scanning")
 	cmd.Flags().BoolVar(&nucleiHeadless, "nuclei-headless", false, "Nuclei: enable headless-mode templates (requires nuclei headless support)")

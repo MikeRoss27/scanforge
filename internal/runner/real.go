@@ -59,6 +59,13 @@ func (e *RealExecutor) Run(ctx context.Context, command Command) (*CommandResult
 
 	err := cmd.Run()
 
+	// A context deadline kill surfaces as "signal: killed", which hides what
+	// actually went wrong. Translate timeouts (and only timeouts) into a
+	// message operators can act on.
+	if err != nil && cmdCtx.Err() == context.DeadlineExceeded {
+		err = fmt.Errorf("command timed out after %s: %w", timeout, err)
+	}
+
 	exitCode := 0
 	if err != nil {
 		var exitErr *exec.ExitError

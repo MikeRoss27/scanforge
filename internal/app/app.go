@@ -52,12 +52,14 @@ import (
 type App struct {
 	ConfigPath    string
 	ScopePrompter ScopePrompter
+	Wizard        WizardPrompter
 }
 
 func New(configPath string) *App {
 	return &App{
 		ConfigPath:    configPath,
 		ScopePrompter: newTerminalScopePrompter(),
+		Wizard:        newTerminalWizardPrompter(),
 	}
 }
 
@@ -127,6 +129,10 @@ type runSession struct {
 // reports separated under runs/<target>/. A failing target does not abort
 // the rest of the engagement.
 func (a *App) Run(ctx context.Context, opts RunOptions) error {
+	opts, err := a.applyWizard(opts)
+	if err != nil {
+		return err
+	}
 	targets, err := expandTargets(opts.Target, opts.TargetsFile)
 	if err != nil {
 		return err
@@ -161,7 +167,10 @@ func (a *App) runOne(ctx context.Context, opts RunOptions) error {
 		}
 	}
 
-	return errors.Join(runErr, manifestErr, session.reportErr)
+	// Best-effort report parse warnings (session.reportErr) are already
+	// printed and must not fail the run: a truncated tool output should
+	// never flip a valid scan's exit code for CI pipelines.
+	return errors.Join(runErr, manifestErr)
 }
 
 // prepareRun loads the config, resolves the profile and effective scope, and
@@ -302,6 +311,11 @@ func (s *runSession) consumeEvents(cancel context.CancelFunc, eventChan <-chan o
 			<-done
 			return err
 		}
+		// Replay warnings collected in the scan view; once the TUI is gone
+		// nothing else would surface them.
+		for _, warning := range model.Warnings() {
+			ui.Warn("%s", warning)
+		}
 		// The user may have quit the UI before the scan finished: cancel the
 		// run and drain the remaining events so the orchestrator can return.
 		cancel()
@@ -338,6 +352,8 @@ func (s *runSession) printEvent(event orchestrator.Event) {
 			printModuleResult(e)
 		}
 	case orchestrator.DeadlockEvent:
+		ui.Warn("%s", e.Message)
+	case orchestrator.WarningEvent:
 		ui.Warn("%s", e.Message)
 	case orchestrator.FindingEvent:
 		printFinding(e)

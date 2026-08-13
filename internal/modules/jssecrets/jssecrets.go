@@ -223,6 +223,16 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 		return nil, fmt.Errorf("failed to read crawled URLs: %w", err)
 	}
 
+	if len(urls) == 0 && !runCtx.DryRun {
+		// A real site with zero in-scope JS files is usually a scope-filtering
+		// artifact (assets on CDNs/subdomains) rather than a JS-less site.
+		// Surface it loudly instead of silently completing the stage.
+		runCtx.EmitWarning(fmt.Sprintf(
+			"jssecrets: 0 JS files to analyze (crawled_urls has %d line(s) rejected by scope; JS is usually served from subdomains/CDNs — re-run with --scope-mode domain if that applies)",
+			runCtx.RejectedCount("crawled_urls"),
+		))
+	}
+
 	// No subprocess runs here, but the audit trail should still show what this
 	// module did, so a synthetic entry is recorded like every other module.
 	if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, runner.Command{

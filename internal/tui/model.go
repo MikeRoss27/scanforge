@@ -51,6 +51,12 @@ type moduleRow struct {
 // a noisy scan (hundreds of nuclei matches) doesn't blow out the terminal.
 const maxFindingsShown = 8
 
+// scanFinishedMsg is delivered when the orchestrator closes the event
+// channel. It must be a typed message rather than a nil msg: Bubble Tea
+// drops nil command results (tea.go filters `msg == nil`), so a nil would
+// silently never reach Update and the TUI would hang after the scan ends.
+type scanFinishedMsg struct{}
+
 type findingRow struct {
 	module   string
 	severity string
@@ -78,11 +84,17 @@ func NewScanModel(eventChan <-chan orchestrator.Event) ScanModel {
 	}
 }
 
+// Warnings returns the warnings collected while the TUI was live, so the CLI
+// can replay them once the scan view is gone.
+func (m ScanModel) Warnings() []string {
+	return m.warnings
+}
+
 func waitForEvent(ch <-chan orchestrator.Event) tea.Cmd {
 	return func() tea.Msg {
 		event, ok := <-ch
 		if !ok {
-			return nil // channel closed
+			return scanFinishedMsg{} // channel closed: scan finished
 		}
 		return event
 	}
@@ -126,6 +138,10 @@ func (m ScanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.warnings = append(m.warnings, msg.Message)
 		return m, waitForEvent(m.eventChan)
 
+	case orchestrator.WarningEvent:
+		m.warnings = append(m.warnings, msg.Message)
+		return m, waitForEvent(m.eventChan)
+
 	case orchestrator.FindingEvent:
 		m.findings = append(m.findings, findingRow{
 			module:   msg.Module,
@@ -146,15 +162,14 @@ func (m ScanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
 
+	case scanFinishedMsg:
+		return m, tea.Quit
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		}
-	}
-
-	if msg == nil {
-		return m, tea.Quit
 	}
 
 	return m, nil

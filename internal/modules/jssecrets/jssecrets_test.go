@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
+	scanScope "github.com/MikeRoss27/scanforge/internal/scope"
 	"github.com/MikeRoss27/scanforge/internal/storage"
 )
 
@@ -98,6 +99,44 @@ func TestRunFlagsSecretInFetchedJS(t *testing.T) {
 	}
 	if live[0].Module != "jssecrets" || live[0].Severity != "critical" || live[0].Target != server.URL+"/app.js" {
 		t.Fatalf("unexpected live finding: %+v", live[0])
+	}
+}
+
+func TestRunWarnsWhenZeroJSSurviveScopeFilter(t *testing.T) {
+	if err := os.MkdirAll(filepath.Join(t.TempDir(), "sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	run := testRun(t)
+	// Every crawled line is an out-of-scope JS asset: the scope filter strips
+	// them in place, so jssecrets analyzes nothing and must say so loudly.
+	writeCrawledURLs(t, run, "https://cdn.example.net/bundle.js\nhttps://static.example.net/app.js\n")
+	runCtx := newRunContext(t, run, false)
+	scope, err := scanScope.FromTarget("example.com", scanScope.ModeExact, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCtx.Scope = scope
+	if err := runCtx.AddArtifact("crawled_urls", modules.Artifact{
+		Name: "crawled_urls", Type: "text", Path: "05_content/katana.txt",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var warnings []string
+	runCtx.SetWarningSink(func(message string) {
+		warnings = append(warnings, message)
+	})
+
+	if _, err := New().Run(context.Background(), runCtx, nil); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %v", warnings)
+	}
+	for _, want := range []string{"0 JS files", "rejected by scope", "--scope-mode domain"} {
+		if !strings.Contains(warnings[0], want) {
+			t.Fatalf("warning %q misses %q", warnings[0], want)
+		}
 	}
 }
 

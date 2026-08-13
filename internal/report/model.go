@@ -15,7 +15,8 @@ type Report struct {
 	// JSVerified holds the jsverify module's replay verdicts, one entry per
 	// attempted PoC payload (executed / sink-reached / not-observed).
 	JSVerified []VerifiedFinding `json:"js_verified,omitempty"`
-	// Screenshots lists the captured snapshots, filenames under 04_web/screenshots/.
+	// Screenshots lists the captured snapshots, paths relative to
+	// 04_web/screenshots/ (httpx -srd nests them per host).
 	Screenshots []string `json:"screenshots,omitempty"`
 }
 

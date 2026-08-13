@@ -15,7 +15,7 @@ func AppendCommandLog(path string, command Command) error {
 	}
 	defer func() { _ = file.Close() }()
 
-	line := "$ " + command.Name
+	line := "$ " + shellQuote(command.Name)
 
 	if len(command.Args) > 0 {
 		line += " " + strings.Join(quoteAll(command.Args), " ")

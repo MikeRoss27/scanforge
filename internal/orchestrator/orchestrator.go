@@ -91,6 +91,9 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 				Detail:   f.Detail,
 			}
 		})
+		runCtx.SetWarningSink(func(message string) {
+			outChan <- WarningEvent{Message: message}
+		})
 	}
 
 	dag, err := BuildDAG(selectedModules)
@@ -201,11 +204,18 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 
 				if err != nil {
 					// Even if it failed, we want to record the result in a way
-					// that reflects what happened.
-					waveResults <- &modules.Result{
+					// that reflects what happened. A failed module may still
+					// have produced partial output (e.g. nuclei killed by a
+					// timeout halfway through its scan): keep its OutputFiles
+					// so the report engine can parse whatever was written.
+					failedResult := &modules.Result{
 						Name:   m.Name(),
 						Status: status,
 					}
+					if result != nil {
+						failedResult.OutputFiles = result.OutputFiles
+					}
+					waveResults <- failedResult
 					if status != "aborted" {
 						waveErrors <- fmt.Errorf("module %q failed: %w", m.Name(), err)
 					}

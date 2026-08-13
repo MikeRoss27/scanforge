@@ -2,6 +2,7 @@
 package dnsbrute
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -11,6 +12,12 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/runner"
 )
+
+// maxBruteforceDomains caps how many discovered domains are brute-forced in
+// one run: each domain is permuted with the whole wordlist, so N domains
+// means N×wordlist massdns queries. Beyond this, the first ones found are
+// kept and the rest skipped instead of exploding scan time.
+const maxBruteforceDomains = 10
 
 // defaultWordlistCandidates are searched in order when no wordlist is
 // configured, so an out-of-the-box run works on common distro layouts.
@@ -45,6 +52,16 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 	inputFile := runCtx.Run.Path(inputArt.Path)
 
+	// shuffledns' -d flag takes domains (comma-separated), never a file:
+	// passing the artifact path verbatim makes it fail with exit 1.
+	domains, err := readDomains(inputFile)
+	if err != nil {
+		return nil, err
+	}
+	if len(domains) == 0 {
+		return nil, fmt.Errorf("no domains to brute-force (subdomains artifact is empty)")
+	}
+
 	wordlist := resolveWordlist()
 	if !runCtx.DryRun {
 		if wordlist == "" {
@@ -57,12 +74,30 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		wordlist = "<wordlist: none found>"
 	}
 
+	// massdns cannot run without a resolvers list: shuffledns would fail
+	// with an unhelpful error, so fail fast with an actionable message when
+	// none can be found.
+	resolvers := resolveResolversFile()
+	if !runCtx.DryRun {
+		if resolvers == "" {
+			return nil, fmt.Errorf("no DNS resolvers file found; checked: %s", strings.Join(resolverCandidates, ", "))
+		}
+	} else if resolvers == "" {
+		resolvers = "<resolvers: none found>"
+	}
+
 	outputFile := runCtx.Run.Path("01_subdomains", "brute.txt")
 	stderrFile := runCtx.Run.Path("00_meta", "dnsbrute.stderr.log")
 
 	cmd := runner.Command{
-		Name:       m.binary,
-		Args:       []string{"-d", inputFile, "-w", wordlist, "-silent"},
+		Name: m.binary,
+		Args: []string{
+			"-d", strings.Join(domains, ","),
+			"-w", wordlist,
+			"-r", resolvers,
+			"-mode", "bruteforce",
+			"-silent",
+		},
 		Timeout:    10 * time.Minute,
 		StdoutFile: outputFile,
 		StderrFile: stderrFile,
@@ -98,6 +133,67 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			"dnsbrute_stderr":  "00_meta/dnsbrute.stderr.log",
 		},
 	}, nil
+}
+
+// resolverCandidates are searched in order for a massdns-compatible
+// resolvers list (one IP per line).
+var resolverCandidates = []string{
+	"/etc/dnsmasq-resolv.conf",
+	"/run/systemd/resolve/resolv.conf",
+	"/etc/resolv.conf",
+	"/usr/share/seclists/Discovery/DNS/resolvers.txt",
+	"/opt/SecLists/Discovery/DNS/resolvers.txt",
+}
+
+// resolveResolversFile returns the first resolvers file that exists and has
+// at least one usable line, or "".
+func resolveResolversFile() string {
+	for _, candidate := range resolverCandidates {
+		data, err := os.ReadFile(candidate)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			ip := strings.TrimSpace(line)
+			if ip != "" && !strings.HasPrefix(ip, "#") {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+// readDomains returns the trimmed, de-duplicated, non-empty lines of the
+// subdomains artifact. The list is capped so a large subdomain discovery can
+// never fan out into tens of thousands of wordlist permutations.
+func readDomains(path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read subdomains artifact: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	seen := make(map[string]bool)
+	var domains []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		domain := strings.TrimSpace(scanner.Text())
+		if domain == "" || seen[domain] {
+			continue
+		}
+		seen[domain] = true
+		domains = append(domains, domain)
+		if len(domains) >= maxBruteforceDomains {
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read subdomains artifact: %w", err)
+	}
+	return domains, nil
 }
 
 func resolveWordlist() string {

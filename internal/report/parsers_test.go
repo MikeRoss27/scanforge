@@ -419,14 +419,25 @@ func TestParseScreenshots(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// httpx -srd stores screenshots under nested <dir>/screenshot/<host>/<hash>.png.
+	nested := filepath.Join(dir, "screenshot", "d.example.com")
+	if err := os.MkdirAll(nested, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "hash.png"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	rep := NewReport("example.com", "web")
 	if err := ParseScreenshots(dir, rep); err != nil {
 		t.Fatal(err)
 	}
-	if len(rep.Screenshots) != 3 {
-		t.Fatalf("screenshots = %v, want 3 sorted entries", rep.Screenshots)
+	if len(rep.Screenshots) != 4 {
+		t.Fatalf("screenshots = %v, want 4 entries", rep.Screenshots)
 	}
 	if rep.Screenshots[0] != "a.example.com.png" || rep.Screenshots[2] != "c.example.com.png" {
 		t.Fatalf("screenshots not sorted: %v", rep.Screenshots)
+	}
+	if rep.Screenshots[3] != "screenshot/d.example.com/hash.png" {
+		t.Fatalf("nested screenshot should be stored relative: %v", rep.Screenshots)
 	}
 }

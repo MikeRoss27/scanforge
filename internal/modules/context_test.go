@@ -198,6 +198,50 @@ func TestRunContextEmitFindingCallsSink(t *testing.T) {
 	}
 }
 
+func TestRunContextEmitWarningCallsSink(t *testing.T) {
+	ctx := NewRunContext("example.com", "passive", false, nil)
+
+	var got []string
+	ctx.SetWarningSink(func(message string) {
+		got = append(got, message)
+	})
+
+	ctx.EmitWarning("0 JS files")
+	ctx.EmitWarning("more trouble")
+
+	if len(got) != 2 || got[0] != "0 JS files" || got[1] != "more trouble" {
+		t.Fatalf("unexpected warnings: %v", got)
+	}
+}
+
+func TestRunContextRejectedCountTracksScopeFilter(t *testing.T) {
+	root := t.TempDir()
+	run := &storage.Run{RootDir: root, MetaDir: filepath.Join(root, "00_meta")}
+	if err := os.MkdirAll(run.MetaDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(run.Path("04_surface"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(run.Path("04_surface", "crawled.txt"),
+		[]byte("https://cdn.example.net/app.js\nhttps://example.com/app.js\nhttps://other.example.net/x.js\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	scope, err := scanScope.FromTarget("example.com", scanScope.ModeExact, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := NewRunContext("example.com", "web", false, run, scope)
+	if err := ctx.AddArtifact("crawled_urls", Artifact{Name: "crawled_urls", Type: "text", Path: "04_surface/crawled.txt"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := ctx.RejectedCount("crawled_urls"); got != 2 {
+		t.Fatalf("RejectedCount() = %d, want 2", got)
+	}
+}
+
 func mustCIDRs(t *testing.T, values ...string) []*net.IPNet {
 	t.Helper()
 	var cidrs []*net.IPNet

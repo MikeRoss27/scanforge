@@ -28,6 +28,7 @@ func ParseHosts(path string, report *Report) error {
 	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -59,6 +60,7 @@ func ParsePorts(path string, report *Report) error {
 	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -96,6 +98,7 @@ func ParseHttpx(path string, report *Report) error {
 	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -217,6 +220,7 @@ func ParseKatana(path string, report *Report) error {
 	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -243,6 +247,7 @@ func ParseNuclei(path string, report *Report) error {
 	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	seen := make(map[string]struct{})
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -356,16 +361,29 @@ func ParseTechCVE(path string, report *Report) error {
 // module. path is the screenshots directory; filenames are stored as-is so
 // report.md can list them relative to the run root.
 func ParseScreenshots(path string, report *Report) error {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return err
-	}
 	var files []string
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".png" {
-			continue
+	err := filepath.WalkDir(path, func(p string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		files = append(files, entry.Name())
+		if entry.IsDir() {
+			return nil
+		}
+		if filepath.Ext(entry.Name()) != ".png" {
+			return nil
+		}
+		rel, relErr := filepath.Rel(path, p)
+		if relErr != nil {
+			return relErr
+		}
+		files = append(files, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
 	}
 	sort.Strings(files)
 	report.Screenshots = append(report.Screenshots, files...)
