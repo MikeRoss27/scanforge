@@ -15,10 +15,22 @@ func NewRootCommand() *cobra.Command {
 		Short: "Authorized pentest scan orchestrator",
 		Long: `ScanForge is a CLI tool that orchestrates external security tools
 for authorized pentest and recon workflows.`,
+		// Runtime errors (a failed module, a deadlock, ...) must not dump
+		// the full flag reference: the scan summary already explains what
+		// happened. Errors are printed once by cmd/scanforge/main.go.
+		SilenceErrors: true,
+		SilenceUsage:  true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			application.ConfigPath = configPath
 		},
 	}
+
+	// Flag-parsing mistakes are still a usage problem: keep showing help
+	// there so the user sees what flags exist.
+	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		c.PrintErrln(c.UsageString())
+		return err
+	})
 
 	cmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to scanforge.yaml (overrides SCANFORGE_CONFIG and ./scanforge.yaml)")
 

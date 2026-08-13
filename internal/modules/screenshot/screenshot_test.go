@@ -44,17 +44,21 @@ func TestRunDryRunBuildsScreenshotCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	line := string(log)
-	for _, want := range []string{"httpx", "-screenshot", "-screenshot-dir", outputDir, "alive.txt"} {
+	for _, want := range []string{"httpx", "-ss", "-srd", outputDir, "alive.txt"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("commands log misses %q:\n%s", want, line)
 		}
 	}
 }
 
-func TestScreenshotFilesListsPNGOnly(t *testing.T) {
+func TestScreenshotFilesWalksNestedHttpxLayout(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"a.example.com.png", "b.example.com.png", "notes.txt", "sub.png.log"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
+	for _, rel := range []string{"screenshot/a.example.com/hash1.png", "screenshot/b.example.com/hash2.png", "screenshot/a.example.com/hash3.txt", "notes.txt"} {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -62,8 +66,17 @@ func TestScreenshotFilesListsPNGOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 2 || files[0] != "a.example.com.png" || files[1] != "b.example.com.png" {
+	if len(files) != 2 {
 		t.Fatalf("ScreenshotFiles() = %v", files)
+	}
+	want := []string{
+		filepath.Join(dir, "screenshot", "a.example.com", "hash1.png"),
+		filepath.Join(dir, "screenshot", "b.example.com", "hash2.png"),
+	}
+	for i := range want {
+		if files[i] != want[i] {
+			t.Fatalf("ScreenshotFiles()[%d] = %q, want %q", i, files[i], want[i])
+		}
 	}
 }
 

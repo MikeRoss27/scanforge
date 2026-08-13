@@ -102,6 +102,38 @@ func TestRunFailsWithoutAliveURLs(t *testing.T) {
 	}
 }
 
+// A killed or timed-out ffuf leaves a truncated JSON file. The module must
+// salvage whatever full records are present instead of dying, so nuclei still
+// gets its attack surface input.
+func TestRunSalvagesTruncatedFfufJSON(t *testing.T) {
+	run := testRun(t)
+	writeFile(t, run.Path("05_content", "alive.txt"), "https://example.com/\n")
+	writeFile(t, run.Path("05_content", "ffuf.json"),
+		`{"results":[{"url":"https://example.com/admin"},{"url":"https://example.com/api"}]}`+"\n"+
+			`{"results":[{"url":"https://example.com/truncated"`)
+
+	runCtx := modules.NewRunContext("example.com", "deep", false, run)
+	for name, path := range map[string]string{
+		"alive_urls":       "05_content/alive.txt",
+		"discovered_paths": "05_content/ffuf.json",
+	} {
+		if err := runCtx.AddArtifact(name, modules.Artifact{Name: name, Type: "text", Path: path}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, err := New().Run(context.Background(), runCtx, nil)
+	if err != nil {
+		t.Fatalf("Run() must not fail on truncated ffuf output: %v", err)
+	}
+	if art, ok := runCtx.GetArtifact("attack_surface_urls"); !ok || art.Path != outputRel {
+		t.Fatalf("attack_surface_urls must still be published: %+v", art)
+	}
+	if got := readLines(t, run.Path(outputRel)); len(got) != 3 {
+		t.Fatalf("salvaged attack surface = %v, want the 3 complete URLs", got)
+	}
+}
+
 func TestRunDropsOutOfScopeJSEndpoints(t *testing.T) {
 	run := testRun(t)
 	writeFile(t, run.Path("05_content", "alive.txt"), "https://example.com/\n")

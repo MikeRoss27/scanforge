@@ -167,7 +167,10 @@ func (a *App) runOne(ctx context.Context, opts RunOptions) error {
 		}
 	}
 
-	return errors.Join(runErr, manifestErr, session.reportErr)
+	// Best-effort report parse warnings (session.reportErr) are already
+	// printed and must not fail the run: a truncated tool output should
+	// never flip a valid scan's exit code for CI pipelines.
+	return errors.Join(runErr, manifestErr)
 }
 
 // prepareRun loads the config, resolves the profile and effective scope, and
