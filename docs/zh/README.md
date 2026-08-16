@@ -23,12 +23,18 @@
 
 - **产物驱动的流水线**：模块通过产物有序通信（例如 `subfinder` 的输出自动喂给 `dnsx` 和 `httpx`），并按 DAG 波次并行执行。
 - **严格的扫描范围验证**：通过文件显式指定范围，或确认隐式范围（默认为 `exact`，可请求 `domain`），然后对每个产物进行过滤。
+- **多目标项目**：`--targets 文件` 可对一个配置文件中的多个目标运行（每行一个，忽略注释与空行）；每个目标都有独立的范围验证、运行目录和报告，单个目标失败不会中断其余目标。
+- **交互式向导**：在终端上直接运行 `scanforge run` 会询问缺失的目标和配置文件，而不是报错。
 - **代理集成（Caido / Burp Suite）**：`--proxy` 将相关模块的 HTTP 流量路由到你的拦截代理，便于手动分类/重放。
 - **认证扫描**：`-H/--header`（可重复）向发出的每个 HTTP 请求注入请求头/ Cookie（会话、Bearer 令牌）。
-- **JavaScript 密钥扫描器**：`jssecrets` 模块抓取爬取到的 `.js` 文件，检测泄露的 API 密钥/令牌/凭据、公共云存储桶、内网主机、邮箱、敏感 API 端点以及可访问的 source map。
-- **完全可配置的 Nuclei**：通过专用参数控制严重级别、标签、速率限制、自定义模板和模板更新。
+- **JavaScript 密钥扫描器**：`jssecrets` 模块抓取爬取到的 `.js` 文件，检测泄露的 API 密钥/令牌/凭据、公共云存储桶、内网主机、邮箱、敏感 API 端点以及可访问的 source map；随后 `jsverify` 模块在无头浏览器中重放生成的 PoC 载荷，并报告已执行 / 到达 sink / 未观察到的判定结果。
+- **可视化截图**：`screenshot` 模块通过 `httpx` 捕获存活 URL 的截图，并列入报告中。
+- **技术到 CVE 关联**：`techcve` 将检测到的技术与版本与内置数据集匹配，该数据集包含来自 NVD 的真实 CVSS 基础评分。
+- **完全可配置的 Nuclei**：通过专用参数控制严重级别、标签、速率限制、整体超时、自定义模板和模板更新。
 - **Nmap 并行化**：有界工作线程池（`--nmap-concurrency`），替代逐主机顺序扫描。
-- **实时进度**：扫描期间每个活动模块显示 spinner（默认可见，不仅限于 `--verbose`），`plan`/`doctor` 显示彩色表格，运行结束时显示汇总面板。
+- **实时进度**：扫描期间每个活动模块显示 spinner（默认可见，不仅限于 `--verbose`），发现结果随模块发现实时呈现，模块警告在 TUI 结束后重放，`plan`/`doctor` 显示彩色表格，运行结束时显示汇总面板。
+- **Webhook 通知**：每次运行结束时，将摘要发布到 `scanforge.yaml` 中配置的 Slack/Discord/Teams webhook。
+- **运行对比与导出**：`scanforge diff` 列出同一目标两次运行之间的变化（资产、端口、漏洞）；`scanforge export` 将运行序列化为 SARIF 2.1.0（GitHub/GitLab 代码扫描）或 DefectDojo 通用发现。
 - **Dry-Run 模式**：在发出任何网络请求之前，预览将要执行的命令和生成的文件。
 - **诊断工具（Doctor）**：即时检查本地依赖项是否已为所选配置文件安装并配置。
 - **合并报告**：自动生成统一的风险模型，输出 `report.json` 和 `report.md` 格式。
@@ -37,23 +43,35 @@
 
 ## 🛠️ 支持的工具
 
-ScanForge 集中编排 12 个外部安全工具，外加 1 个内置模块：
+ScanForge 集中编排 **14 个外部安全工具** 和 **6 个内置模块**：
+
+外部工具：
 
 1. **subfinder**（子域名发现）
-2. **dnsx**（主动 DNS 解析）
-3. **httpx**（HTTP 探测与技术识别）
-4. **naabu**（超快端口扫描器）
-5. **nmap**（精确的端口扫描与服务识别，并行执行）
-6. **whatweb**（Web 技术指纹识别）
-7. **wafw00f**（Web 应用防火墙检测）
-8. **katana**（Web 资源爬取）
-9. **ffuf**（目录与文件模糊测试）
-10. **nuclei**（基于模板的漏洞扫描器）
-11. **gau**（被动收集历史 URL）
-12. **tlsx**（TLS 证书与协议增强）
-13. **jssecrets**（内置，无需外部二进制）—— 分析 `katana` 爬取的 JS，检测密钥、云存储桶、内网主机、邮箱和暴露的 source map
+2. **shuffledns**（DNS 暴力破解，模块 `dnsbrute`；结果合并到 `dnsx`）
+3. **dnsx**（主动 DNS 解析）
+4. **httpx**（HTTP 探测、技术识别与截图）
+5. **naabu**（超快端口扫描器）
+6. **nmap**（精确的端口扫描与服务识别，并行执行）
+7. **whatweb**（Web 技术指纹识别）
+8. **wafw00f**（Web 应用防火墙检测）
+9. **katana**（Web 资源爬取）
+10. **ffuf**（目录与文件模糊测试）
+11. **nuclei**（基于模板的漏洞扫描器）
+12. **gau**（被动收集历史 URL）
+13. **tlsx**（TLS 证书与协议增强）
+14. **chromium**（`jsverify` 模块使用的无头浏览器）
 
-`httpx`、`nuclei`、`katana`、`ffuf`、`whatweb`、`wafw00f`、`subfinder`、`gau` 和 `jssecrets` 支持 `--proxy` 和 `-H/--header`，可将流量路由到 Caido/Burp 并以认证模式扫描。
+内置模块（无需外部二进制）：
+
+- **jssecrets** —— 分析 `katana` 爬取的 JS，检测密钥、云存储桶、内网主机、邮箱和暴露的 source map
+- **jsverify** —— 在无头浏览器中重放 `jssecrets` 的 PoC 载荷（通过 URL 参数、fragment 和 `postMessage` 注入），并报告已执行、到达 sink 或未观察到的判定结果
+- **attacksurface** —— 将存活主机、爬取 URL、模糊测试路径和 JS 发现的端点整合为一份攻击面列表，供下游扫描器使用
+- **techcve** —— 将检测到的技术与版本与内置数据集中的已知 CVE 关联（来自 NVD 的真实 CVSS 基础评分）
+- **httpcheck** —— 在发现的攻击面上检查 HTTP 安全请求头（CSP、HSTS、点击劫持、Cookie）
+- **payloadgen** —— 根据扫描发现生成上下文相关词表（API 路径、参数、按技术划分的端点）
+
+`httpx`、`nuclei`、`katana`、`ffuf`、`whatweb`、`wafw00f`、`subfinder`、`gau`、`jssecrets`、`jsverify`、`httpcheck` 和 `screenshot` 支持 `--proxy` 和 `-H/--header`，可将流量路由到 Caido/Burp 并以认证模式扫描。
 
 ---
 
@@ -146,7 +164,7 @@ scanforge doctor --profile web
 scanforge run example.com --profile web
 ```
 
-要包含该域名及其子域名、添加规则或排除项：
+在终端上，直接运行 `scanforge run`（不带目标和配置文件）会打开一个交互式向导，询问两者。要包含该域名及其子域名、添加规则或排除项：
 
 ```bash
 scanforge run example.com --scope-mode domain \
@@ -175,6 +193,50 @@ scanforge plan example.com --preset deep
 scanforge scan example.com --preset safe
 ```
 
+### 4. 多目标项目
+
+`run` 和 `plan` 接受目标文件，而不是单个位置参数目标：
+
+```bash
+scanforge plan --targets targets.txt --preset web
+scanforge run --targets targets.txt --preset web --confirm-scope
+```
+
+文件每行一个目标（忽略 `#` 注释和空行）。`--targets` 与位置参数目标互斥。
+
+### 5. 对比运行与导出发现
+
+`scanforge diff` 重新整合两个运行目录，并列出变化内容 —— 出现或消失的资产、端口和漏洞：
+
+```bash
+scanforge diff runs/example.com/2026-08-09_10-00-00 runs/example.com/2026-08-10_10-00-00
+scanforge diff runs/example.com/2026-08-09_10-00-00 runs/example.com/2026-08-10_10-00-00 --json
+```
+
+`scanforge export` 将整合后的报告序列化为第三方工具可用的格式：
+
+```bash
+scanforge export runs/example.com/2026-08-10_10-00-00 --format sarif          # GitHub/GitLab 代码扫描
+scanforge export runs/example.com/2026-08-10_10-00-00 --format defectdojo     # import-scan "Generic Findings Import"
+```
+
+### 6. API 密钥与更新
+
+某些工具（subfinder、nuclei 等）受益于 API 密钥。使用 `scanforge auth` 管理它们：
+
+```bash
+scanforge auth set shodan <API_KEY>
+scanforge auth list
+scanforge auth sync
+```
+
+使用 `scanforge update` 更新二进制文件（以及可选的外部工具）：
+
+```bash
+scanforge update            # 仅二进制（需要 Go）
+scanforge update --tools    # 二进制 + 外部工具
+```
+
 ---
 
 ## 🕵️ 代理、认证与 Nuclei 设置
@@ -187,13 +249,30 @@ scanforge run app.example.com --profile web \
   -H "Cookie: session=..." \
   --nuclei-tags cve,exposure --nuclei-severity critical,high \
   --nuclei-update-templates \
+  --nuclei-include-custom \
+  --ffuf-wordlist /usr/share/wordlists/dirb/big.txt \
   --nmap-concurrency 6
 ```
 
 - `--proxy`：为使用 HTTP 的模块指定 HTTP/SOCKS 代理。
 - `-H/--header`（可重复）：添加到每个请求的原始请求头 `"名称: 值"`。
 - `--nuclei-severity`、`--nuclei-exclude-severity`、`--nuclei-tags`、`--nuclei-exclude-tags`、`--nuclei-rate-limit`、`--nuclei-templates`、`--nuclei-update-templates`：精细控制漏洞扫描器。
+- `--nuclei-timeout`：nuclei 运行的整体时间限制，例如 `45m`（默认 30m；对于慢速代理或大型目标列表请调高）。
+- `--nuclei-headless`：启用 nuclei 无头模式（基于浏览器的模板）。
+- `--nuclei-include-custom`：同时运行 `templates/` 中捆绑的 40+ 个 ScanForge 模板（云元数据端点、暴露的管理面板和仪表盘、CORS 错误配置、XXE、SSRF、调试端点等）；通过 `SCANFORGE_TEMPLATES_DIR`、`./templates` 或二进制文件所在目录定位。
+- `--ffuf-wordlist`、`--ffuf-filter-codes`：覆盖 ffuf 词表（默认 `/usr/share/wordlists/dirb/common.txt`）并过滤状态码。
 - `--nmap-concurrency`：并行的 nmap 扫描数（默认 4）；在敏感项目上请调低以保持低调。
+
+### Webhook 通知
+
+在 `scanforge.yaml` 中设置 `webhook.url`，即可在每次扫描结束时在 Slack、Discord 或 Teams 上收到运行摘要：
+
+```yaml
+webhook:
+  url: https://example.com/hooks/your-webhook-url
+```
+
+载荷是带有 `text` 字段的通用 JSON 文档，因此每个主流 webhook 接收器都会显示可读消息（目标、配置文件、状态、资产、端口、按严重级别划分的漏洞、运行目录）。
 
 ---
 
@@ -202,13 +281,13 @@ scanforge run app.example.com --profile web \
 | 名称 | 模块 | 用途 |
 | --- | --- | --- |
 | `safe` | subfinder, dnsx, httpx, tlsx | 轻量暴露面检查。 |
-| `recon` | safe + gau | 用历史 URL 丰富资产清单。 |
+| `recon` | subfinder, dnsbrute, gau, dnsx, httpx, tlsx | 用历史 URL 和 DNS 暴力破解丰富资产清单。 |
 | `passive` | subfinder, dnsx, httpx | 最小历史流水线。 |
 | `ports` | subfinder, dnsx, naabu, nmap | 开放端口，然后验证服务。 |
-| `web` | subfinder, dnsx, httpx, whatweb, wafw00f, katana, jssecrets, nuclei | 应用分析，并提取 JS 密钥。 |
-| `vuln` | subfinder, dnsx, httpx, tlsx, nuclei | 针对性漏洞检测。 |
-| `deep` | 所有模块（+ jssecrets） | 完整且高噪音的流水线。 |
-| `full` | 所有模块（+ jssecrets） | 完整配置文件，兼容历史版本。 |
+| `web` | subfinder, dnsbrute, dnsx, httpx, whatweb, wafw00f, katana, jssecrets, jsverify, attacksurface, techcve, httpcheck, payloadgen, screenshot, nuclei | 应用分析：攻击面整合、JS 密钥 + 无头验证、截图、技术到 CVE 关联、请求头检查与载荷生成。 |
+| `vuln` | subfinder, dnsbrute, dnsx, httpx, tlsx, katana, jssecrets, attacksurface, techcve, nuclei | 针对性漏洞检测（技术到 CVE + 模板）。 |
+| `deep` | 所有模块 | 完整且高噪音的流水线。 |
+| `full` | 所有模块 | 完整配置文件，兼容历史版本。 |
 
 `--preset safe` 和 `--profile safe` 可互换使用。在任何活动配置文件之前，请始终用 `scanforge plan` 检查其 DAG。
 
@@ -224,6 +303,14 @@ scanforge run app.example.com --profile web \
 - `00_meta/commands.log`：准备或执行的外部命令。
 - `00_meta/effective-scope.txt`：实际应用范围的规范副本，其来源和模式记录在清单中。
 - `00_meta/scope-rejections.jsonl`：被拒绝的范围外值（如有）。
+- `04_surface/attack-surface.txt`：供扫描器使用的整合候选 URL（`attacksurface` 模块）。
+- `04_payloads/`：为 API 路径、端点、参数和按技术划分的端点生成的词表（`payloadgen` 模块）。
+- `04_web/screenshots/`：存活 URL 的 PNG 截图（`screenshot` 模块）。
 - `06_vulns/js-secrets.jsonl`：在爬取的 JS 中检测到的密钥、云存储桶、内网主机、邮箱和 source map（`jssecrets` 模块）。
+- `06_vulns/js-payloads.txt`：根据 JS 密钥生成的 PoC 载荷（`jssecrets` 模块）。
+- `06_vulns/js-verified.jsonl`：JS 载荷的无头浏览器判定结果（已执行、到达 sink、未观察到）（`jsverify` 模块）。
+- `06_vulns/cve-findings.jsonl`：根据指纹关联的易受攻击版本（`techcve` 模块）。
+- `06_vulns/http-checks.jsonl`：缺失的安全请求头和 Cookie 标志（`httpcheck` 模块）。
+- `06_vulns/nuclei.jsonl`：nuclei 原始发现（`nuclei` 模块）。
 
 > ScanForge 只能用于你拥有明确授权的资产。
