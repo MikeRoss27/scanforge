@@ -147,7 +147,7 @@ func TestTerminalWizardAskTargetRetriesOnEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	if _, err := w.WriteString("\nexample.com\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestTerminalWizardAskProfileByNumberAndDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	if _, err := w.WriteString("4\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestTerminalWizardAskProfileEmptyAnswerUsesDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	if _, err := w.WriteString("\n"); err != nil {
 		t.Fatal(err)
 	}
