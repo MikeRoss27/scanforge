@@ -1,0 +1,39 @@
+id: scanforge-traefik-dashboard-exposed
+
+info:
+  name: Traefik Dashboard Exposed
+  author: ScanForge
+  severity: medium
+  description: A Traefik Dashboard is publicly accessible without authentication, exposing routing configuration and metrics.
+  tags: misconfig,traefik,proxy,load-balancer,exposure
+  reference:
+    - https://doc.traefik.io/traefik/operations/dashboard/
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/dashboard/"
+      - "{{BaseURL}}/api/overview"
+      - "{{BaseURL}}/api/http/routers"
+      - "{{BaseURL}}/api/http/services"
+      - "{{BaseURL}}/api/tcp/routers"
+      - "{{BaseURL}}/api/tcp/services"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "Traefik"
+          - "traefik"
+          - "traefik_version"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

@@ -1,0 +1,55 @@
+id: scanforge-exposed-env-file
+
+info:
+  name: Exposed .env File
+  author: ScanForge
+  severity: critical
+  description: An environment configuration file (.env) is publicly accessible, potentially exposing secrets, API keys, database credentials, and other sensitive configuration.
+  tags: exposure,env,config,secrets
+  reference:
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+    - https://github.com/bnb/awesome-developer-streams/blob/master/DOCUMENTATION.md#environment-variables
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.env"
+      - "{{BaseURL}}/.env.local"
+      - "{{BaseURL}}/.env.production"
+      - "{{BaseURL}}/.env.development"
+      - "{{BaseURL}}/.env.staging"
+      - "{{BaseURL}}/.env.example"
+      - "{{BaseURL}}/.env.sample"
+      - "{{BaseURL}}/.env.backup"
+      - "{{BaseURL}}/.env.bak"
+      - "{{BaseURL}}/.env.old"
+      - "{{BaseURL}}/.env.dev"
+      - "{{BaseURL}}/.env.test"
+      - "{{BaseURL}}/.env.ci"
+      - "{{BaseURL}}/.env.stage"
+      - "{{BaseURL}}/.config/env"
+      - "{{BaseURL}}/config/.env"
+      - "{{BaseURL}}/app/.env"
+      - "{{BaseURL}}/server/.env"
+      - "{{BaseURL}}/api/.env"
+      - "{{BaseURL}}/backend/.env"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "="
+        condition: or
+      - type: regex
+        part: body
+        regex:
+          - "(?i)(api[_-]?key|secret|password|token|credential|database[_-]?url|db[_-]?password|aws[_-]?access|aws[_-]?secret|private[_-]?key)"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^([A-Z_][A-Z0-9_]*=.*)$"

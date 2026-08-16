@@ -1,0 +1,41 @@
+id: scanforge-joomla-configuration-exposed
+
+info:
+  name: Joomla Configuration Exposed
+  author: ScanForge
+  severity: high
+  description: A Joomla configuration.php file is publicly accessible, exposing database credentials, secret keys, and other sensitive configuration.
+  tags: exposure,joomla,cms,config,secrets
+  reference:
+    - https://docs.joomla.org/Configuration.php
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/configuration.php"
+      - "{{BaseURL}}/configuration.php-dist"
+      - "{{BaseURL}}/configuration.php.bak"
+      - "{{BaseURL}}/configuration.php.backup"
+      - "{{BaseURL}}/configuration.php.old"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "class JConfig"
+          - "public $dbtype"
+          - "public $host"
+          - "public $user"
+          - "public $password"
+          - "public $db"
+          - "public $secret"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

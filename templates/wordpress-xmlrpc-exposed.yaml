@@ -1,0 +1,42 @@
+id: scanforge-wordpress-xmlrpc-exposed
+
+info:
+  name: WordPress XML-RPC Enabled
+  author: ScanForge
+  severity: medium
+  description: WordPress XML-RPC is enabled, which can be used for brute force attacks, DDoS amplification, and information disclosure.
+  tags: exposure,wordpress,xmlrpc,misconfig
+  reference:
+    - https://developer.wordpress.org/apis/xml-rpc/
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/xmlrpc.php"
+    headers:
+      Content-Type: "text/xml"
+    body: |
+      <?xml version="1.0" encoding="utf-8"?>
+      <methodCall>
+        <methodName>system.listMethods</methodName>
+        <params></params>
+      </methodCall>
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "methodResponse"
+          - "system.listMethods"
+          - "system.multicall"
+          - "wp.getUsersBlogs"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

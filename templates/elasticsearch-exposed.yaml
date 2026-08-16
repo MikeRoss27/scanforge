@@ -1,0 +1,38 @@
+id: scanforge-elasticsearch-exposed
+
+info:
+  name: Elasticsearch Exposed
+  author: ScanForge
+  severity: high
+  description: An Elasticsearch instance is publicly accessible without authentication, allowing unauthorized access to indices and data.
+  tags: misconfig,elasticsearch,search,database,exposure
+  reference:
+    - https://www.elastic.co/guide/en/elasticsearch/reference/current/security-settings.html
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/_cat/indices"
+      - "{{BaseURL}}/_cat/nodes"
+      - "{{BaseURL}}/_cluster/health"
+      - "{{BaseURL}}/_nodes"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "elasticsearch"
+          - "cluster_name"
+          - "version"
+          - "lucene_version"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

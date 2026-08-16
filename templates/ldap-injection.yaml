@@ -1,0 +1,38 @@
+id: scanforge-ldap-injection
+
+info:
+  name: LDAP Injection
+  author: ScanForge
+  severity: high
+  description: An LDAP injection vulnerability allowing unauthorized access to directory information.
+  tags: ldap,injection,authentication
+  reference:
+    - https://portswigger.net/web-security/ldap-injection
+    - https://owasp.org/www-project-top-ten/2017/A1_2017-Injection.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?username=*&password=*"
+      - "{{BaseURL}}/?search=*)(|(userPassword=*))"
+      - "{{BaseURL}}/?filter=*)(uid=*))(|(userPassword=*))"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "uid="
+          - "cn="
+          - "userPassword"
+          - "objectClass"
+          - "LDAP"
+          - "ldap"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

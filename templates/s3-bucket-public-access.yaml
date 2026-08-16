@@ -1,0 +1,38 @@
+id: scanforge-s3-bucket-public-access
+
+info:
+  name: AWS S3 Bucket Public Access
+  author: ScanForge
+  severity: high
+  description: An S3 bucket is publicly accessible, allowing unauthenticated users to list or download objects.
+  tags: misconfig,aws,s3,storage,exposure
+  reference:
+    - https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-control-block-public-access.html
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: header
+        words:
+          - "x-amz-bucket-region"
+        condition: or
+      - type: word
+        part: body
+        words:
+          - "ListBucketResult"
+          - "<Contents>"
+          - "<Key>"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?i)<key>([^<]+)</key>"

@@ -1,0 +1,38 @@
+id: scanforge-jenkins-exposed
+
+info:
+  name: Jenkins Exposed
+  author: ScanForge
+  severity: high
+  description: A Jenkins instance is publicly accessible without authentication, allowing unauthorized access to build jobs, credentials, and system configuration.
+  tags: misconfig,jenkins,ci-cd,exposure
+  reference:
+    - https://www.jenkins.io/doc/book/security/
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/login"
+      - "{{BaseURL}}/api/json"
+      - "{{BaseURL}}/credentials/"
+      - "{{BaseURL}}/manage"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "Jenkins"
+          - "jenkins"
+          - "Hudson"
+          - "hudson"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

@@ -1,0 +1,38 @@
+id: scanforge-consul-exposed
+
+info:
+  name: Consul Exposed
+  author: ScanForge
+  severity: high
+  description: A Consul instance is publicly accessible without authentication, exposing service discovery, configuration, and potentially sensitive data.
+  tags: misconfig,consul,service-discovery,exposure
+  reference:
+    - https://www.consul.io/docs/security
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/v1/catalog/services"
+      - "{{BaseURL}}/v1/kv"
+      - "{{BaseURL}}/v1/agent/self"
+      - "{{BaseURL}}/v1/agent/members"
+      - "{{BaseURL}}/v1/health/state/any"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "Consul"
+          - "consul"
+          - "consul_version"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

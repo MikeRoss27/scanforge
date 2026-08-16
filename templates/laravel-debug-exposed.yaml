@@ -1,0 +1,36 @@
+id: scanforge-laravel-debug-exposed
+
+info:
+  name: Laravel Debug Mode Enabled
+  author: ScanForge
+  severity: high
+  description: Laravel debug mode is enabled in production, exposing stack traces, environment variables, and sensitive application information.
+  tags: exposure,laravel,php,debug,misconfig
+  reference:
+    - https://laravel.com/docs/configuration#debug-mode
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "Whoops!"
+          - "Whoops \\ Exception"
+          - "Laravel"
+          - "Illuminate"
+          - "APP_DEBUG"
+          - "APP_ENV=local"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

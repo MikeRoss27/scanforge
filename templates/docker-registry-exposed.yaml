@@ -1,0 +1,40 @@
+id: scanforge-docker-registry-exposed
+
+info:
+  name: Docker Registry API Exposed
+  author: ScanForge
+  severity: high
+  description: A Docker Registry API is publicly accessible without authentication, allowing unauthorized access to container images.
+  tags: misconfig,docker,registry,container,exposure
+  reference:
+    - https://docs.docker.com/registry/spec/api/
+    - https://github.com/docker/distribution
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/v2/"
+      - "{{BaseURL}}/v2/_catalog"
+      - "{{BaseURL}}/api/v2.0/projects"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: header
+        words:
+          - "Docker-Distribution-API-Version"
+          - "docker-registry"
+        condition: or
+      - type: word
+        part: body
+        words:
+          - "repositories"
+          - "projects"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

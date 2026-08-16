@@ -1,0 +1,48 @@
+id: scanforge-server-status-exposed
+
+info:
+  name: Server Status Page Exposed
+  author: ScanForge
+  severity: medium
+  description: A server status page (Apache, Nginx, PHP-FPM, etc.) is publicly accessible, exposing server configuration, performance metrics, and potentially sensitive information.
+  tags: exposure,server-status,apache,nginx,php-fpm,misconfig
+  reference:
+    - https://httpd.apache.org/docs/2.4/mod/mod_status.html
+    - https://nginx.org/en/docs/http/ngx_http_stub_status_module.html
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/server-status"
+      - "{{BaseURL}}/server-status?auto"
+      - "{{BaseURL}}/nginx_status"
+      - "{{BaseURL}}/status"
+      - "{{BaseURL}}/fpm-status"
+      - "{{BaseURL}}/php-fpm-status"
+      - "{{BaseURL}}/php-status"
+      - "{{BaseURL}}/apache-status"
+      - "{{BaseURL}}/server-info"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "Server Status"
+          - "Apache Status"
+          - "nginx_status"
+          - "PHP-FPM Status"
+          - "fpm_status"
+          - "Total Accesses"
+          - "Total kBytes"
+          - "Idle Workers"
+          - "Busy Workers"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

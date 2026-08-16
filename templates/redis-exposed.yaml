@@ -1,0 +1,33 @@
+id: scanforge-redis-exposed
+
+info:
+  name: Redis Exposed
+  author: ScanForge
+  severity: high
+  description: A Redis instance is publicly accessible without authentication, allowing unauthorized access to data.
+  tags: misconfig,redis,cache,database,exposure
+  reference:
+    - https://redis.io/docs/latest/operate/oss_and_stack/security/
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "redis"
+          - "REDIS_VERSION"
+          - "redis_version"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"
