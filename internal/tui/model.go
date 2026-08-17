@@ -2,6 +2,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -65,12 +66,14 @@ type findingRow struct {
 }
 
 type ScanModel struct {
-	eventChan <-chan orchestrator.Event
-	order     []string
-	rows      map[string]*moduleRow
-	warnings  []string
-	findings  []findingRow
-	spin      spinner.Model
+	eventChan     <-chan orchestrator.Event
+	order         []string
+	rows          map[string]*moduleRow
+	warnings      []string
+	findings      []findingRow
+	findingsTotal int
+	spin          spinner.Model
+	started       time.Time
 }
 
 func NewScanModel(eventChan <-chan orchestrator.Event) ScanModel {
@@ -81,6 +84,7 @@ func NewScanModel(eventChan <-chan orchestrator.Event) ScanModel {
 		eventChan: eventChan,
 		rows:      make(map[string]*moduleRow),
 		spin:      s,
+		started:   time.Now(),
 	}
 }
 
@@ -125,13 +129,20 @@ func (m ScanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForEvent(m.eventChan)
 
 	case orchestrator.ModuleDoneEvent:
-		if row, ok := m.rows[msg.Name]; ok {
-			row.state = stateDone
-			row.status = msg.Status
-			row.dur = msg.Dur
-			row.failed = msg.Failed
-			row.summary = msg.Summary
+		row, ok := m.rows[msg.Name]
+		if !ok {
+			// Modules skipped by a failed dependency (or stopped by an
+			// abort) never had a WaveStartEvent; create their row now so
+			// they stay visible instead of vanishing from the table.
+			m.order = append(m.order, msg.Name)
+			row = &moduleRow{name: msg.Name}
+			m.rows[msg.Name] = row
 		}
+		row.state = stateDone
+		row.status = msg.Status
+		row.dur = msg.Dur
+		row.failed = msg.Failed
+		row.summary = msg.Summary
 		return m, waitForEvent(m.eventChan)
 
 	case orchestrator.DeadlockEvent:
@@ -143,6 +154,7 @@ func (m ScanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForEvent(m.eventChan)
 
 	case orchestrator.FindingEvent:
+		m.findingsTotal++
 		m.findings = append(m.findings, findingRow{
 			module:   msg.Module,
 			severity: msg.Severity,
@@ -178,9 +190,10 @@ func (m ScanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m ScanModel) View() string {
 	var out strings.Builder
 
-	// Top banner with the brand gradient
+	// Top banner with the brand gradient and a live run timer on the right.
 	banner := ui.Gradient("SCANFORGE ORCHESTRATOR", ui.AccentCyan, ui.AccentMagenta)
-	out.WriteString(ui.Bold(banner) + "\n")
+	elapsed := ui.Dim("⏱ " + time.Since(m.started).Round(time.Second).String())
+	out.WriteString(ui.Bold(banner) + "  " + elapsed + "\n")
 	out.WriteString(ui.Dim(strings.Repeat("─", lipgloss.Width(banner))) + "\n\n")
 
 	// The table
@@ -200,25 +213,30 @@ func (m ScanModel) View() string {
 			if row.state == stateRunning {
 				elapsed := time.Since(row.start).Round(time.Second).String()
 				t.Row(ui.Bold(name), ui.Primary(m.spin.View()+" RUNNING"), ui.Dim(elapsed), ui.Dim("..."))
-			} else {
-				stateLabel := ui.SuccessTag("DONE")
-				if row.failed {
-					stateLabel = ui.ErrorTag("FAIL")
-				}
-				dur := row.dur.Round(time.Millisecond).String()
-
-				statusText := ui.Dim(row.status)
-				if row.failed {
-					statusText = ui.Red(row.status)
-				} else if row.status == "completed" {
-					statusText = ui.Green(row.status)
-				}
-				if row.summary != "" {
-					statusText += ui.Secondary(" · " + row.summary)
-				}
-
-				t.Row(ui.Bold(name), stateLabel, ui.Dim(dur), statusText)
+				continue
 			}
+
+			stateLabel := ui.SuccessTag("DONE")
+			statusText := ui.Green(row.status)
+			dur := ui.Dim(row.dur.Round(time.Millisecond).String())
+			switch {
+			case row.failed:
+				stateLabel = ui.ErrorTag("FAIL")
+				statusText = ui.Red(row.status)
+			case row.status == "skipped":
+				stateLabel = ui.SkipTag("SKIP")
+				statusText = ui.Dim("dependency missing")
+				dur = ui.Dim("–")
+			case row.status == "aborted":
+				stateLabel = ui.AbortTag("ABORT")
+				statusText = ui.Orange("aborted")
+				dur = ui.Dim("–")
+			}
+			if row.summary != "" {
+				statusText += ui.Secondary(" · " + row.summary)
+			}
+
+			t.Row(ui.Bold(name), stateLabel, dur, statusText)
 		}
 
 		out.WriteString(t.Render())
@@ -250,21 +268,29 @@ func (m ScanModel) View() string {
 			line += ui.Dim(" (" + f.module + ")")
 			box.WriteString("  " + line + "\n")
 		}
+		header := ui.DimBold("FINDINGS") + ui.Dim(fmt.Sprintf(" (%d)", m.findingsTotal))
+		if m.findingsTotal > len(m.findings) {
+			header += ui.Dim(fmt.Sprintf(" · showing last %d", len(m.findings)))
+		}
 		out.WriteString("\n")
-		out.WriteString(ui.DimBold("FINDINGS") + "\n")
+		out.WriteString(header + "\n")
 		out.WriteString(box.String())
 	}
 
-	// Progress bar
-	completed := 0
-	for _, row := range m.rows {
-		if row.state == stateDone {
-			completed++
-		}
-	}
+	// Progress: the bar counts successful completions against every module
+	// of the run (including skipped ones), so a partially failed pipeline
+	// never shows a misleading full bar.
+	completed, failed, skipped := m.tally()
 	if len(m.order) > 0 {
 		out.WriteString("\n")
 		out.WriteString(ui.DimBold("PROGRESS") + "  " + ui.ProgressBar(completed, len(m.order), 24))
+		out.WriteString("  " + ui.Dim(fmt.Sprintf("%d completed", completed)))
+		if failed > 0 {
+			out.WriteString(ui.Dim(" · ") + ui.Red(fmt.Sprintf("%d failed", failed)))
+		}
+		if skipped > 0 {
+			out.WriteString(ui.Dim(" · ") + ui.Yellow(fmt.Sprintf("%d skipped/aborted", skipped)))
+		}
 	}
 
 	// Footer
@@ -289,4 +315,23 @@ func (m ScanModel) anyRunning() bool {
 		}
 	}
 	return false
+}
+
+// tally counts finished modules by outcome so the progress line can report
+// completions, failures and skips separately instead of one blended number.
+func (m ScanModel) tally() (completed, failed, skipped int) {
+	for _, row := range m.rows {
+		if row.state != stateDone {
+			continue
+		}
+		switch {
+		case row.failed:
+			failed++
+		case row.status == "skipped", row.status == "aborted":
+			skipped++
+		default:
+			completed++
+		}
+	}
+	return completed, failed, skipped
 }

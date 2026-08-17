@@ -115,6 +115,8 @@ var (
 	tagSuccess = lipgloss.NewStyle().Bold(true).Foreground(colorBg).Background(colorGreen).Padding(0, 1)
 	tagWarn    = lipgloss.NewStyle().Bold(true).Foreground(colorBg).Background(colorYellow).Padding(0, 1)
 	tagError   = lipgloss.NewStyle().Bold(true).Foreground(colorBg).Background(colorRed).Padding(0, 1)
+	tagSkip    = lipgloss.NewStyle().Bold(true).Foreground(colorBg).Background(colorDim).Padding(0, 1)
+	tagAbort   = lipgloss.NewStyle().Bold(true).Foreground(colorBg).Background(colorOrange).Padding(0, 1)
 )
 
 func printTag(style lipgloss.Style, label, format string, args ...any) {
@@ -135,6 +137,14 @@ func ErrorTag(label string) string { return tagError.Render(label) }
 
 // WarnTag renders a standalone yellow badge (no message, no newline).
 func WarnTag(label string) string { return tagWarn.Render(label) }
+
+// SkipTag renders a standalone dim badge for modules that never ran because
+// an upstream dependency failed (no message, no newline).
+func SkipTag(label string) string { return tagSkip.Render(label) }
+
+// AbortTag renders a standalone orange badge for modules stopped by a
+// user-initiated abort (no message, no newline).
+func AbortTag(label string) string { return tagAbort.Render(label) }
 
 // ---------------------------------------------------------------------------
 // Gradient

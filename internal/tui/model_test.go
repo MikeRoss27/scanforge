@@ -96,11 +96,25 @@ func TestUpdateModuleDoneMarksRow(t *testing.T) {
 	}
 }
 
-func TestUpdateModuleDoneUnknownRowIgnored(t *testing.T) {
+// Modules skipped by a failed dependency never receive a WaveStartEvent; the
+// orchestrator only sends their ModuleDoneEvent. The TUI must materialize the
+// row on that event instead of silently dropping the module.
+func TestUpdateModuleDoneCreatesRowForNeverStartedModule(t *testing.T) {
 	m := NewScanModel(make(chan orchestrator.Event))
-	model, _ := updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "ghost", Status: "completed"})
-	if len(model.order) != 0 {
-		t.Errorf("expected no rows, got %v", model.order)
+	model, _ := updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "nmap", Status: "skipped"})
+
+	if len(model.order) != 1 || model.order[0] != "nmap" {
+		t.Fatalf("expected a row for nmap, got %v", model.order)
+	}
+	row := model.rows["nmap"]
+	if row == nil {
+		t.Fatal("expected row entry for nmap")
+	}
+	if row.state != stateDone {
+		t.Errorf("expected state done, got %d", row.state)
+	}
+	if row.status != "skipped" {
+		t.Errorf("expected status skipped, got %q", row.status)
 	}
 }
 
@@ -198,6 +212,39 @@ func TestViewShowsWarning(t *testing.T) {
 	view := m.View()
 	if !strings.Contains(view, "wave stalled") {
 		t.Errorf("expected view to contain warning, got:\n%s", view)
+	}
+}
+
+func TestViewShowsSkippedModulesWithOwnBadgeAndTally(t *testing.T) {
+	m := NewScanModel(make(chan orchestrator.Event))
+	m, _ = updateModel(t, m, orchestrator.WaveStartEvent{Wave: 1, Modules: []string{"subfinder", "naabu"}})
+	m, _ = updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "subfinder", Status: "completed", Dur: time.Second})
+	m, _ = updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "naabu", Status: "failed", Failed: true, Dur: time.Second})
+	// nmap never started: only its done event arrives.
+	m, _ = updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "nmap", Status: "skipped"})
+
+	view := m.View()
+	for _, want := range []string{"nmap", "SKIP", "1 completed", "1 failed", "1 skipped/aborted"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("expected view to contain %q, got:\n%s", want, view)
+		}
+	}
+}
+
+func TestViewFindingsHeaderCountsAllFindings(t *testing.T) {
+	m := NewScanModel(make(chan orchestrator.Event))
+	for i := 0; i < maxFindingsShown+3; i++ {
+		m, _ = updateModel(t, m, orchestrator.FindingEvent{
+			Module: "nuclei", Severity: "high", Title: "finding", Target: "https://example.com",
+		})
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "(11)") {
+		t.Errorf("expected findings total (11) in header, got:\n%s", view)
+	}
+	if !strings.Contains(view, "showing last") {
+		t.Errorf("expected truncation hint, got:\n%s", view)
 	}
 }
 
