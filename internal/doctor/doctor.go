@@ -298,12 +298,12 @@ func FormatChecks(checks []Check) string {
 	var b strings.Builder
 	b.WriteString(ui.Table([]string{"", "CHECK", "DETAILS"}, rows))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("%d %s", passed, ui.Green("passed")))
+	fmt.Fprintf(&b, "%d %s", passed, ui.Green("passed"))
 	if failed > 0 {
-		b.WriteString(fmt.Sprintf(", %d %s", failed, ui.Red("failed")))
+		fmt.Fprintf(&b, ", %d %s", failed, ui.Red("failed"))
 	}
 	if warned > 0 {
-		b.WriteString(fmt.Sprintf(", %d %s", warned, ui.Yellow("warning(s)")))
+		fmt.Fprintf(&b, ", %d %s", warned, ui.Yellow("warning(s)"))
 	}
 	b.WriteString("\n")
 
