@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -158,7 +159,7 @@ func (a *App) runOne(ctx context.Context, opts RunOptions) error {
 
 	manifestErr := session.finalizeManifest(results, runErr)
 	rep := session.generateReports()
-	printRunSummaryBox(session.scanRun, results, rep)
+	printRunSummaryBox(os.Stdout, session.scanRun, results, rep)
 	printFindingsTable(rep)
 
 	if !opts.DryRun {
@@ -349,7 +350,7 @@ func (s *runSession) printEvent(event orchestrator.Event) {
 		}
 	case orchestrator.ModuleDoneEvent:
 		if s.opts.Verbose || !s.opts.DryRun {
-			printModuleResult(e)
+			printModuleResult(os.Stdout, e)
 		}
 	case orchestrator.DeadlockEvent:
 		ui.Warn("%s", e.Message)
@@ -377,22 +378,47 @@ func printFinding(e orchestrator.FindingEvent) {
 }
 
 // printModuleResult renders a compact, aligned completion line for a module,
-// e.g. "  ✓ subfinder      2.1s · 8 subdomains". When no artifacts were
-// produced (dry runs, failures) the line degrades to status + duration.
-func printModuleResult(e orchestrator.ModuleDoneEvent) {
+// e.g. "  ✓ subfinder      2.1s · 8 subdomains". Skipped and aborted modules
+// get their own mark and an explicit status: a module that never ran must
+// never render like one that succeeded.
+func printModuleResult(out io.Writer, e orchestrator.ModuleDoneEvent) {
 	mark := "✓"
 	color := ui.Green
-	if e.Failed {
+	switch {
+	case e.Failed:
 		mark = "✗"
 		color = ui.Red
+	case e.Status == "skipped":
+		mark = "↓"
+		color = ui.Yellow
+	case e.Status == "aborted":
+		mark = "◌"
+		color = ui.Orange
 	}
 	name := color(ui.Bold(fmt.Sprintf("%-13s", e.Name)))
-	dur := ui.Dim(e.Dur.Round(time.Millisecond).String())
-	summary := ""
-	if e.Summary != "" {
-		summary = ui.Secondary(" · " + e.Summary)
+
+	var parts []string
+	if e.Dur > 0 {
+		parts = append(parts, ui.Dim(e.Dur.Round(time.Millisecond).String()))
 	}
-	fmt.Printf("  %s %s %s%s\n", color(mark), name, dur, summary)
+	switch {
+	case e.Failed && e.Status != "" && e.Status != "failed":
+		parts = append(parts, ui.Red(e.Status))
+	case e.Failed:
+		parts = append(parts, ui.Red("failed"))
+	case e.Status == "skipped":
+		parts = append(parts, ui.Dim("skipped (dependency missing)"))
+	case e.Status == "aborted":
+		parts = append(parts, ui.Orange("aborted"))
+	case e.Summary != "":
+		parts = append(parts, ui.Secondary(e.Summary))
+	}
+
+	line := fmt.Sprintf("  %s %s", color(mark), name)
+	if len(parts) > 0 {
+		line += " " + strings.Join(parts, " · ")
+	}
+	_, _ = fmt.Fprintln(out, line)
 }
 
 // finalizeManifest records completion time, per-module results and the run
@@ -482,7 +508,7 @@ func printRunInfoPanel(opts RunOptions, profile string, scanRun *storage.Run, ef
 // the mid-scroll module log and report.PrintTerminalSummary (which only
 // prints when report generation succeeds), this always renders so a run
 // never ends in just one easy-to-miss text line.
-func printRunSummaryBox(scanRun *storage.Run, results []*modules.Result, rep *report.Report) {
+func printRunSummaryBox(out io.Writer, scanRun *storage.Run, results []*modules.Result, rep *report.Report) {
 	duration := "unknown"
 	if started, err := time.Parse(time.RFC3339, scanRun.Manifest.StartedAt); err == nil {
 		if completed, err := time.Parse(time.RFC3339, scanRun.Manifest.CompletedAt); err == nil {
@@ -491,11 +517,16 @@ func printRunSummaryBox(scanRun *storage.Run, results []*modules.Result, rep *re
 	}
 
 	completedCount := 0
-	var failedModules []string
+	var failedModules, skippedModules []string
 	for _, res := range results {
-		if res.Status == "completed" {
+		switch res.Status {
+		case "completed":
 			completedCount++
-		} else {
+		case "skipped", "aborted":
+			// Never ran to completion, but not a failure either: listing
+			// these under FAILED would overstate what went wrong.
+			skippedModules = append(skippedModules, fmt.Sprintf("%s (%s)", res.Name, res.Status))
+		default:
 			failedModules = append(failedModules, fmt.Sprintf("%s (%s)", res.Name, res.Status))
 		}
 	}
@@ -523,11 +554,44 @@ func printRunSummaryBox(scanRun *storage.Run, results []*modules.Result, rep *re
 	}
 	fmt.Fprintf(&b, "%s\n", kv("FINDINGS", formatSeverityCounts(countBySeverity(rep))))
 	if len(failedModules) > 0 {
-		fmt.Fprintf(&b, "%s\n", kv("FAILED", ui.Red(strings.Join(failedModules, ", "))))
+		fmt.Fprintf(&b, "%s\n", kv("FAILED", ui.Red(wrapModuleList(failedModules))))
+	}
+	if len(skippedModules) > 0 {
+		fmt.Fprintf(&b, "%s\n", kv("SKIPPED", ui.Yellow(wrapModuleList(skippedModules))))
 	}
 	fmt.Fprintf(&b, "%s", kv("OUTPUT", ui.Dim(scanRun.RootDir)))
 
-	fmt.Println(ui.PanelWith("🏁 SCAN SUMMARY", b.String(), border, border))
+	_, _ = fmt.Fprintln(out, ui.PanelWith("🏁 SCAN SUMMARY", b.String(), border, border))
+}
+
+// wrapModuleList renders "name (status)" entries on lines of at most
+// ~maxListWidth characters so a long skip list cannot stretch the summary
+// panel past the terminal width; continuation lines align under the kv value
+// column. Widths are approximated from the plain names (module names and
+// statuses are ASCII), which stays on the safe side once ANSI colors are
+// layered on.
+func wrapModuleList(items []string) string {
+	const maxListWidth = 66
+	indent := strings.Repeat(" ", 10) // value column of the "%-9s " kv layout
+
+	var lines []string
+	current := ""
+	for _, item := range items {
+		if current == "" {
+			current = item
+			continue
+		}
+		if len(current)+len(", ")+len(item) > maxListWidth {
+			lines = append(lines, current)
+			current = item
+			continue
+		}
+		current += ", " + item
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return strings.Join(lines, "\n"+indent)
 }
 
 // printFindingsTable renders the severity-sorted findings table below the
