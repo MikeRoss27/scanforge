@@ -129,6 +129,53 @@ func TestAddArtifactFiltersTargetsBeforePublishing(t *testing.T) {
 	}
 }
 
+// Crawled and historical URLs can exceed bufio.Scanner's 64KB default token
+// limit; the scope filter must keep them instead of failing the artifact.
+func TestAddArtifactFiltersLinesLongerThanDefaultScannerLimit(t *testing.T) {
+	root := t.TempDir()
+	run := &storage.Run{
+		RootDir:  root,
+		MetaDir:  filepath.Join(root, "00_meta"),
+		Manifest: storage.RunManifest{Outputs: make(map[string]string)},
+	}
+	if err := os.MkdirAll(run.MetaDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	scope := &scanScope.Scope{
+		ExactHosts: map[string]struct{}{"example.com": {}},
+		Wildcards:  []string{"example.com"},
+	}
+	ctx := NewRunContext("example.com", "full", false, run, scope)
+
+	longURL := "https://example.com/path?" + strings.Repeat("a", 128*1024)
+	artifactPath := filepath.Join(root, "crawled.txt")
+	input := longURL + "\n" + "https://outside.test/x\n"
+	if err := os.WriteFile(artifactPath, []byte(input), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ctx.AddArtifact("crawled_urls", Artifact{
+		Name: "crawled_urls",
+		Type: "text",
+		Path: "crawled.txt",
+	})
+	if err != nil {
+		t.Fatalf("AddArtifact() error = %v, want the long in-scope line to survive filtering", err)
+	}
+
+	filtered, err := os.ReadFile(artifactPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(filtered) != longURL+"\n" {
+		t.Fatalf("filtered artifact length = %d, want only the %d-byte in-scope URL", len(filtered), len(longURL)+1)
+	}
+	if got := ctx.RejectedCount("crawled_urls"); got != 1 {
+		t.Fatalf("RejectedCount() = %d, want 1", got)
+	}
+}
+
 func TestAddArtifactDryRunDoesNotRequireOutputFile(t *testing.T) {
 	scope := &scanScope.Scope{ExactHosts: map[string]struct{}{"example.com": {}}}
 	run := &storage.Run{RootDir: t.TempDir()}
