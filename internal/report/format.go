@@ -21,11 +21,11 @@ func (r *Report) WriteJSON(path string) error {
 func (r *Report) WriteMarkdown(path string) error {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("# ScanForge Report: %s\n\n", mdInline(r.Target)))
-	b.WriteString(fmt.Sprintf("- **Profile:** %s\n", mdInline(r.Profile)))
-	b.WriteString(fmt.Sprintf("- **Status:** %s\n", mdInline(r.Status)))
-	b.WriteString(fmt.Sprintf("- **Started:** %s\n", r.StartedAt.Format("2006-01-02 15:04:05")))
-	b.WriteString(fmt.Sprintf("- **Completed:** %s\n\n", r.CompletedAt.Format("2006-01-02 15:04:05")))
+	_, _ = fmt.Fprintf(&b, "# ScanForge Report: %s\n\n", mdInline(r.Target))
+	_, _ = fmt.Fprintf(&b, "- **Profile:** %s\n", mdInline(r.Profile))
+	_, _ = fmt.Fprintf(&b, "- **Status:** %s\n", mdInline(r.Status))
+	_, _ = fmt.Fprintf(&b, "- **Started:** %s\n", r.StartedAt.Format("2006-01-02 15:04:05"))
+	_, _ = fmt.Fprintf(&b, "- **Completed:** %s\n\n", r.CompletedAt.Format("2006-01-02 15:04:05"))
 
 	// Sort assets
 	var assetNames []string
@@ -36,23 +36,23 @@ func (r *Report) WriteMarkdown(path string) error {
 
 	for _, name := range assetNames {
 		asset := r.Assets[name]
-		b.WriteString(fmt.Sprintf("## Asset: %s\n\n", mdInline(asset.Name)))
+		_, _ = fmt.Fprintf(&b, "## Asset: %s\n\n", mdInline(asset.Name))
 
 		if len(asset.IPs) > 0 {
-			b.WriteString(fmt.Sprintf("**IPs:** %s\n\n", strings.Join(asset.IPs, ", ")))
+			_, _ = fmt.Fprintf(&b, "**IPs:** %s\n\n", strings.Join(asset.IPs, ", "))
 		}
 		if len(asset.CNAMEs) > 0 {
-			b.WriteString(fmt.Sprintf("**CNAMEs:** %s\n\n", strings.Join(asset.CNAMEs, ", ")))
+			_, _ = fmt.Fprintf(&b, "**CNAMEs:** %s\n\n", strings.Join(asset.CNAMEs, ", "))
 		}
 		if len(asset.CDN) > 0 {
-			b.WriteString(fmt.Sprintf("**CDN:** %s\n\n", strings.Join(asset.CDN, ", ")))
+			_, _ = fmt.Fprintf(&b, "**CDN:** %s\n\n", strings.Join(asset.CDN, ", "))
 		}
 		if len(asset.WAFs) > 0 {
-			b.WriteString(fmt.Sprintf("**WAF:** %s\n\n", strings.Join(asset.WAFs, ", ")))
+			_, _ = fmt.Fprintf(&b, "**WAF:** %s\n\n", strings.Join(asset.WAFs, ", "))
 		}
 
 		if len(asset.Technologies) > 0 {
-			b.WriteString(fmt.Sprintf("**Technologies:** %s\n\n", strings.Join(asset.Technologies, ", ")))
+			_, _ = fmt.Fprintf(&b, "**Technologies:** %s\n\n", strings.Join(asset.Technologies, ", "))
 		}
 
 		if len(asset.Ports) > 0 {
@@ -63,7 +63,7 @@ func (r *Report) WriteMarkdown(path string) error {
 			}
 			sort.Ints(ports)
 			for _, p := range ports {
-				b.WriteString(fmt.Sprintf("- %d\n", p))
+				_, _ = fmt.Fprintf(&b, "- %d\n", p)
 			}
 			b.WriteString("\n")
 		}
@@ -73,9 +73,9 @@ func (r *Report) WriteMarkdown(path string) error {
 			b.WriteString("| URL | Status | Title | Server |\n")
 			b.WriteString("|-----|--------|-------|--------|\n")
 			for _, service := range asset.HTTP {
-				b.WriteString(fmt.Sprintf("| %s | %d | %s | %s |\n",
+				_, _ = fmt.Fprintf(&b, "| %s | %d | %s | %s |\n",
 					markdownCell(service.URL), service.StatusCode,
-					markdownCell(service.Title), markdownCell(service.WebServer)))
+					markdownCell(service.Title), markdownCell(service.WebServer))
 			}
 			b.WriteString("\n")
 		}
@@ -85,9 +85,9 @@ func (r *Report) WriteMarkdown(path string) error {
 			b.WriteString("| Port | Version | Cipher | Common Name | Expired |\n")
 			b.WriteString("|------|---------|--------|-------------|---------|\n")
 			for _, service := range asset.TLS {
-				b.WriteString(fmt.Sprintf("| %d | %s | %s | %s | %v |\n",
+				_, _ = fmt.Fprintf(&b, "| %d | %s | %s | %s | %v |\n",
 					service.Port, markdownCell(service.Version), markdownCell(service.Cipher),
-					markdownCell(service.CommonName), service.Expired))
+					markdownCell(service.CommonName), service.Expired)
 			}
 			b.WriteString("\n")
 		}
@@ -95,7 +95,7 @@ func (r *Report) WriteMarkdown(path string) error {
 		if len(asset.Paths) > 0 {
 			b.WriteString("### Discovered Paths\n\n")
 			for _, p := range asset.Paths {
-				b.WriteString(fmt.Sprintf("- %s\n", mdInline(p)))
+				_, _ = fmt.Fprintf(&b, "- %s\n", mdInline(p))
 			}
 			b.WriteString("\n")
 		}
@@ -105,9 +105,9 @@ func (r *Report) WriteMarkdown(path string) error {
 			b.WriteString("| Severity | Template | Title | Matched At | Evidence | Priority |\n")
 			b.WriteString("|----------|----------|-------|------------|----------|----------|\n")
 			for _, v := range asset.Vulnerabilities {
-				b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+				_, _ = fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n",
 					markdownCell(v.Severity), markdownCell(v.TemplateID), markdownCell(v.Title),
-					markdownCell(v.MatchedAt), markdownCell(v.Evidence), markdownCell(priorityHint(v))))
+					markdownCell(v.MatchedAt), markdownCell(v.Evidence), markdownCell(priorityHint(v)))
 			}
 			b.WriteString("\n")
 		}
@@ -118,9 +118,9 @@ func (r *Report) WriteMarkdown(path string) error {
 		b.WriteString("| Verdict | Severity | Pattern | Page | Evidence |\n")
 		b.WriteString("|---------|----------|---------|------|----------|\n")
 		for _, v := range r.JSVerified {
-			b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+			_, _ = fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n",
 				markdownCell(v.Verdict), markdownCell(v.Severity), markdownCell(v.Pattern),
-				markdownCell(v.Page), markdownCell(v.Evidence)))
+				markdownCell(v.Page), markdownCell(v.Evidence))
 		}
 		b.WriteString("\n")
 	}
@@ -128,7 +128,7 @@ func (r *Report) WriteMarkdown(path string) error {
 	if len(r.Screenshots) > 0 {
 		b.WriteString("## Screenshots\n\n")
 		for _, shot := range r.Screenshots {
-			b.WriteString(fmt.Sprintf("- %s\n", mdInline(shot)))
+			_, _ = fmt.Fprintf(&b, "- %s\n", mdInline(shot))
 		}
 		b.WriteString("\n")
 	}
