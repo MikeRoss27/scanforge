@@ -268,6 +268,11 @@ func (c *RunContext) filterArtifact(name string, artifact Artifact) error {
 	}()
 
 	scanner := bufio.NewScanner(input)
+	// Crawled and historical URLs routinely exceed bufio's 64KB default
+	// token limit; the consumers of these artifacts (e.g. attacksurface)
+	// already read them with a 1MB ceiling, and a hard failure here would
+	// mark the producing module failed even though its output is valid.
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	writer := bufio.NewWriter(tmp)
 	var rejected []scopeRejection
 	for scanner.Scan() {

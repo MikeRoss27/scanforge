@@ -79,6 +79,9 @@ func countLines(path string) (int, error) {
 
 	count := 0
 	scanner := bufio.NewScanner(file)
+	// Same 1MB ceiling as the scope filter and artifact consumers: a long
+	// URL line must not wipe out the module's result summary.
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		if strings.TrimSpace(scanner.Text()) != "" {
 			count++
