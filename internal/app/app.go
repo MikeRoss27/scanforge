@@ -305,17 +305,23 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 // the TUI itself failed and the scan was aborted.
 func (s *runSession) consumeEvents(cancel context.CancelFunc, eventChan <-chan orchestrator.Event, done <-chan struct{}) error {
 	if !s.opts.DryRun && term.IsTerminal(int(os.Stdout.Fd())) {
-		model := tui.NewScanModel(eventChan)
-		if _, err := tea.NewProgram(model).Run(); err != nil {
+		model := tui.NewScanModel(eventChan, s.opts.Target, s.profile)
+		p := tea.NewProgram(model, tea.WithAltScreen())
+		finalModel, err := p.Run()
+		if err != nil {
 			cancel()
 			drainEvents(eventChan)
 			<-done
 			return err
 		}
 		// Replay warnings collected in the scan view; once the TUI is gone
-		// nothing else would surface them.
-		for _, warning := range model.Warnings() {
-			ui.Warn("%s", warning)
+		// nothing else would surface them. The final model is the one that
+		// actually received events during the run — the original model value
+		// was copied when passed to the program.
+		if scanModel, ok := finalModel.(tui.ScanModel); ok {
+			for _, warning := range scanModel.Warnings() {
+				ui.Warn("%s", warning)
+			}
 		}
 		// The user may have quit the UI before the scan finished: cancel the
 		// run and drain the remaining events so the orchestrator can return.

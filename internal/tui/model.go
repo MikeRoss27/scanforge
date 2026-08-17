@@ -15,11 +15,6 @@ import (
 )
 
 var (
-	borderStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ui.BorderColor).
-			Padding(1, 2)
-
 	headerStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ui.Accent)
@@ -67,6 +62,8 @@ type findingRow struct {
 
 type ScanModel struct {
 	eventChan     <-chan orchestrator.Event
+	target        string
+	profile       string
 	order         []string
 	rows          map[string]*moduleRow
 	warnings      []string
@@ -74,14 +71,18 @@ type ScanModel struct {
 	findingsTotal int
 	spin          spinner.Model
 	started       time.Time
+	width         int
+	height        int
 }
 
-func NewScanModel(eventChan <-chan orchestrator.Event) ScanModel {
+func NewScanModel(eventChan <-chan orchestrator.Event, target, profile string) ScanModel {
 	s := spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	s.Style = lipgloss.NewStyle().Foreground(ui.Accent).Bold(true)
 
 	return ScanModel{
 		eventChan: eventChan,
+		target:    target,
+		profile:   profile,
 		rows:      make(map[string]*moduleRow),
 		spin:      s,
 		started:   time.Now(),
@@ -177,6 +178,11 @@ func (m ScanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scanFinishedMsg:
 		return m, tea.Quit
 
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -189,6 +195,16 @@ func (m ScanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m ScanModel) View() string {
 	var out strings.Builder
+
+	// Target and profile banner — always visible so the operator knows what
+	// is being scanned even after the terminal scrolls past the pre-TUI output.
+	if m.target != "" {
+		targetLine := ui.Dim("TARGET  ") + ui.Bold(m.target)
+		if m.profile != "" {
+			targetLine += "    " + ui.Dim("PROFILE ") + ui.Secondary(m.profile)
+		}
+		out.WriteString(targetLine + "\n\n")
+	}
 
 	// Top banner with the brand gradient and a live run timer on the right.
 	banner := ui.Gradient("SCANFORGE ORCHESTRATOR", ui.AccentCyan, ui.AccentMagenta)
@@ -297,8 +313,22 @@ func (m ScanModel) View() string {
 	out.WriteString("\n\n")
 	out.WriteString(ui.Dim("q: quit  •  ctrl+c: abort"))
 
-	// Wrap in a glowing border
-	return borderStyle.Render(out.String()) + "\n"
+	// Wrap in a border that adapts to the terminal width so the TUI fills
+	// the screen cleanly on both narrow SSH sessions and wide monitors.
+	w := m.width
+	if w <= 0 {
+		w = 100
+	}
+	if w > 140 {
+		w = 140
+	}
+	border := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ui.BorderColor).
+		Padding(1, 2).
+		Width(w - 6)
+
+	return border.Render(out.String()) + "\n"
 }
 
 func orDefault(s, def string) string {
