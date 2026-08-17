@@ -1,0 +1,44 @@
+id: scanforge-http-methods-exposed
+
+info:
+  name: Dangerous HTTP Methods Enabled
+  author: ScanForge
+  severity: medium
+  description: Dangerous HTTP methods (PUT, DELETE, TRACE, CONNECT, PATCH) are enabled on the server, potentially allowing unauthorized file upload, deletion, or information disclosure.
+  tags: misconfig,http,methods,webdav
+  reference:
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+    - https://portswigger.net/web-security/webdav
+
+http:
+  - method: OPTIONS
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 204
+      - type: word
+        part: header
+        words:
+          - "PUT"
+          - "DELETE"
+          - "TRACE"
+          - "CONNECT"
+          - "PATCH"
+          - "PROPFIND"
+          - "PROPPATCH"
+          - "MKCOL"
+          - "COPY"
+          - "MOVE"
+          - "LOCK"
+          - "UNLOCK"
+        condition: or
+    extractors:
+      - type: regex
+        part: header
+        regex:
+          - "Allow: (.*)"
+          - "Public: (.*)"

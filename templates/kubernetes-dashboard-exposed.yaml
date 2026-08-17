@@ -1,0 +1,37 @@
+id: scanforge-kubernetes-dashboard-exposed
+
+info:
+  name: Kubernetes Dashboard Exposed
+  author: ScanForge
+  severity: high
+  description: A Kubernetes Dashboard is publicly accessible without authentication, allowing unauthorized access to cluster resources.
+  tags: misconfig,kubernetes,dashboard,container,exposure
+  reference:
+    - https://kubernetes.io/docs/tasks/access-application-cluster/web-ui-dashboard/
+    - https://github.com/kubernetes/dashboard
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/api/"
+      - "{{BaseURL}}/api/v1/"
+      - "{{BaseURL}}/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "kubernetes-dashboard"
+          - "Kubernetes Dashboard"
+          - "kubernetes.io"
+          - "k8s.io"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

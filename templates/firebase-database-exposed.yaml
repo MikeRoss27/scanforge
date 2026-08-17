@@ -1,0 +1,37 @@
+id: scanforge-firebase-database-exposed
+
+info:
+  name: Firebase Realtime Database Exposed
+  author: ScanForge
+  severity: high
+  description: A Firebase Realtime Database is publicly accessible, allowing unauthenticated read/write access to all data.
+  tags: misconfig,firebase,gcp,database,exposure
+  reference:
+    - https://firebase.google.com/docs/database/security
+    - https://cloud.google.com/security/best-practices
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.json"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "firebaseio.com"
+          - "firebaseio.com"
+        condition: or
+      - type: word
+        part: header
+        words:
+          - "application/json"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(.{0,500})"

@@ -1,0 +1,35 @@
+id: scanforge-cors-misconfiguration
+
+info:
+  name: CORS Misconfiguration
+  author: ScanForge
+  severity: medium
+  description: A CORS misconfiguration allows arbitrary origins with credentials, enabling cross-origin attacks.
+  tags: misconfig,cors,http,web
+  reference:
+    - https://portswigger.net/web-security/cors
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    headers:
+      Origin: "https://evil.example.com"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: header
+        words:
+          - "Access-Control-Allow-Origin: https://evil.example.com"
+          - "Access-Control-Allow-Credentials: true"
+        condition: and
+    extractors:
+      - type: regex
+        part: header
+        regex:
+          - "Access-Control-Allow-Origin: (.*)"
+          - "Access-Control-Allow-Credentials: (.*)"

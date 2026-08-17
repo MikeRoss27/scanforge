@@ -1,0 +1,40 @@
+id: scanforge-wordpress-wp-json-exposed
+
+info:
+  name: WordPress REST API Exposed
+  author: ScanForge
+  severity: low
+  description: WordPress REST API is publicly accessible, potentially exposing user information, posts, and other content.
+  tags: exposure,wordpress,rest-api,wp-json
+  reference:
+    - https://developer.wordpress.org/rest-api/
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-json/"
+      - "{{BaseURL}}/wp-json/wp/v2/users"
+      - "{{BaseURL}}/wp-json/wp/v2/posts"
+      - "{{BaseURL}}/wp-json/wp/v2/pages"
+      - "{{BaseURL}}/wp-json/wp/v2/comments"
+      - "{{BaseURL}}/wp-json/wp/v2/media"
+      - "{{BaseURL}}/wp-json/wp/v2/types"
+      - "{{BaseURL}}/wp-json/wp/v2/taxonomies"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "wp-json"
+          - "WP_REST"
+          - "rest_route"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

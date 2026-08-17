@@ -1,0 +1,42 @@
+id: scanforge-azure-metadata-exposed
+
+info:
+  name: Azure Instance Metadata Service Exposed
+  author: ScanForge
+  severity: critical
+  description: The Azure Instance Metadata Service (IMDS) is accessible, potentially exposing managed identity tokens, instance metadata, and subscription information.
+  tags: exposure,azure,imds,metadata,cloud,credentials
+  reference:
+    - https://docs.microsoft.com/en-us/azure/virtual-machines/windows/instance-metadata-service
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/metadata/instance?api-version=2021-02-01"
+      - "{{BaseURL}}/metadata/instance/compute?api-version=2021-02-01"
+      - "{{BaseURL}}/metadata/instance/network?api-version=2021-02-01"
+      - "{{BaseURL}}/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/"
+    headers:
+      Metadata: "true"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "compute"
+          - "network"
+          - "identity"
+          - "oauth2"
+          - "token"
+          - "subscriptionId"
+          - "resourceGroupName"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

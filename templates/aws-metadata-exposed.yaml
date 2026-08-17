@@ -1,0 +1,44 @@
+id: scanforge-aws-metadata-exposed
+
+info:
+  name: AWS Instance Metadata Service Exposed
+  author: ScanForge
+  severity: critical
+  description: The AWS Instance Metadata Service (IMDS) is accessible, potentially exposing IAM role credentials, instance identity, and other sensitive metadata.
+  tags: exposure,aws,imds,metadata,cloud,credentials
+  reference:
+    - https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/latest/meta-data/"
+      - "{{BaseURL}}/latest/meta-data/iam/security-credentials/"
+      - "{{BaseURL}}/latest/meta-data/instance-id"
+      - "{{BaseURL}}/latest/meta-data/ami-id"
+      - "{{BaseURL}}/latest/meta-data/public-ipv4"
+      - "{{BaseURL}}/latest/meta-data/local-ipv4"
+      - "{{BaseURL}}/latest/meta-data/placement/availability-zone"
+      - "{{BaseURL}}/latest/user-data"
+      - "{{BaseURL}}/latest/dynamic/instance-identity/document"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "iam"
+          - "security-credentials"
+          - "instance-id"
+          - "ami-id"
+          - "availability-zone"
+          - "instance-identity"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

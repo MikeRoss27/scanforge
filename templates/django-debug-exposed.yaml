@@ -1,0 +1,37 @@
+id: scanforge-django-debug-exposed
+
+info:
+  name: Django Debug Mode Enabled
+  author: ScanForge
+  severity: high
+  description: Django debug mode is enabled in production, exposing stack traces, settings, and sensitive application information.
+  tags: exposure,django,python,debug,misconfig
+  reference:
+    - https://docs.djangoproject.com/en/stable/ref/settings/#debug
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "DEBUG = True"
+          - "Django"
+          - "Exception Type"
+          - "Exception Value"
+          - "Traceback"
+          - "Request information"
+          - "Settings"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

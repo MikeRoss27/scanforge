@@ -1,0 +1,39 @@
+id: scanforge-prometheus-exposed
+
+info:
+  name: Prometheus Exposed
+  author: ScanForge
+  severity: medium
+  description: A Prometheus instance is publicly accessible without authentication, exposing metrics and potentially sensitive system information.
+  tags: misconfig,prometheus,monitoring,metrics,exposure
+  reference:
+    - https://prometheus.io/docs/guides/basic-auth/
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/graph"
+      - "{{BaseURL}}/metrics"
+      - "{{BaseURL}}/api/v1/label/__name__/values"
+      - "{{BaseURL}}/api/v1/targets"
+      - "{{BaseURL}}/api/v1/rules"
+      - "{{BaseURL}}/api/v1/alerts"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "Prometheus"
+          - "prometheus"
+          - "prometheus_build_info"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

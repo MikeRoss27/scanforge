@@ -1,0 +1,37 @@
+id: scanforge-etcd-exposed
+
+info:
+  name: etcd Exposed
+  author: ScanForge
+  severity: high
+  description: An etcd instance is publicly accessible without authentication, exposing cluster configuration and potentially sensitive data.
+  tags: misconfig,etcd,kubernetes,distributed-system,exposure
+  reference:
+    - https://etcd.io/docs/v3.5/op-guide/security/
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/version"
+      - "{{BaseURL}}/health"
+      - "{{BaseURL}}/v2/keys"
+      - "{{BaseURL}}/v3/kv/range"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "etcd"
+          - "etcdserver"
+          - "etcd_version"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

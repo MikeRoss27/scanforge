@@ -1,0 +1,37 @@
+id: scanforge-vault-exposed
+
+info:
+  name: HashiCorp Vault Exposed
+  author: ScanForge
+  severity: critical
+  description: A HashiCorp Vault instance is publicly accessible without authentication, potentially exposing secrets, encryption keys, and sensitive data.
+  tags: misconfig,vault,secrets,hashicorp,exposure
+  reference:
+    - https://www.vaultproject.io/docs/concepts/security
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/v1/sys/health"
+      - "{{BaseURL}}/v1/sys/seal-status"
+      - "{{BaseURL}}/v1/sys/init"
+      - "{{BaseURL}}/v1/sys/mounts"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "vault"
+          - "Vault"
+          - "vault_version"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

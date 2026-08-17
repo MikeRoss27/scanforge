@@ -1,0 +1,38 @@
+id: scanforge-drupal-status-exposed
+
+info:
+  name: Drupal Status Report Exposed
+  author: ScanForge
+  severity: medium
+  description: A Drupal status report page is publicly accessible, exposing system information, module versions, and configuration.
+  tags: exposure,drupal,cms,status,misconfig
+  reference:
+    - https://www.drupal.org/docs/8/administering-drupal-8-site/status-report
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/admin/reports/status"
+      - "{{BaseURL}}/admin/reports/status/php"
+      - "{{BaseURL}}/admin/reports/status/database"
+      - "{{BaseURL}}/admin/reports/updates"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "Drupal"
+          - "Status report"
+          - "System information"
+          - "PHP version"
+          - "Database version"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

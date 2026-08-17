@@ -1,0 +1,36 @@
+id: scanforge-mongodb-exposed
+
+info:
+  name: MongoDB Exposed
+  author: ScanForge
+  severity: high
+  description: A MongoDB instance is publicly accessible without authentication, allowing unauthorized access to databases and collections.
+  tags: misconfig,mongodb,database,nosql,exposure
+  reference:
+    - https://www.mongodb.com/docs/manual/security/
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: header
+        words:
+          - "mongodb"
+        condition: or
+      - type: word
+        part: body
+        words:
+          - "It looks like you are trying to access MongoDB over HTTP on the native driver port."
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

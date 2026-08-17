@@ -1,0 +1,45 @@
+id: scanforge-gcp-metadata-exposed
+
+info:
+  name: GCP Metadata Server Exposed
+  author: ScanForge
+  severity: critical
+  description: The GCP Metadata Server is accessible, potentially exposing service account tokens, instance metadata, and project information.
+  tags: exposure,gcp,metadata,cloud,credentials
+  reference:
+    - https://cloud.google.com/compute/docs/metadata/overview
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/computeMetadata/v1/"
+      - "{{BaseURL}}/computeMetadata/v1/instance/"
+      - "{{BaseURL}}/computeMetadata/v1/instance/service-accounts/default/token"
+      - "{{BaseURL}}/computeMetadata/v1/instance/service-accounts/default/email"
+      - "{{BaseURL}}/computeMetadata/v1/project/project-id"
+      - "{{BaseURL}}/computeMetadata/v1/project/numeric-project-id"
+      - "{{BaseURL}}/computeMetadata/v1/instance/zone"
+      - "{{BaseURL}}/computeMetadata/v1/instance/attributes/"
+    headers:
+      Metadata-Flavor: "Google"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "service-accounts"
+          - "token"
+          - "email"
+          - "project-id"
+          - "zone"
+          - "attributes"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

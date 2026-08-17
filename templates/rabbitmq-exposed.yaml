@@ -1,0 +1,38 @@
+id: scanforge-rabbitmq-exposed
+
+info:
+  name: RabbitMQ Management Exposed
+  author: ScanForge
+  severity: medium
+  description: A RabbitMQ Management interface is publicly accessible without authentication, allowing unauthorized access to queues, exchanges, and messages.
+  tags: misconfig,rabbitmq,message-queue,exposure
+  reference:
+    - https://www.rabbitmq.com/management.html
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/api/overview"
+      - "{{BaseURL}}/api/queues"
+      - "{{BaseURL}}/api/exchanges"
+      - "{{BaseURL}}/api/connections"
+      - "{{BaseURL}}/api/channels"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "RabbitMQ"
+          - "rabbitmq"
+          - "management"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

@@ -21,12 +21,18 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 
 - **Artifact-driven pipeline**: Modules communicate through artifacts in an ordered way (e.g. `subfinder` output automatically feeds `dnsx` and `httpx`), with parallel execution per DAG wave.
 - **Strict scope validation**: Explicit scope via file, or confirmed implicit scope (`exact` by default, `domain` on request), then filtering of every artifact.
+- **Multi-target engagements**: `--targets file` runs a profile against many targets (one per line, comments and blanks ignored); each target gets its own scope validation, run directory and report, and a failing target does not abort the rest.
+- **Interactive wizard**: a bare `scanforge run` on a terminal asks for the missing target and profile instead of failing.
 - **Proxy integration (Caido / Burp Suite)**: `--proxy` routes HTTP traffic of the relevant modules through your interception proxy for manual triage/replay.
 - **Authenticated scanning**: `-H/--header` (repeatable) injects headers/cookies (session, bearer token) into every HTTP request issued.
-- **JavaScript secrets scanner**: the `jssecrets` module fetches crawled `.js` files and detects exposed API keys/tokens/creds, public cloud buckets, internal hosts, emails, sensitive API endpoints and accessible source maps.
-- **Fully configurable Nuclei**: severity, tags, rate-limit, custom templates and template updates via dedicated flags.
+- **JavaScript secrets scanner**: the `jssecrets` module fetches crawled `.js` files and detects exposed API keys/tokens/creds, public cloud buckets, internal hosts, emails, sensitive API endpoints and accessible source maps; the `jsverify` module then replays the generated PoC payloads in a headless browser and reports executed, sink-reached or not-observed verdicts.
+- **Visual snapshots**: the `screenshot` module captures screenshots of alive URLs via `httpx`, listed in the report.
+- **Tech-to-CVE correlation**: `techcve` matches detected technologies and versions against a bundled dataset with real CVSS base scores from NVD.
+- **Fully configurable Nuclei**: severity, tags, rate-limit, overall timeout, custom templates and template updates via dedicated flags.
 - **Parallelized Nmap**: bounded worker pool (`--nmap-concurrency`) instead of sequential host-by-host scans.
-- **Real-time progress**: spinner per active module during the scan (visible by default, not only in `--verbose`), colored tables for `plan`/`doctor`, and a summary panel at the end of the run.
+- **Real-time progress**: spinner per active module during the scan (visible by default, not only in `--verbose`), findings surfaced live as modules discover them, module warnings replayed after the TUI, colored tables for `plan`/`doctor`, and a summary panel at the end of the run.
+- **Webhook notifications**: at the end of each run, a summary is posted to a Slack/Discord/Teams webhook configured in `scanforge.yaml`.
+- **Run comparison & export**: `scanforge diff` lists what changed between two runs of the same target (assets, ports, vulnerabilities); `scanforge export` serializes a run as SARIF 2.1.0 (GitHub/GitLab code scanning) or DefectDojo generic findings.
 - **Dry-Run mode**: Preview the commands that will be launched and the generated files before making any network request.
 - **Diagnostic tool (Doctor)**: Instantly check whether your local dependencies are installed and configured for the selected profile.
 - **Consolidated reports**: Automatically generates a unified risk model in `report.json` and `report.md` formats.
@@ -35,23 +41,35 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 
 ## 🛠️ Supported Tools
 
-ScanForge centralizes and orchestrates 12 external security tools, plus one native module:
+ScanForge centralizes and orchestrates **14 external security tools** and **6 native modules**:
+
+External tools:
 
 1. **subfinder** (Subdomain discovery)
-2. **dnsx** (Active DNS resolution)
-3. **httpx** (HTTP probing and technology detection)
-4. **naabu** (Ultra-fast port scanner)
-5. **nmap** (Accurate port scanning and service detection, run in parallel)
-6. **whatweb** (Web technology fingerprinting)
-7. **wafw00f** (Web Application Firewall detection)
-8. **katana** (Web resource crawling)
-9. **ffuf** (Directory and file fuzzing)
-10. **nuclei** (Template-based vulnerability scanner)
-11. **gau** (Passive collection of historical URLs)
-12. **tlsx** (TLS certificate and protocol enrichment)
-13. **jssecrets** (native, no external binary) — analyzes JS crawled by `katana` to detect secrets, cloud buckets, internal hosts, emails and exposed source maps
+2. **shuffledns** (DNS bruteforce, module `dnsbrute`; results merged into `dnsx`)
+3. **dnsx** (Active DNS resolution)
+4. **httpx** (HTTP probing, technology detection and screenshots)
+5. **naabu** (Ultra-fast port scanner)
+6. **nmap** (Accurate port scanning and service detection, run in parallel)
+7. **whatweb** (Web technology fingerprinting)
+8. **wafw00f** (Web Application Firewall detection)
+9. **katana** (Web resource crawling)
+10. **ffuf** (Directory and file fuzzing)
+11. **nuclei** (Template-based vulnerability scanner)
+12. **gau** (Passive collection of historical URLs)
+13. **tlsx** (TLS certificate and protocol enrichment)
+14. **chromium** (Headless browser used by the `jsverify` module)
 
-`httpx`, `nuclei`, `katana`, `ffuf`, `whatweb`, `wafw00f`, `subfinder`, `gau` and `jssecrets` support `--proxy` and `-H/--header` to route traffic through Caido/Burp and scan in authenticated mode.
+Native modules (no external binary):
+
+- **jssecrets** — analyzes JS crawled by `katana` to detect secrets, cloud buckets, internal hosts, emails and exposed source maps
+- **jsverify** — replays `jssecrets` PoC payloads in a headless browser (payload injected via URL parameters, fragment and `postMessage`) and reports executed, sink-reached, or not-observed verdicts
+- **attacksurface** — consolidates alive hosts, crawled URLs, fuzzed paths and JS-discovered endpoints into one attack surface list for downstream scanners
+- **techcve** — correlates detected technologies and versions with known CVEs from a bundled dataset (real CVSS base scores from NVD)
+- **httpcheck** — checks HTTP security headers (CSP, HSTS, clickjacking, cookies) on the discovered attack surface
+- **payloadgen** — generates contextual wordlists (API paths, parameters, per-technology endpoints) from scan findings
+
+`httpx`, `nuclei`, `katana`, `ffuf`, `whatweb`, `wafw00f`, `subfinder`, `gau`, `jssecrets`, `jsverify`, `httpcheck` and `screenshot` support `--proxy` and `-H/--header` to route traffic through Caido/Burp and scan in authenticated mode.
 
 ---
 
@@ -145,7 +163,9 @@ target, displays it and asks for explicit confirmation before creating the run:
 scanforge run example.com --profile web
 ```
 
-To include the domain and its subdomains, add rules or exclude some:
+On a terminal, a bare `scanforge run` (no target, no profile) opens an
+interactive wizard that asks for both. To include the domain and its
+subdomains, add rules or exclude some:
 
 ```bash
 scanforge run example.com --scope-mode domain \
@@ -180,6 +200,53 @@ The `scanforge scan` command is a more direct alias of `scanforge run`:
 scanforge scan example.com --preset safe
 ```
 
+### 4. Multi-target engagements
+
+`run` and `plan` accept a targets file instead of a single positional target:
+
+```bash
+scanforge plan --targets targets.txt --preset web
+scanforge run --targets targets.txt --preset web --confirm-scope
+```
+
+The file holds one target per line (`#` comments and blank lines ignored).
+`--targets` is exclusive with a positional target.
+
+### 5. Compare runs and export findings
+
+`scanforge diff` reconsolidates two run directories and lists what changed —
+assets, ports and vulnerabilities that appeared or disappeared:
+
+```bash
+scanforge diff runs/example.com/2026-08-09_10-00-00 runs/example.com/2026-08-10_10-00-00
+scanforge diff runs/example.com/2026-08-09_10-00-00 runs/example.com/2026-08-10_10-00-00 --json
+```
+
+`scanforge export` serializes the consolidated report for third-party tools:
+
+```bash
+scanforge export runs/example.com/2026-08-10_10-00-00 --format sarif          # GitHub/GitLab code scanning
+scanforge export runs/example.com/2026-08-10_10-00-00 --format defectdojo     # import-scan "Generic Findings Import"
+```
+
+### 6. API keys and updates
+
+Some tools (subfinder, nuclei, ...) benefit from API keys. Manage them with
+`scanforge auth`:
+
+```bash
+scanforge auth set shodan <API_KEY>
+scanforge auth list
+scanforge auth sync
+```
+
+Update the binary (and optionally the external tools) with `scanforge update`:
+
+```bash
+scanforge update            # binary only (requires Go)
+scanforge update --tools    # binary + external tools
+```
+
 ---
 
 ## 🕵️ Proxy, authentication and Nuclei settings
@@ -201,10 +268,25 @@ scanforge run app.example.com --profile web \
 - `--proxy`: HTTP/SOCKS proxy for the modules that speak HTTP.
 - `-H/--header` (repeatable): raw header `"Name: Value"` added to every request.
 - `--nuclei-severity`, `--nuclei-exclude-severity`, `--nuclei-tags`, `--nuclei-exclude-tags`, `--nuclei-rate-limit`, `--nuclei-templates`, `--nuclei-update-templates`: fine-grained control of the vulnerability scanner.
+- `--nuclei-timeout`: overall time limit for a nuclei run, e.g. `45m` (default 30m; raise it for slow proxies or large target lists).
 - `--nuclei-headless`: enable nuclei headless mode (browser-based templates).
-- `--nuclei-include-custom`: also run the ScanForge templates bundled in `templates/` (actuator, swagger, CORS misconfiguration, Go debug endpoints, WordPress debug log); located via `SCANFORGE_TEMPLATES_DIR`, `./templates` or next to the binary.
+- `--nuclei-include-custom`: also run the 40+ ScanForge templates bundled in `templates/` (cloud metadata endpoints, exposed admin panels and dashboards, CORS misconfigurations, XXE, SSRF, debug endpoints, ...); located via `SCANFORGE_TEMPLATES_DIR`, `./templates` or next to the binary.
 - `--ffuf-wordlist`, `--ffuf-filter-codes`: override the ffuf wordlist (default `/usr/share/wordlists/dirb/common.txt`) and filter out status codes.
 - `--nmap-concurrency`: number of simultaneous nmap scans (default 4); lower it to stay discreet on a sensitive engagement.
+
+### Webhook notifications
+
+Set `webhook.url` in `scanforge.yaml` to receive a run summary on Slack,
+Discord or Teams at the end of every scan:
+
+```yaml
+webhook:
+  url: https://example.com/hooks/your-webhook-url
+```
+
+The payload is a generic JSON document with a `text` field, so every major
+webhook receiver renders a readable message (target, profile, status, assets,
+ports, vulnerabilities by severity, run directory).
 
 ---
 
@@ -213,13 +295,13 @@ scanforge run app.example.com --profile web \
 | Name | Modules | Usage |
 | --- | --- | --- |
 | `safe` | subfinder, dnsx, httpx, tlsx | Light exposure check. |
-| `recon` | safe + gau | Inventory enriched with historical URLs. |
+| `recon` | subfinder, dnsbrute, gau, dnsx, httpx, tlsx | Inventory enriched with historical URLs and DNS bruteforce. |
 | `passive` | subfinder, dnsx, httpx | Minimal historical pipeline. |
 | `ports` | subfinder, dnsx, naabu, nmap | Open ports then service validation. |
-| `web` | subfinder, dnsx, httpx, whatweb, wafw00f, katana, jssecrets, attacksurface, techcve, httpcheck, payloadgen, nuclei | Application analysis: attack-surface consolidation, JS secrets, tech-to-CVE correlation, header checks and payload generation. |
-| `vuln` | subfinder, dnsx, httpx, tlsx, attacksurface, techcve, nuclei | Targeted vulnerability detection (tech-to-CVE + templates). |
-| `deep` | All modules (+ jssecrets) | Full and noisy pipeline. |
-| `full` | All modules (+ jssecrets) | Full profile, history-compatible. |
+| `web` | subfinder, dnsbrute, dnsx, httpx, whatweb, wafw00f, katana, jssecrets, jsverify, attacksurface, techcve, httpcheck, payloadgen, screenshot, nuclei | Application analysis: attack-surface consolidation, JS secrets + headless verification, screenshots, tech-to-CVE correlation, header checks and payload generation. |
+| `vuln` | subfinder, dnsbrute, dnsx, httpx, tlsx, katana, jssecrets, attacksurface, techcve, nuclei | Targeted vulnerability detection (tech-to-CVE + templates). |
+| `deep` | All modules | Full and noisy pipeline. |
+| `full` | All modules | Full profile, history-compatible. |
 
 Use `--preset safe` or `--profile safe` interchangeably. Before any active
 profile, always review its DAG with `scanforge plan`.
@@ -236,11 +318,15 @@ At the end of each scan, a timestamped folder is created under `./runs/`. In add
 - `00_meta/commands.log`: External commands prepared or executed.
 - `00_meta/effective-scope.txt`: Canonical copy of the scope actually applied, with its source and mode recorded in the manifest.
 - `00_meta/scope-rejections.jsonl`: Out-of-scope values rejected, when any.
-- `06_vulns/js-secrets.jsonl`: Secrets, cloud buckets, internal hosts, emails and source maps detected in crawled JS (module `jssecrets`).
-- `06_vulns/cve-findings.jsonl`: Vulnerable versions correlated from fingerprints (module `techcve`).
-- `06_vulns/http-checks.jsonl`: Missing security headers and cookie flags (module `httpcheck`).
 - `04_surface/attack-surface.txt`: Consolidated candidate URLs for scanning (module `attacksurface`).
 - `04_payloads/`: Generated wordlists for api paths, endpoints, parameters and per-technology endpoints (module `payloadgen`).
+- `04_web/screenshots/`: PNG snapshots of alive URLs (module `screenshot`).
+- `06_vulns/js-secrets.jsonl`: Secrets, cloud buckets, internal hosts, emails and source maps detected in crawled JS (module `jssecrets`).
+- `06_vulns/js-payloads.txt`: PoC payloads generated from the JS secrets (module `jssecrets`).
+- `06_vulns/js-verified.jsonl`: Headless-browser verdicts (executed, sink-reached, not-observed) for the JS payloads (module `jsverify`).
+- `06_vulns/cve-findings.jsonl`: Vulnerable versions correlated from fingerprints (module `techcve`).
+- `06_vulns/http-checks.jsonl`: Missing security headers and cookie flags (module `httpcheck`).
+- `06_vulns/nuclei.jsonl`: Raw nuclei findings (module `nuclei`).
 
 > ScanForge must only be used on assets for which you have explicit
 > authorization.

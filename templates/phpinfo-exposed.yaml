@@ -1,0 +1,40 @@
+id: scanforge-phpinfo-exposed
+
+info:
+  name: PHP Info Exposed
+  author: ScanForge
+  severity: medium
+  description: A PHP info page is publicly accessible, exposing detailed PHP configuration, environment variables, and potentially sensitive information.
+  tags: exposure,php,info,debug,misconfig
+  reference:
+    - https://www.php.net/manual/en/function.phpinfo.php
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/phpinfo.php"
+      - "{{BaseURL}}/info.php"
+      - "{{BaseURL}}/test.php"
+      - "{{BaseURL}}/php-info.php"
+      - "{{BaseURL}}/i.php"
+      - "{{BaseURL}}/p.php"
+      - "{{BaseURL}}/php.php"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "PHP Version"
+          - "phpinfo()"
+          - "PHP Credits"
+          - "Zend Engine"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

@@ -1,0 +1,35 @@
+id: scanforge-minio-exposed
+
+info:
+  name: MinIO Exposed
+  author: ScanForge
+  severity: high
+  description: A MinIO instance is publicly accessible without authentication, allowing unauthorized access to object storage buckets and data.
+  tags: misconfig,minio,s3,storage,exposure
+  reference:
+    - https://min.io/docs/minio/linux/operations/security.html
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/minio/health/live"
+      - "{{BaseURL}}/minio/health/ready"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "MinIO"
+          - "minio"
+          - "minio_version"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"

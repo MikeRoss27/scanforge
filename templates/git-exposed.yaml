@@ -1,0 +1,40 @@
+id: scanforge-git-exposed
+
+info:
+  name: Exposed .git Directory
+  author: ScanForge
+  severity: high
+  description: A .git directory is publicly accessible, potentially exposing source code, commit history, and sensitive information.
+  tags: exposure,git,vcs,source-code
+  reference:
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+    - https://github.com/internetwache/GitTools
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.git/config"
+      - "{{BaseURL}}/.git/HEAD"
+      - "{{BaseURL}}/.git/index"
+      - "{{BaseURL}}/.git/logs/HEAD"
+      - "{{BaseURL}}/.git/description"
+      - "{{BaseURL}}/.git/COMMIT_EDITMSG"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "[core]"
+          - "repositoryformatversion"
+          - "filemode"
+          - "bare"
+          - "logallrefupdates"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,200})$"

@@ -1,0 +1,38 @@
+id: scanforge-grafana-exposed
+
+info:
+  name: Grafana Exposed
+  author: ScanForge
+  severity: medium
+  description: A Grafana instance is publicly accessible without authentication, exposing dashboards and potentially sensitive metrics.
+  tags: misconfig,grafana,monitoring,dashboard,exposure
+  reference:
+    - https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/
+    - https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration.html
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+      - "{{BaseURL}}/login"
+      - "{{BaseURL}}/api/dashboards/home"
+      - "{{BaseURL}}/api/datasources"
+      - "{{BaseURL}}/api/org"
+      - "{{BaseURL}}/api/users"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "Grafana"
+          - "grafana"
+          - "grafana_version"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(?m)^(.{0,500})$"
