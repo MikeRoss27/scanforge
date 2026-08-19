@@ -12,12 +12,15 @@ func NewExportCommand(application *app.App) *cobra.Command {
 	var format string
 	var out string
 	cmd := &cobra.Command{
-		Use:   "export <run>",
-		Short: "Export a run report in a machine-readable format",
+		Use:     "export <run>",
+		GroupID: groupReports,
+		Short:   "Export a run report in a machine-readable format",
 		Long: "Reconsolidates the report of a run directory " +
 			"(runs/<target>/<timestamp>) and writes it as SARIF 2.1.0 " +
 			"(GitHub code scanning, GitLab SAST) or as DefectDojo generic " +
 			"findings for import-scan.",
+		Example: `  scanforge export runs/example.com/2026-08-18T10:00:00Z
+  scanforge export runs/example.com/2026-08-18T10:00:00Z --format defectdojo -o findings.json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			exportFormat, err := app.ParseExportFormat(format)

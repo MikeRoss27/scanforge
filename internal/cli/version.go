@@ -11,8 +11,9 @@ import (
 
 func NewVersionCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "version",
-		Short: "Print ScanForge version information",
+		Use:     "version",
+		GroupID: groupMaintenance,
+		Short:   "Print ScanForge version information",
 		Run: func(cmd *cobra.Command, args []string) {
 			var body string
 			body += fmt.Sprintf("%-10s %s\n", ui.DimBold("VERSION"), ui.Primary(version.Version))

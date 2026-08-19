@@ -11,8 +11,15 @@ func NewDoctorCommand(application *app.App) *cobra.Command {
 	var verbose bool
 
 	cmd := &cobra.Command{
-		Use:   "doctor",
-		Short: "Check local dependencies",
+		Use:     "doctor",
+		GroupID: groupConfig,
+		Short:   "Check local dependencies and configuration",
+		Long: `Verifies that the external tools required by the selected profile are
+installed and that the workspace is ready for a scan (writable runs
+directory, scanforge.yaml and scope.txt present).`,
+		Example: `  scanforge doctor
+  scanforge doctor --profile web
+  scanforge doctor --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return application.Doctor(cmd.Context(), app.DoctorOptions{
 				Profile: profile,
