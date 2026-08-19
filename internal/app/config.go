@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -65,6 +66,24 @@ func (a *App) ValidateConfig(ctx context.Context) (*ValidateConfigResult, error)
 		if _, ok := registry.Get(name); !ok {
 			result.Problems = append(result.Problems,
 				fmt.Sprintf("module_timeouts references unknown module %q", name))
+		}
+	}
+
+	if cfg.AI.Model != "" || cfg.AI.BaseURL != "" || cfg.AI.APIKey != "" {
+		if cfg.AI.BaseURL == "" {
+			result.Problems = append(result.Problems,
+				"ai.base_url is required when the ai section is configured (e.g. http://127.0.0.1:8080/v1)")
+		} else if parsed, err := url.Parse(cfg.AI.BaseURL); err != nil || parsed.Hostname() == "" {
+			result.Problems = append(result.Problems,
+				fmt.Sprintf("ai.base_url %q is not a valid URL", cfg.AI.BaseURL))
+		}
+		if cfg.AI.Model == "" {
+			result.Problems = append(result.Problems,
+				"ai.model is required when the ai section is configured")
+		}
+		if cfg.AI.Temperature != nil && (*cfg.AI.Temperature < 0 || *cfg.AI.Temperature > 2) {
+			result.Problems = append(result.Problems,
+				fmt.Sprintf("ai.temperature %v is out of range (expected 0.0-2.0)", *cfg.AI.Temperature))
 		}
 	}
 

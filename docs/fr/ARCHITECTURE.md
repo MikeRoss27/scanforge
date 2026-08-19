@@ -49,3 +49,46 @@ report.md      synthèse lisible
 
 Le manifeste distingue les états `completed`, `partial` et `failed`, référence
 les artefacts produits et conserve la source du scope pour audit.
+
+## Couche triage (H3.1)
+
+`scanforge triage <run>` dérive une interprétation du rapport sans jamais le
+modifier :
+
+```text
+report.json ──► finding.FromReport ──► findings canoniques (IDs déterministes)
+                                          │
+                                          ▼
+                              finding.BuildRelations (L0/L1)
+                                          │
+                                          ▼
+                              moteur triage : group → bundle → analyze → validate
+                                          │
+                                          ▼
+                          <run>/triage/ (manifest, relations, insights, report.md)
+```
+
+La frontière est stricte : **ScanForge possède les faits, l'IA possède les
+interprétations, la validation se tient entre les deux.**
+
+- `internal/finding` projette le rapport en findings plats avec IDs
+  déterministes (`F-` + hash de source|template|asset|matched_at|evidence) et
+  calcule les relations déterministes (doublon 1.00, CVE partagée 0.99, même
+  endpoint 0.95, même actif 0.80). Les relations sémantiques (L2) peuvent s'y
+  ajouter mais jamais les surcharger.
+- `internal/triage` exécute le pipeline : regroupement (union-find sur le
+  graphe de relations), insights déterministes (résumé + groupes de doublons),
+  analyse LLM optionnelle, validation et réconciliation (tri par priorité, IDs
+  stables).
+- Le LLM ne reçoit qu'une projection réduite (`TriageBundle`) : preuves
+  tronquées, jamais de sortie brute d'outil, plafonnée à 150 findings. Sa
+  sortie est validée contre les faits — un ID de finding, une CVE ou une
+  preuve inconnus rejettent l'insight entier — donc le modèle ne peut pas
+  injecter de nouvelles vérités.
+- `internal/inference` abstrait le transport derrière une interface `Client` ;
+  l'implémentation livrée parle l'API OpenAI-compatible chat completions
+  (llama.cpp, vLLM, Ollama, ...).
+- La provenance est enregistrée dans `triage/manifest.json` (modèle, version
+  du prompt, empreinte d'entrée, température) et le cache réutilise les
+  résultats quand l'empreinte d'entrée, le modèle et la version du prompt sont
+  inchangés (`--force` le contourne).

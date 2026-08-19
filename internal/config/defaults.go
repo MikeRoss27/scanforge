@@ -8,9 +8,15 @@ const (
 	DefaultProfile       = "passive"
 	DefaultScope         = "scope.txt"
 	DefaultConfigVersion = 1
+
+	// DefaultAITimeout bounds a single triage generation request.
+	DefaultAITimeout = 5 * time.Minute
+	// DefaultAITemperature keeps triage output stable and reproducible.
+	DefaultAITemperature = 0.1
 )
 
 func Default() *Config {
+	defaultTemp := DefaultAITemperature
 	return &Config{
 		ConfigVersion:  DefaultConfigVersion,
 		Workspace:      DefaultWorkspace,
@@ -32,5 +38,9 @@ func Default() *Config {
 		},
 		Profiles:       map[string][]string{},
 		ModuleTimeouts: map[string]time.Duration{},
+		AI: AI{
+			Timeout:     DefaultAITimeout,
+			Temperature: &defaultTemp,
+		},
 	}
 }
