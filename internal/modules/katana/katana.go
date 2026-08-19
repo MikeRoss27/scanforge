@@ -58,9 +58,10 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 
 	if err := runCtx.AddArtifact("crawled_urls", modules.Artifact{
-		Name: "crawled_urls",
-		Type: "text",
-		Path: "05_content/katana.txt",
+		Name:   "crawled_urls",
+		Type:   "text",
+		Path:   "05_content/katana.txt",
+		Scoped: true,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to publish crawled URLs: %w", err)
 	}

@@ -220,6 +220,55 @@ func TestAddArtifactDoesNotFilterNonTargetText(t *testing.T) {
 	}
 }
 
+func TestAddArtifactScopedFlagFiltersUnknownArtifactNames(t *testing.T) {
+	root := t.TempDir()
+	run := &storage.Run{
+		RootDir:  root,
+		MetaDir:  filepath.Join(root, "00_meta"),
+		Manifest: storage.RunManifest{Outputs: make(map[string]string)},
+	}
+	if err := os.MkdirAll(run.MetaDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	scope := &scanScope.Scope{
+		ExactHosts: map[string]struct{}{"example.com": {}},
+		Wildcards:  []string{"example.com"},
+	}
+	ctx := NewRunContext("example.com", "full", false, run, scope)
+
+	// A future module producing a host list under a name that is NOT in the
+	// legacy scopedTextArtifacts allowlist must still be filtered when it
+	// declares Scoped: true. This is the regression guard for the explicit
+	// opt-in mechanism.
+	artifactPath := filepath.Join(root, "vhosts.txt")
+	input := "vhost.example.com\nvhost.outside.test\n"
+	if err := os.WriteFile(artifactPath, []byte(input), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ctx.AddArtifact("vhosts", Artifact{
+		Name:   "vhosts",
+		Type:   "text",
+		Path:   "vhosts.txt",
+		Scoped: true,
+	})
+	if err != nil {
+		t.Fatalf("AddArtifact() error = %v", err)
+	}
+
+	filtered, err := os.ReadFile(artifactPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(filtered) != "vhost.example.com\n" {
+		t.Fatalf("filtered artifact = %q, want only the in-scope host", filtered)
+	}
+	if got := ctx.RejectedCount("vhosts"); got != 1 {
+		t.Fatalf("RejectedCount() = %d, want 1", got)
+	}
+}
+
 func TestRunContextEmitFindingNoSinkIsNoop(t *testing.T) {
 	ctx := NewRunContext("example.com", "passive", false, nil)
 	// Must not panic when no sink was installed (e.g. a module test that

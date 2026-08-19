@@ -73,9 +73,10 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to publish DNS results: %w", err)
 	}
 	if err := runCtx.AddArtifact("resolved_hosts", modules.Artifact{
-		Name: "resolved_hosts",
-		Type: "text",
-		Path: "01_subdomains/dnsx.txt",
+		Name:   "resolved_hosts",
+		Type:   "text",
+		Path:   "01_subdomains/dnsx.txt",
+		Scoped: true,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to publish resolved hosts: %w", err)
 	}

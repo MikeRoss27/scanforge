@@ -113,9 +113,10 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 
 	if err := runCtx.AddArtifact("brute_subdomains", modules.Artifact{
-		Name: "brute_subdomains",
-		Type: "text",
-		Path: "01_subdomains/brute.txt",
+		Name:   "brute_subdomains",
+		Type:   "text",
+		Path:   "01_subdomains/brute.txt",
+		Scoped: true,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to publish bruteforce results: %w", err)
 	}

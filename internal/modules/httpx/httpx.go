@@ -104,9 +104,10 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to publish HTTP results: %w", err)
 	}
 	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{
-		Name: "alive_urls",
-		Type: "text",
-		Path: "02_http/alive.txt",
+		Name:   "alive_urls",
+		Type:   "text",
+		Path:   "02_http/alive.txt",
+		Scoped: true,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to publish alive URLs: %w", err)
 	}
