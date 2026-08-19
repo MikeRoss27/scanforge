@@ -64,6 +64,16 @@ profiles:
     - nuclei
 ```
 
+Per-module time limits are set under `module_timeouts` with Go durations. A
+module exceeding its limit is killed and reported as failed, and its
+dependents are skipped; unset modules keep their own default:
+
+```yaml
+module_timeouts:
+  nuclei: 45m
+  katana: 20m
+```
+
 ## Built-in nuclei templates
 
 `--nuclei-include-custom` adds the templates bundled in the `templates/`

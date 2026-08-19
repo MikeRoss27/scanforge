@@ -73,6 +73,35 @@ profiles:
 	}
 }
 
+func TestValidateConfigModuleTimeoutUnknownModule(t *testing.T) {
+	app := New(writeConfig(t, `config_version: 1
+module_timeouts:
+  nuclei: 45m
+  not-a-module: 10m
+`))
+	result, err := app.ValidateConfig(t.Context())
+	if err != nil {
+		t.Fatalf("ValidateConfig() error = %v", err)
+	}
+	if len(result.Problems) != 1 || !strings.Contains(result.Problems[0], `module_timeouts references unknown module "not-a-module"`) {
+		t.Fatalf("problems = %v, want unknown module complaint", result.Problems)
+	}
+}
+
+func TestValidateConfigModuleTimeoutKnownModule(t *testing.T) {
+	app := New(writeConfig(t, `config_version: 1
+module_timeouts:
+  nuclei: 45m
+`))
+	result, err := app.ValidateConfig(t.Context())
+	if err != nil {
+		t.Fatalf("ValidateConfig() error = %v", err)
+	}
+	if len(result.Problems) != 0 {
+		t.Fatalf("unexpected problems: %v", result.Problems)
+	}
+}
+
 func TestValidateConfigCustomToolPathMissing(t *testing.T) {
 	app := New(writeConfig(t, `config_version: 1
 tools:

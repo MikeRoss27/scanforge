@@ -61,6 +61,13 @@ func (a *App) ValidateConfig(ctx context.Context) (*ValidateConfigResult, error)
 		}
 	}
 
+	for name := range cfg.ModuleTimeouts {
+		if _, ok := registry.Get(name); !ok {
+			result.Problems = append(result.Problems,
+				fmt.Sprintf("module_timeouts references unknown module %q", name))
+		}
+	}
+
 	for tool, toolPath := range customToolPaths(cfg) {
 		if _, err := os.Stat(toolPath); err != nil {
 			result.Problems = append(result.Problems,

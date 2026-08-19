@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 const (
 	DefaultConfigFile    = "scanforge.yaml"
 	DefaultWorkspace     = "runs"
@@ -28,6 +30,7 @@ func Default() *Config {
 			Gau:       "gau",
 			Tlsx:      "tlsx",
 		},
-		Profiles: map[string][]string{},
+		Profiles:       map[string][]string{},
+		ModuleTimeouts: map[string]time.Duration{},
 	}
 }

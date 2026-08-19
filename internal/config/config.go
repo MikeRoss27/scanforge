@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/profile"
 	"gopkg.in/yaml.v3"
@@ -17,7 +18,11 @@ type Config struct {
 	DefaultScope   string              `yaml:"default_scope"`
 	Tools          Tools               `yaml:"tools"`
 	Profiles       map[string][]string `yaml:"profiles"`
-	Webhook        Webhook             `yaml:"webhook"`
+	// ModuleTimeouts bounds how long a module may run before it is killed,
+	// keyed by module name with Go duration values (e.g. "30m", "1h30m").
+	// Zero (unset) means the module's own default applies.
+	ModuleTimeouts map[string]time.Duration `yaml:"module_timeouts"`
+	Webhook        Webhook                  `yaml:"webhook"`
 }
 
 // Webhook holds the end-of-run notification endpoint. The payload is a
@@ -182,6 +187,12 @@ tools:
 #   passive:
 #     - subfinder
 #     - httpx
+
+# per-module time limits (Go durations); a module exceeding its limit is
+# killed and reported as failed, and its dependents are skipped
+# module_timeouts:
+#   nuclei: 45m
+#   katana: 20m
 `, DefaultConfigVersion, DefaultWorkspace, DefaultProfile, DefaultScope)
 }
 
