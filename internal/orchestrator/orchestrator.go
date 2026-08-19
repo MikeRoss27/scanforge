@@ -170,6 +170,19 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 					outChan <- ModuleStartEvent{Name: m.Name()}
 				}
 
+				// A per-module timeout (config module_timeouts) bounds the
+				// whole module invocation, not just a single command: modules
+				// run several commands (e.g. nuclei template update + scan)
+				// and may stall between them. Zero means the module's own
+				// default applies.
+				moduleCtx := ctx
+				timeout := moduleTimeout(opts.Config, m.Name())
+				if timeout > 0 {
+					var cancel context.CancelFunc
+					moduleCtx, cancel = context.WithTimeout(ctx, timeout)
+					defer cancel()
+				}
+
 				// A panicking module (third-party library bug, unexpected
 				// input shape) must surface as a failure, not crash the whole
 				// scan: without the recovery, the goroutine would never send
@@ -182,8 +195,15 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 							result, err = nil, fmt.Errorf("module %q panicked: %v", m.Name(), r)
 						}
 					}()
-					result, err = m.Run(ctx, runCtx, o.executor)
+					result, err = m.Run(moduleCtx, runCtx, o.executor)
 				}()
+
+				// A deadline kill surfaces as context.DeadlineExceeded, which
+				// hides what actually went wrong; translate it into a message
+				// operators can act on.
+				if err != nil && timeout > 0 && errors.Is(err, context.DeadlineExceeded) {
+					err = fmt.Errorf("module %q timed out after %s: %w", m.Name(), timeout, err)
+				}
 
 				// A module returning (nil, nil) violates the contract; treat it
 				// as a failure instead of letting a nil result panic downstream.
@@ -276,4 +296,13 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 		return results, errors.Join(append(runErrors, ErrRunAborted)...)
 	}
 	return results, errors.Join(runErrors...)
+}
+
+// moduleTimeout returns the configured per-module timeout for name, or zero
+// when none is set so the module's own default applies.
+func moduleTimeout(cfg *config.Config, name string) time.Duration {
+	if cfg == nil {
+		return 0
+	}
+	return cfg.ModuleTimeouts[name]
 }

@@ -64,6 +64,17 @@ profiles:
     - nuclei
 ```
 
+Les limites de temps par module se configurent sous `module_timeouts` avec des
+durées Go. Un module qui dépasse sa limite est tué et signalé comme échoué, et
+ses dépendants sont marqués `skipped` ; les modules sans limite gardent leur
+défaut :
+
+```yaml
+module_timeouts:
+  nuclei: 45m
+  katana: 20m
+```
+
 ## Templates nuclei intégrés
 
 `--nuclei-include-custom` ajoute au run nuclei les templates livrés dans le

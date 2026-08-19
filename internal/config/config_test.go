@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestDefault(t *testing.T) {
@@ -89,6 +90,53 @@ func TestLoadInvalidYAML(t *testing.T) {
 
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected parse error")
+	}
+}
+
+func TestLoadModuleTimeouts(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "scanforge.yaml")
+
+	content := `config_version: 1
+module_timeouts:
+  nuclei: 45m
+  katana: 1h30m
+  ffuf: 0s
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := cfg.ModuleTimeouts["nuclei"]; got != 45*time.Minute {
+		t.Fatalf("nuclei timeout = %v, want 45m", got)
+	}
+	if got := cfg.ModuleTimeouts["katana"]; got != 90*time.Minute {
+		t.Fatalf("katana timeout = %v, want 1h30m", got)
+	}
+	if got := cfg.ModuleTimeouts["ffuf"]; got != 0 {
+		t.Fatalf("ffuf timeout = %v, want 0 (module default)", got)
+	}
+}
+
+func TestLoadInvalidModuleTimeout(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "scanforge.yaml")
+
+	content := `config_version: 1
+module_timeouts:
+  nuclei: not-a-duration
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected a parse error for an invalid duration")
 	}
 }
 

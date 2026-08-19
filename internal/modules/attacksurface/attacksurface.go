@@ -118,9 +118,10 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	}
 
 	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{
-		Name: "attack_surface_urls",
-		Type: "text",
-		Path: outputRel,
+		Name:   "attack_surface_urls",
+		Type:   "text",
+		Path:   outputRel,
+		Scoped: true,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to publish attack surface: %w", err)
 	}

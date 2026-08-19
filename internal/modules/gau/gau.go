@@ -50,9 +50,10 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
 	}
 	if err := runCtx.AddArtifact("historical_urls", modules.Artifact{
-		Name: "historical_urls",
-		Type: "text",
-		Path: "05_content/gau.txt",
+		Name:   "historical_urls",
+		Type:   "text",
+		Path:   "05_content/gau.txt",
+		Scoped: true,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to publish historical URLs: %w", err)
 	}

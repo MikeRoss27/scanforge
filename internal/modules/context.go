@@ -20,6 +20,14 @@ type Artifact struct {
 	Name string
 	Type string
 	Path string
+	// Scoped marks line-oriented text artifacts that must be filtered
+	// against the effective scope before publication: host, URL, IP and
+	// host:port lists consumed by downstream modules. Raw tool outputs
+	// (JSONL/XML) and derived data (wordlists, paths, secrets) must NOT set
+	// it: they are produced from already-scoped inputs and their lines do
+	// not parse as targets. The legacy scopedTextArtifacts allowlist is kept
+	// as a safety net for the well-known artifact names.
+	Scoped bool
 }
 
 type RunContext struct {
@@ -242,8 +250,8 @@ var scopedTextArtifacts = map[string]struct{}{
 }
 
 func (c *RunContext) filterArtifact(name string, artifact Artifact) error {
-	_, requiresScopeFilter := scopedTextArtifacts[name]
-	if c.Scope == nil || c.Run == nil || c.DryRun || artifact.Type != "text" || !requiresScopeFilter {
+	_, legacyScoped := scopedTextArtifacts[name]
+	if c.Scope == nil || c.Run == nil || c.DryRun || artifact.Type != "text" || (!artifact.Scoped && !legacyScoped) {
 		return nil
 	}
 

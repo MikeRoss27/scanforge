@@ -60,6 +60,16 @@ profiles:
     - nuclei
 ```
 
+每个模块的时间限制在 `module_timeouts` 下配置，使用 Go 时长格式。超过限制的
+模块会被终止并标记为失败，其依赖模块会被标记为 `skipped`；未配置的模块使用
+各自的默认值：
+
+```yaml
+module_timeouts:
+  nuclei: 45m
+  katana: 20m
+```
+
 ## 推荐流程
 
 首先检查依赖和计划：

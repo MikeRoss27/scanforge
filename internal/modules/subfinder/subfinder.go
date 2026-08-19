@@ -75,9 +75,10 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 
 	if err := runCtx.AddArtifact("subdomains", modules.Artifact{
-		Name: "subdomains",
-		Type: "text",
-		Path: "01_subdomains/subfinder.txt",
+		Name:   "subdomains",
+		Type:   "text",
+		Path:   "01_subdomains/subfinder.txt",
+		Scoped: true,
 	}); err != nil {
 		return nil, fmt.Errorf("publish subdomains artifact: %w", err)
 	}

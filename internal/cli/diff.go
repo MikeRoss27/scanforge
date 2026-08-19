@@ -12,11 +12,14 @@ import (
 func NewDiffCommand(application *app.App) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
-		Use:   "diff <run1> <run2>",
-		Short: "Show what changed between two runs of the same target",
+		Use:     "diff <run1> <run2>",
+		GroupID: groupReports,
+		Short:   "Show what changed between two runs of the same target",
 		Long: "Loads the two run directories (runs/<target>/<timestamp>), " +
 			"reconsolidates their reports from the raw artifacts and lists the " +
 			"assets, ports and vulnerabilities that appeared or disappeared.",
+		Example: `  scanforge diff runs/example.com/2026-08-18T10:00:00Z runs/example.com/2026-08-19T10:00:00Z
+  scanforge diff runs/example.com/2026-08-18T10:00:00Z runs/example.com/2026-08-19T10:00:00Z --json`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			delta, rendered, err := application.Diff(cmd.Context(), app.DiffOptions{
