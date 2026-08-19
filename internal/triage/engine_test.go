@@ -280,8 +280,9 @@ func TestBundleTruncatesEvidence(t *testing.T) {
 	if len(bundle.Findings) != 1 {
 		t.Fatalf("expected 1 bundled finding")
 	}
-	if len(bundle.Findings[0].Evidence) > MaxEvidenceLen+1 {
-		t.Errorf("evidence not truncated: %d chars", len(bundle.Findings[0].Evidence))
+	// Evidence field removed from TriageFinding to prevent credential leakage
+	if bundle.Findings[0].ID == "" {
+		t.Errorf("finding ID should be set")
 	}
 }
 

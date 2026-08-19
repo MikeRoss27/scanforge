@@ -51,10 +51,21 @@ type FindingRelation struct {
 // The result is sorted for determinism. This is the L0/L1 layer: semantic
 // (L2) relations produced later by an LLM can add to it but never override it.
 func BuildRelations(findings []Finding) []FindingRelation {
+	// Precompute normalized CVE sets for each finding to avoid rebuilding
+	// them on every pair comparison.
+	cveSets := make([]map[string]struct{}, len(findings))
+	for i, f := range findings {
+		set := make(map[string]struct{}, len(f.CVEs))
+		for _, cve := range f.CVEs {
+			set[strings.ToLower(strings.TrimSpace(cve))] = struct{}{}
+		}
+		cveSets[i] = set
+	}
+
 	var relations []FindingRelation
 	for i := 0; i < len(findings); i++ {
 		for j := i + 1; j < len(findings); j++ {
-			if rel, ok := strongestRelation(findings[i], findings[j]); ok {
+			if rel, ok := strongestRelation(findings[i], findings[j], cveSets[i], cveSets[j]); ok {
 				// Canonicalize direction so the graph is independent of the
 				// input order: From always sorts before To.
 				if rel.From > rel.To {
@@ -77,12 +88,13 @@ func BuildRelations(findings []Finding) []FindingRelation {
 }
 
 // strongestRelation returns the strongest deterministic relation between two
-// findings, or ok=false when none applies.
-func strongestRelation(a, b Finding) (FindingRelation, bool) {
+// findings, or ok=false when none applies. cveA and cveB are precomputed
+// normalized CVE sets for the findings.
+func strongestRelation(a, b Finding, cveA, cveB map[string]struct{}) (FindingRelation, bool) {
 	if a.Source == b.Source && a.TemplateID != "" && a.TemplateID == b.TemplateID && a.Asset == b.Asset {
 		return FindingRelation{From: a.ID, To: b.ID, Type: RelDuplicate, Confidence: 1.0, Source: RelSourceDeterministic}, true
 	}
-	if shareAny(a.CVEs, b.CVEs) {
+	if shareAnySets(cveA, cveB) {
 		return FindingRelation{From: a.ID, To: b.ID, Type: RelSameCVE, Confidence: 0.99, Source: RelSourceDeterministic}, true
 	}
 	if a.URL != "" && a.URL == b.URL {
@@ -94,16 +106,16 @@ func strongestRelation(a, b Finding) (FindingRelation, bool) {
 	return FindingRelation{}, false
 }
 
-func shareAny(a, b []string) bool {
+func shareAnySets(a, b map[string]struct{}) bool {
 	if len(a) == 0 || len(b) == 0 {
 		return false
 	}
-	set := make(map[string]struct{}, len(a))
-	for _, value := range a {
-		set[strings.ToLower(strings.TrimSpace(value))] = struct{}{}
+	// Iterate over the smaller set for efficiency.
+	if len(a) > len(b) {
+		a, b = b, a
 	}
-	for _, value := range b {
-		if _, ok := set[strings.ToLower(strings.TrimSpace(value))]; ok {
+	for v := range a {
+		if _, ok := b[v]; ok {
 			return true
 		}
 	}

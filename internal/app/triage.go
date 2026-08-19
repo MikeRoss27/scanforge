@@ -29,7 +29,7 @@ type TriageOptions struct {
 func (a *App) Triage(ctx context.Context, opts TriageOptions) (*triage.Result, error) {
 	run, err := storage.OpenRun(opts.Run)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open run %q: %w", opts.Run, err)
 	}
 	rep, err := report.GenerateReport(opts.Run, &run.Manifest)
 	if err != nil {
@@ -41,7 +41,7 @@ func (a *App) Triage(ctx context.Context, opts TriageOptions) (*triage.Result, e
 
 	cfg, err := a.loadConfig()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load config: %w", err)
 	}
 
 	var model *triage.ModelConfig

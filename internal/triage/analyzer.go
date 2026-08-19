@@ -23,7 +23,7 @@ type Analyzer interface {
 type LLMAnalyzer struct {
 	client inference.Client
 	model  string
-	temp   float64
+	temp   *float64
 }
 
 // NewLLMAnalyzer builds the default analyzer from a model config.

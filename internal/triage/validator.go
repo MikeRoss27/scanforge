@@ -48,7 +48,7 @@ func indexFacts(findings []finding.Finding) knownFacts {
 
 func validInsight(insight TriageInsight, known knownFacts) bool {
 	switch insight.Kind {
-	case InsightSummary, InsightPriority, InsightExploitability, InsightObservation:
+	case InsightSummary, InsightDuplicate, InsightPriority, InsightExploitability, InsightObservation:
 	default:
 		return false
 	}
@@ -65,6 +65,12 @@ func validInsight(insight TriageInsight, known knownFacts) bool {
 	}
 	for _, cve := range insight.CVEs {
 		if _, ok := known.cves[strings.ToLower(strings.TrimSpace(cve))]; !ok {
+			return false
+		}
+	}
+	// Validate priority using the canonical ParsePriority behavior.
+	if insight.Priority != "" {
+		if _, err := finding.ParsePriority(string(insight.Priority)); err != nil {
 			return false
 		}
 	}

@@ -9,6 +9,10 @@ import (
 	"testing"
 )
 
+func ptrFloat64(v float64) *float64 {
+	return &v
+}
+
 func TestOpenAICompatibleGenerate(t *testing.T) {
 	var gotPath, gotAuth, gotBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +33,7 @@ func TestOpenAICompatibleGenerate(t *testing.T) {
 	client := NewOpenAICompatible(server.URL, "secret-key", "qwen3.5-9b", 0)
 	resp, err := client.Generate(context.Background(), Request{
 		Messages:    []Message{{Role: "user", Content: "hi"}},
-		Temperature: 0.1,
+		Temperature: ptrFloat64(0.1),
 		MaxTokens:   100,
 		JSON:        true,
 	})

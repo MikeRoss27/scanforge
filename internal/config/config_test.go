@@ -194,8 +194,12 @@ ai:
 	if cfg.AI.Timeout != 2*time.Minute {
 		t.Errorf("timeout = %v, want 2m", cfg.AI.Timeout)
 	}
-	if cfg.AI.Temperature != 0.05 {
-		t.Errorf("temperature = %v, want 0.05", cfg.AI.Temperature)
+	if cfg.AI.Temperature == nil || *cfg.AI.Temperature != 0.05 {
+		var tempVal float64
+		if cfg.AI.Temperature != nil {
+			tempVal = *cfg.AI.Temperature
+		}
+		t.Errorf("temperature = %v, want 0.05", tempVal)
 	}
 }
 
@@ -219,8 +223,12 @@ ai:
 	if cfg.AI.Timeout != DefaultAITimeout {
 		t.Errorf("timeout = %v, want default %v", cfg.AI.Timeout, DefaultAITimeout)
 	}
-	if cfg.AI.Temperature != DefaultAITemperature {
-		t.Errorf("temperature = %v, want default %v", cfg.AI.Temperature, DefaultAITemperature)
+	if cfg.AI.Temperature == nil || *cfg.AI.Temperature != DefaultAITemperature {
+		var tempVal float64
+		if cfg.AI.Temperature != nil {
+			tempVal = *cfg.AI.Temperature
+		}
+		t.Errorf("temperature = %v, want default %v", tempVal, DefaultAITemperature)
 	}
 }
 

@@ -81,9 +81,9 @@ func (a *App) ValidateConfig(ctx context.Context) (*ValidateConfigResult, error)
 			result.Problems = append(result.Problems,
 				"ai.model is required when the ai section is configured")
 		}
-		if cfg.AI.Temperature < 0 || cfg.AI.Temperature > 2 {
+		if cfg.AI.Temperature != nil && (*cfg.AI.Temperature < 0 || *cfg.AI.Temperature > 2) {
 			result.Problems = append(result.Problems,
-				fmt.Sprintf("ai.temperature %v is out of range (expected 0.0-2.0)", cfg.AI.Temperature))
+				fmt.Sprintf("ai.temperature %v is out of range (expected 0.0-2.0)", *cfg.AI.Temperature))
 		}
 	}
 

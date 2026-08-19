@@ -37,11 +37,13 @@ func (e *Engine) Run(ctx context.Context, in Input) (*Result, error) {
 		return nil, fmt.Errorf("triage: create output dir: %w", err)
 	}
 
-	digest := inputDigest(in.Findings, in.Relations)
+	digest := inputDigest(in.Target, in.Findings, in.Relations)
 	temperature := 0.0
 	modelName := ""
 	if in.Model != nil {
-		temperature = in.Model.Temperature
+		if in.Model.Temperature != nil {
+			temperature = *in.Model.Temperature
+		}
 		modelName = in.Model.Model
 	}
 
@@ -119,13 +121,14 @@ func providerName(model *ModelConfig) string {
 	return "openai-compatible"
 }
 
-// inputDigest hashes the authoritative input (findings + relations) so the
+// inputDigest hashes the authoritative input (target + findings + relations) so the
 // cache can detect that nothing changed.
-func inputDigest(findings []finding.Finding, relations []finding.FindingRelation) string {
+func inputDigest(target string, findings []finding.Finding, relations []finding.FindingRelation) string {
 	payload, err := json.Marshal(struct {
+		Target    string                    `json:"target"`
 		Findings  []finding.Finding         `json:"findings"`
 		Relations []finding.FindingRelation `json:"relations"`
-	}{findings, relations})
+	}{target, findings, relations})
 	if err != nil {
 		return ""
 	}
@@ -174,7 +177,7 @@ func groupByRelations(relations []finding.FindingRelation, findings []finding.Fi
 }
 
 // deterministicInsights derives rule-based insights: a global summary and one
-// duplicate_group insight per relation group.
+// duplicate_group insight per duplicate relation group (RelDuplicate only).
 func deterministicInsights(findings []finding.Finding, groups [][]finding.ID, relations []finding.FindingRelation) []TriageInsight {
 	byID := make(map[finding.ID]finding.Finding, len(findings))
 	severityCounts := map[finding.Severity]int{}
@@ -195,25 +198,57 @@ func deterministicInsights(findings []finding.Finding, groups [][]finding.ID, re
 		Source:     SourceDeterministic,
 	}}
 
+	// Build a set of duplicate relations for quick lookup.
+	dupRelations := make(map[finding.ID]map[finding.ID]struct{})
+	for _, rel := range relations {
+		if rel.Type == finding.RelDuplicate {
+			if dupRelations[rel.From] == nil {
+				dupRelations[rel.From] = make(map[finding.ID]struct{})
+			}
+			dupRelations[rel.From][rel.To] = struct{}{}
+			if dupRelations[rel.To] == nil {
+				dupRelations[rel.To] = make(map[finding.ID]struct{})
+			}
+			dupRelations[rel.To][rel.From] = struct{}{}
+		}
+	}
+
+	// Only create InsightDuplicate for groups where all findings are connected
+	// by RelDuplicate relations (i.e., they form a clique in the duplicate graph).
 	for _, ids := range groups {
-		priority := finding.PrioNone
-		for _, id := range ids {
-			if f, ok := byID[id]; ok {
-				if p := f.Priority(); priorityRank(p) > priorityRank(priority) {
-					priority = p
+		if isDuplicateGroup(ids, dupRelations) {
+			priority := finding.PrioNone
+			for _, id := range ids {
+				if f, ok := byID[id]; ok {
+					if p := f.Priority(); priorityRank(p) > priorityRank(priority) {
+						priority = p
+					}
 				}
 			}
+			insights = append(insights, TriageInsight{
+				Kind:       InsightDuplicate,
+				FindingIDs: ids,
+				Summary:    fmt.Sprintf("%d findings are likely the same issue (deterministic duplicate relation).", len(ids)),
+				Priority:   priority,
+				Confidence: groupConfidence(ids, relations),
+				Source:     SourceDeterministic,
+			})
 		}
-		insights = append(insights, TriageInsight{
-			Kind:       InsightDuplicate,
-			FindingIDs: ids,
-			Summary:    fmt.Sprintf("%d findings are likely the same issue (deterministic relation).", len(ids)),
-			Priority:   priority,
-			Confidence: groupConfidence(ids, relations),
-			Source:     SourceDeterministic,
-		})
 	}
 	return insights
+}
+
+// isDuplicateGroup checks if all findings in the group are pairwise connected
+// by RelDuplicate relations.
+func isDuplicateGroup(ids []finding.ID, dupRelations map[finding.ID]map[finding.ID]struct{}) bool {
+	for i := 0; i < len(ids); i++ {
+		for j := i + 1; j < len(ids); j++ {
+			if _, ok := dupRelations[ids[i]][ids[j]]; !ok {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // groupConfidence returns the strongest relation confidence inside a group.
@@ -288,15 +323,28 @@ func reconcileInsights(insights []TriageInsight) []TriageInsight {
 	return sorted
 }
 
-// writeOutputs persists the triage result into OutDir.
+// writeOutputs persists the triage result into OutDir atomically by writing
+// to staging files first, then renaming. This ensures the cache marker
+// (FileManifest) only appears after all artifacts are successfully written.
 func writeOutputs(dir string, result *Result) error {
+	stagingDir := filepath.Join(dir, ".staging")
+	if err := os.MkdirAll(stagingDir, 0755); err != nil {
+		return fmt.Errorf("triage: create staging dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(stagingDir) }()
+
 	writeJSON := func(name string, value any) error {
 		data, err := json.MarshalIndent(value, "", "  ")
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(filepath.Join(dir, name), data, 0644)
+		stagingPath := filepath.Join(stagingDir, name)
+		if err := os.WriteFile(stagingPath, data, 0644); err != nil {
+			return err
+		}
+		return nil
 	}
+
 	if err := writeJSON(FileManifest, result.Manifest); err != nil {
 		return fmt.Errorf("triage: write manifest: %w", err)
 	}
@@ -306,15 +354,33 @@ func writeOutputs(dir string, result *Result) error {
 	if err := writeJSON(FileRelations, result.Relations); err != nil {
 		return fmt.Errorf("triage: write relations: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, FileReportMD), []byte(RenderMarkdown(result)), 0644); err != nil {
+	reportPath := filepath.Join(stagingDir, FileReportMD)
+	if err := os.WriteFile(reportPath, []byte(RenderMarkdown(result)), 0644); err != nil {
 		return fmt.Errorf("triage: write report: %w", err)
+	}
+
+	// Atomically move staging files to final location.
+	files := []string{FileManifest, FileInsights, FileRelations, FileReportMD}
+	for _, name := range files {
+		stagingPath := filepath.Join(stagingDir, name)
+		finalPath := filepath.Join(dir, name)
+		if err := os.Rename(stagingPath, finalPath); err != nil {
+			return fmt.Errorf("triage: publish %s: %w", name, err)
+		}
 	}
 	return nil
 }
 
 // loadCache returns the previously computed triage when the input digest,
-// model and prompt version all match.
+// model and prompt version all match. It rejects entries missing FileReportMD.
 func loadCache(dir, digest, model string, temperature float64) (*Result, bool) {
+	// Check that all required files exist, including the report.
+	for _, name := range []string{FileManifest, FileInsights, FileRelations, FileReportMD} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			return nil, false
+		}
+	}
+
 	data, err := os.ReadFile(filepath.Join(dir, FileManifest))
 	if err != nil {
 		return nil, false

@@ -181,80 +181,81 @@ func TestValidateConfigMissingFileReturnsDefaults(t *testing.T) {
 	}
 }
 
-func TestValidateConfigAIValid(t *testing.T) {
-	app := New(writeConfig(t, `config_version: 1
+func TestValidateConfigAI(t *testing.T) {
+	tests := []struct {
+		name             string
+		config           string
+		wantProblems     []string
+		wantNoAIProblems bool
+	}{
+		{
+			name: "valid ai config",
+			config: `config_version: 1
 ai:
   base_url: http://127.0.0.1:8080/v1
   model: qwen3.5-9b
   temperature: 0.1
-`))
-	result, err := app.ValidateConfig(t.Context())
-	if err != nil {
-		t.Fatalf("ValidateConfig() error = %v", err)
-	}
-	for _, problem := range result.Problems {
-		if strings.Contains(problem, "ai.") {
-			t.Fatalf("unexpected ai problem: %v", result.Problems)
-		}
-	}
-}
-
-func TestValidateConfigAIMissingBaseURL(t *testing.T) {
-	app := New(writeConfig(t, `config_version: 1
+`,
+			wantNoAIProblems: true,
+		},
+		{
+			name: "missing base_url",
+			config: `config_version: 1
 ai:
   model: qwen3.5-9b
-`))
-	result, err := app.ValidateConfig(t.Context())
-	if err != nil {
-		t.Fatalf("ValidateConfig() error = %v", err)
-	}
-	if !containsProblem(result.Problems, "ai.base_url") {
-		t.Fatalf("problems = %v, want ai.base_url complaint", result.Problems)
-	}
-}
-
-func TestValidateConfigAIMissingModel(t *testing.T) {
-	app := New(writeConfig(t, `config_version: 1
+`,
+			wantProblems: []string{"ai.base_url"},
+		},
+		{
+			name: "missing model",
+			config: `config_version: 1
 ai:
   base_url: http://127.0.0.1:8080/v1
-`))
-	result, err := app.ValidateConfig(t.Context())
-	if err != nil {
-		t.Fatalf("ValidateConfig() error = %v", err)
-	}
-	if !containsProblem(result.Problems, "ai.model") {
-		t.Fatalf("problems = %v, want ai.model complaint", result.Problems)
-	}
-}
-
-func TestValidateConfigAIBadURL(t *testing.T) {
-	app := New(writeConfig(t, `config_version: 1
+`,
+			wantProblems: []string{"ai.model"},
+		},
+		{
+			name: "bad base_url",
+			config: `config_version: 1
 ai:
   base_url: not a url
   model: qwen3.5-9b
-`))
-	result, err := app.ValidateConfig(t.Context())
-	if err != nil {
-		t.Fatalf("ValidateConfig() error = %v", err)
-	}
-	if !containsProblem(result.Problems, "ai.base_url") {
-		t.Fatalf("problems = %v, want ai.base_url complaint", result.Problems)
-	}
-}
-
-func TestValidateConfigAITemperatureOutOfRange(t *testing.T) {
-	app := New(writeConfig(t, `config_version: 1
+`,
+			wantProblems: []string{"ai.base_url"},
+		},
+		{
+			name: "temperature out of range",
+			config: `config_version: 1
 ai:
   base_url: http://127.0.0.1:8080/v1
   model: qwen3.5-9b
   temperature: 3.5
-`))
-	result, err := app.ValidateConfig(t.Context())
-	if err != nil {
-		t.Fatalf("ValidateConfig() error = %v", err)
+`,
+			wantProblems: []string{"ai.temperature"},
+		},
 	}
-	if !containsProblem(result.Problems, "ai.temperature") {
-		t.Fatalf("problems = %v, want ai.temperature complaint", result.Problems)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := New(writeConfig(t, tt.config))
+			result, err := app.ValidateConfig(t.Context())
+			if err != nil {
+				t.Fatalf("ValidateConfig() error = %v", err)
+			}
+			if tt.wantNoAIProblems {
+				for _, problem := range result.Problems {
+					if strings.Contains(problem, "ai.") {
+						t.Fatalf("unexpected ai problem: %v", result.Problems)
+					}
+				}
+				return
+			}
+			for _, want := range tt.wantProblems {
+				if !containsProblem(result.Problems, want) {
+					t.Fatalf("problems = %v, want %q complaint", result.Problems, want)
+				}
+			}
+		})
 	}
 }
 

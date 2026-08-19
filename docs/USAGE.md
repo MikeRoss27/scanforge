@@ -138,7 +138,7 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge scan TARGET` | Alias of `run`. |
 | `scanforge diff RUN1 RUN2` | Delta (assets/ports/vulns) between two runs of the same target. |
 | `scanforge export RUN --format sarif\|defectdojo` | Exports a run report for CI (SARIF) or DefectDojo (generic findings). |
-| `scanforge triage RUN` | Deduplicates, groups and (with an `ai:` backend) analyzes the findings of a run. |
+| `scanforge triage RUN` | Groups, groups and (with an `ai:` backend) analyzes the findings of a run. |
 | `scanforge auth` | Manages the keys required by some tools. |
 | `scanforge version` | Displays the binary version. |
 

@@ -16,6 +16,7 @@ const (
 )
 
 func Default() *Config {
+	defaultTemp := DefaultAITemperature
 	return &Config{
 		ConfigVersion:  DefaultConfigVersion,
 		Workspace:      DefaultWorkspace,
@@ -39,7 +40,7 @@ func Default() *Config {
 		ModuleTimeouts: map[string]time.Duration{},
 		AI: AI{
 			Timeout:     DefaultAITimeout,
-			Temperature: DefaultAITemperature,
+			Temperature: &defaultTemp,
 		},
 	}
 }

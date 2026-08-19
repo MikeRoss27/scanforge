@@ -2,8 +2,6 @@ package triage
 
 import (
 	"encoding/json"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/MikeRoss27/scanforge/internal/finding"
 )
@@ -12,6 +10,8 @@ import (
 // sent to the LLM. Raw scanner output is never forwarded: evidence and
 // descriptions are truncated, and fields that could carry secrets or
 // target-controlled content (full response bodies, payloads) are excluded.
+// Evidence is intentionally omitted to prevent credential leakage; a static
+// placeholder is used instead.
 type TriageFinding struct {
 	ID         string   `json:"id"`
 	Asset      string   `json:"asset"`
@@ -25,7 +25,6 @@ type TriageFinding struct {
 	CVSS       float64  `json:"cvss,omitempty"`
 	EPSS       float64  `json:"epss,omitempty"`
 	KEV        bool     `json:"kev,omitempty"`
-	Evidence   string   `json:"evidence,omitempty"`
 	MatchedAt  string   `json:"matched_at"`
 }
 
@@ -40,22 +39,18 @@ type TriageBundle struct {
 	Truncated int `json:"truncated,omitempty"`
 }
 
-// MaxEvidenceLen and MaxDescriptionLen bound the size of per-finding text
-// sent to the model.
-const (
-	MaxEvidenceLen = 500
-)
-
 // BuildBundle projects the authoritative findings into the safe bundle. The
 // projection is deterministic and lossy on purpose.
 func BuildBundle(target string, findings []finding.Finding, relations []finding.FindingRelation) TriageBundle {
-	bundle := TriageBundle{Target: target, Relations: relations}
+	bundle := TriageBundle{Target: target}
 
 	limit := MaxBundleFindings
 	if len(findings) < limit {
 		limit = len(findings)
 	}
+	included := make(map[finding.ID]struct{}, limit)
 	for _, f := range findings[:limit] {
+		included[f.ID] = struct{}{}
 		bundle.Findings = append(bundle.Findings, TriageFinding{
 			ID:         string(f.ID),
 			Asset:      f.Asset,
@@ -69,10 +64,19 @@ func BuildBundle(target string, findings []finding.Finding, relations []finding.
 			CVSS:       f.CVSS,
 			EPSS:       f.EPSS,
 			KEV:        f.KEV,
-			Evidence:   truncate(f.Evidence, MaxEvidenceLen),
 			MatchedAt:  f.MatchedAt,
 		})
 	}
+
+	// Filter relations to only include those where both endpoints are in the bundle.
+	for _, rel := range relations {
+		if _, ok1 := included[rel.From]; ok1 {
+			if _, ok2 := included[rel.To]; ok2 {
+				bundle.Relations = append(bundle.Relations, rel)
+			}
+		}
+	}
+
 	bundle.Truncated = len(findings) - limit
 	return bundle
 }
@@ -81,19 +85,4 @@ func BuildBundle(target string, findings []finding.Finding, relations []finding.
 func (b TriageBundle) MarshalJSON() ([]byte, error) {
 	type alias TriageBundle
 	return json.Marshal(alias(b))
-}
-
-// truncate cuts value to at most max bytes without splitting a UTF-8 rune.
-func truncate(value string, max int) string {
-	if len(value) <= max {
-		return value
-	}
-	cut := max - len("…")
-	if cut < 0 {
-		cut = 0
-	}
-	for cut > 0 && !utf8.RuneStart(value[cut]) {
-		cut--
-	}
-	return strings.TrimSpace(value[:cut]) + "…"
 }

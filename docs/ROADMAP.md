@@ -64,11 +64,11 @@ continuité (diff entre runs, scheduling, notifications).
 
 ### H3 — Vision
 
-| # | Idée |
-|---|---|
+| # | Idée | Statut |
+|---|---|---|
 | H3.1 | Triage IA des findings : résumé LLM + déduplication | ✅ implémenté |
-| H3.2 | Report HTML type nuclei (compte rendu client) |
-| H3.3 | Données live : fetch EPSS/KEV/NVD à jour plutôt que dataset embarqué |
+| H3.2 | Report HTML type nuclei (compte rendu client) | |
+| H3.3 | Données live : fetch EPSS/KEV/NVD à jour plutôt que dataset embarqué | |
 
 ## 4. Hors périmètre (anti-scope creep)
 

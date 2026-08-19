@@ -106,7 +106,7 @@ type ModelConfig struct {
 	Model       string
 	APIKey      string
 	Timeout     time.Duration
-	Temperature float64
+	Temperature *float64
 }
 
 // Input is everything the engine needs to triage one run.

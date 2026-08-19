@@ -42,7 +42,8 @@ type AI struct {
 	// Timeout bounds a single generation request (Go duration).
 	Timeout time.Duration `yaml:"timeout"`
 	// Temperature for triage generation. Low values keep output stable.
-	Temperature float64 `yaml:"temperature"`
+	// A nil value means unset (server default); a pointer to 0.0 means explicit zero.
+	Temperature *float64 `yaml:"temperature"`
 }
 
 // Webhook holds the end-of-run notification endpoint. The payload is a
@@ -293,7 +294,7 @@ func mergeDefaults(base, parsed *Config) {
 	if parsed.AI.Timeout == 0 {
 		parsed.AI.Timeout = base.AI.Timeout
 	}
-	if parsed.AI.Temperature == 0 {
+	if parsed.AI.Temperature == nil {
 		parsed.AI.Temperature = base.AI.Temperature
 	}
 }

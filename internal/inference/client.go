@@ -25,7 +25,7 @@ type Message struct {
 type Request struct {
 	Model       string
 	Messages    []Message
-	Temperature float64
+	Temperature *float64
 	MaxTokens   int
 	// JSON asks the server for a JSON object response (response_format).
 	JSON bool
@@ -80,8 +80,8 @@ func (c *OpenAICompatible) Generate(ctx context.Context, req Request) (Response,
 		"model":    model,
 		"messages": req.Messages,
 	}
-	if req.Temperature != 0 {
-		payload["temperature"] = req.Temperature
+	if req.Temperature != nil {
+		payload["temperature"] = *req.Temperature
 	}
 	if req.MaxTokens > 0 {
 		payload["max_tokens"] = req.MaxTokens

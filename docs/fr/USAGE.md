@@ -138,7 +138,7 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge plan TARGET` | Affiche le scope et les vagues du DAG. |
 | `scanforge run TARGET` | Exécute un profil autorisé. |
 | `scanforge scan TARGET` | Alias de `run`. |
-| `scanforge triage RUN` | Déduplique, regroupe et (avec un backend `ai:`) analyse les findings d'un run. |
+| `scanforge triage RUN` | Regroupe et (avec un backend `ai:`) analyse les findings d'un run. |
 | `scanforge auth` | Gère les clés requises par certains outils. |
 | `scanforge version` | Affiche la version du binaire. |
 
