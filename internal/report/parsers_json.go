@@ -3,88 +3,10 @@ package report
 import (
 	"bufio"
 	"encoding/json"
-	"encoding/xml"
-	"fmt"
-	"io/fs"
-	"net"
 	"net/url"
 	"os"
-	"path/filepath"
-	"regexp"
-	"sort"
-	"strconv"
 	"strings"
 )
-
-// ParseHosts parses a simple text file with one host/domain/URL per line.
-func ParseHosts(path string, report *Report) error {
-	file, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		// If it's a URL, extract host
-		host := line
-		if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
-			if u, err := url.Parse(line); err == nil {
-				host = u.Hostname()
-			}
-		}
-
-		report.GetOrCreateAsset(host)
-	}
-	return scanner.Err()
-}
-
-// ParsePorts parses host:port format (e.g., from naabu)
-func ParsePorts(path string, report *Report) error {
-	file, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		host, portStr, err := net.SplitHostPort(line)
-		if err != nil {
-			pos := strings.LastIndexByte(line, ':')
-			if pos < 1 {
-				continue
-			}
-			host, portStr = strings.Trim(line[:pos], "[]"), line[pos+1:]
-		}
-		portNum, err := strconv.Atoi(portStr)
-		if err == nil && portNum > 0 && portNum <= 65535 {
-			asset := report.GetOrCreateAsset(normalizeAssetName(host))
-			if _, ok := asset.Ports[portNum]; !ok {
-				asset.Ports[portNum] = &Port{Number: portNum}
-			}
-		}
-	}
-	return scanner.Err()
-}
 
 // ParseHttpx parses httpx JSONL output
 func ParseHttpx(path string, report *Report) error {
@@ -172,7 +94,7 @@ func ParseHttpx(path string, report *Report) error {
 	return scanner.Err()
 }
 
-// ParseFfuf parses ffuf JSON output
+// ParseFfuf parses the ffuf module's single-document JSON output.
 func ParseFfuf(path string, report *Report) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -206,33 +128,6 @@ func ParseFfuf(path string, report *Report) error {
 		}
 	}
 	return nil
-}
-
-// ParseKatana parses Katana raw URLs
-func ParseKatana(path string, report *Report) error {
-	file, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		if u, err := url.Parse(line); err == nil && u.Hostname() != "" {
-			asset := report.GetOrCreateAsset(u.Hostname())
-			asset.Paths = appendUnique(asset.Paths, line)
-		}
-	}
-	return scanner.Err()
 }
 
 // ParseNuclei parses Nuclei JSONL output
@@ -357,39 +252,6 @@ func ParseTechCVE(path string, report *Report) error {
 	})
 }
 
-// ParseScreenshots records the PNG snapshots captured by the screenshot
-// module. path is the screenshots directory; filenames are stored as-is so
-// report.md can list them relative to the run root.
-func ParseScreenshots(path string, report *Report) error {
-	var files []string
-	err := filepath.WalkDir(path, func(p string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if filepath.Ext(entry.Name()) != ".png" {
-			return nil
-		}
-		rel, relErr := filepath.Rel(path, p)
-		if relErr != nil {
-			return relErr
-		}
-		files = append(files, filepath.ToSlash(rel))
-		return nil
-	})
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	sort.Strings(files)
-	report.Screenshots = append(report.Screenshots, files...)
-	return nil
-}
-
 // ParseHTTPChecks parses the httpcheck module's hardening-gap findings.
 func ParseHTTPChecks(path string, report *Report) error {
 	return scanJSONLines(path, func(line []byte) {
@@ -437,6 +299,8 @@ func httpCheckTitle(check string) string {
 	return check
 }
 
+// ParseDnsx parses the dnsx module's JSONL output (resolved hosts, IPs,
+// CNAMEs, CDN and ASN metadata).
 func ParseDnsx(path string, report *Report) error {
 	return scanJSONLines(path, func(line []byte) {
 		var record struct {
@@ -471,6 +335,7 @@ func ParseDnsx(path string, report *Report) error {
 	})
 }
 
+// ParseTlsx parses the tlsx module's JSONL output (TLS certificate details).
 func ParseTlsx(path string, report *Report) error {
 	return scanJSONLines(path, func(line []byte) {
 		var record struct {
@@ -511,6 +376,8 @@ func ParseTlsx(path string, report *Report) error {
 	})
 }
 
+// ParseJSSecrets parses the jssecrets module's JSONL output: endpoint
+// discoveries become asset paths, everything else becomes a finding.
 func ParseJSSecrets(path string, report *Report) error {
 	return scanJSONLines(path, func(line []byte) {
 		var record struct {
@@ -593,207 +460,4 @@ func ParseJSVerify(path string, report *Report) error {
 		}
 		report.JSVerified = append(report.JSVerified, record)
 	})
-}
-
-func ParseNmapCollection(path string, report *Report) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	var paths []string
-	if info.IsDir() {
-		err = filepath.WalkDir(path, func(candidate string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".xml") {
-				paths = append(paths, candidate)
-			}
-			return nil
-		})
-	} else {
-		paths = []string{path}
-	}
-	if err != nil {
-		return err
-	}
-	for _, xmlPath := range paths {
-		if err := parseNmapXML(xmlPath, report); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func parseNmapXML(path string, report *Report) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	var result struct {
-		Hosts []struct {
-			Addresses []struct {
-				Addr string `xml:"addr,attr"`
-				Type string `xml:"addrtype,attr"`
-			} `xml:"address"`
-			Hostnames []struct {
-				Name string `xml:"name,attr"`
-			} `xml:"hostnames>hostname"`
-			Ports []struct {
-				ID       int    `xml:"portid,attr"`
-				Protocol string `xml:"protocol,attr"`
-				State    struct {
-					Value string `xml:"state,attr"`
-				} `xml:"state"`
-				Service struct {
-					Name    string `xml:"name,attr"`
-					Product string `xml:"product,attr"`
-					Version string `xml:"version,attr"`
-				} `xml:"service"`
-			} `xml:"ports>port"`
-		} `xml:"host"`
-	}
-	if err := xml.Unmarshal(data, &result); err != nil {
-		return err
-	}
-	for _, host := range result.Hosts {
-		name := ""
-		if len(host.Hostnames) > 0 {
-			name = normalizeAssetName(host.Hostnames[0].Name)
-		}
-		for _, address := range host.Addresses {
-			if name == "" && (address.Type == "ipv4" || address.Type == "ipv6") {
-				name = address.Addr
-			}
-		}
-		if name == "" {
-			continue
-		}
-		asset := report.GetOrCreateAsset(name)
-		for _, address := range host.Addresses {
-			if address.Type == "ipv4" || address.Type == "ipv6" {
-				asset.IPs = appendUnique(asset.IPs, address.Addr)
-			}
-		}
-		for _, port := range host.Ports {
-			if port.State.Value != "open" {
-				continue
-			}
-			asset.Ports[port.ID] = &Port{
-				Number: port.ID, Protocol: port.Protocol, Service: port.Service.Name,
-				Product: port.Service.Product, Version: port.Service.Version,
-			}
-		}
-	}
-	return nil
-}
-
-var urlPattern = regexp.MustCompile(`https?://[^\s]+`)
-var wafPattern = regexp.MustCompile(`(?i)is behind (?:a |an )?(.+?)(?: WAF)?(?:\.|$)`)
-var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
-
-func stripANSI(s string) string {
-	return ansiEscapePattern.ReplaceAllString(s, "")
-}
-
-func ParseWhatWeb(path string, report *Report) error {
-	return scanLines(path, func(line string) {
-		rawURL := urlPattern.FindString(line)
-		host := normalizeAssetName(rawURL)
-		if host == "" {
-			return
-		}
-		asset := report.GetOrCreateAsset(host)
-		for _, field := range strings.Fields(line) {
-			if pos := strings.IndexByte(field, '['); pos > 0 {
-				asset.Technologies = appendUnique(asset.Technologies, strings.Trim(field[:pos], ","))
-			}
-		}
-	})
-}
-
-func ParseWAF(path string, report *Report) error {
-	currentHost := ""
-	return scanLines(path, func(line string) {
-		rawURL := urlPattern.FindString(line)
-		if host := normalizeAssetName(rawURL); host != "" {
-			currentHost = host
-		}
-		match := wafPattern.FindStringSubmatch(line)
-		if currentHost != "" && len(match) == 2 {
-			asset := report.GetOrCreateAsset(currentHost)
-			asset.WAFs = appendUnique(asset.WAFs, strings.TrimSpace(match[1]))
-		}
-	})
-}
-
-func scanJSONLines(path string, consume func([]byte)) error {
-	return scanLines(path, func(line string) { consume([]byte(line)) })
-}
-
-func scanLines(path string, consume func(string)) error {
-	file, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	defer func() { _ = file.Close() }()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(stripANSI(scanner.Text()))
-		if line != "" {
-			consume(line)
-		}
-	}
-	return scanner.Err()
-}
-
-func normalizeAssetName(value string) string {
-	value = strings.TrimSpace(stripANSI(value))
-	if value == "" {
-		return ""
-	}
-	if parsed, err := url.Parse(value); err == nil && parsed.Hostname() != "" {
-		return strings.ToLower(parsed.Hostname())
-	}
-	if host, _, err := net.SplitHostPort(value); err == nil {
-		return strings.ToLower(strings.Trim(host, "[]"))
-	}
-	return strings.ToLower(strings.Trim(strings.TrimSuffix(value, "."), "[]"))
-}
-
-func rawString(value json.RawMessage) string {
-	if len(value) == 0 || string(value) == "null" {
-		return ""
-	}
-	var text string
-	if json.Unmarshal(value, &text) == nil {
-		return text
-	}
-	var number json.Number
-	if json.Unmarshal(value, &number) == nil {
-		return number.String()
-	}
-	return fmt.Sprint(string(value))
-}
-
-func rawInt(value json.RawMessage) int {
-	text := rawString(value)
-	number, _ := strconv.Atoi(text)
-	return number
-}
-
-func appendUnique(slice []string, val string) []string {
-	for _, item := range slice {
-		if item == val {
-			return slice
-		}
-	}
-	return append(slice, val)
 }
