@@ -74,6 +74,20 @@ module_timeouts:
   katana: 20m
 ```
 
+The `ai` section configures the LLM backend used by `scanforge triage`. Any
+server exposing the OpenAI-compatible chat completions API works (llama.cpp,
+vLLM, Ollama, LM Studio, ...). When the section is omitted, triage runs in
+deterministic-only mode (deduplication and grouping without a model):
+
+```yaml
+ai:
+  base_url: http://127.0.0.1:8080/v1
+  model: qwen3.5-9b
+  api_key: ""        # optional for local servers
+  timeout: 5m
+  temperature: 0.1   # low values keep triage output stable
+```
+
 ## Built-in nuclei templates
 
 `--nuclei-include-custom` adds the templates bundled in the `templates/`
@@ -124,10 +138,37 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge scan TARGET` | Alias of `run`. |
 | `scanforge diff RUN1 RUN2` | Delta (assets/ports/vulns) between two runs of the same target. |
 | `scanforge export RUN --format sarif\|defectdojo` | Exports a run report for CI (SARIF) or DefectDojo (generic findings). |
+| `scanforge triage RUN` | Deduplicates, groups and (with an `ai:` backend) analyzes the findings of a run. |
 | `scanforge auth` | Manages the keys required by some tools. |
 | `scanforge version` | Displays the binary version. |
 
 See `scanforge <command> --help` for the exact list of options.
+
+## Triage of findings
+
+`scanforge triage <run>` projects the consolidated report into canonical
+findings, computes deterministic relations (duplicates, shared CVE, shared
+endpoint, same asset) and writes the result under `<run>/triage/`:
+
+```text
+triage/manifest.json    provenance: model, prompt version, input digest
+triage/relations.json   deterministic finding-to-finding relations
+triage/insights.json    insights (dedup groups + validated LLM insights)
+triage/report.md        human-readable summary
+```
+
+With an `ai:` backend configured, the model receives a deliberately reduced
+projection of the findings (truncated evidence, no raw tool output) and its
+insights are validated before being stored: any insight referencing an
+unknown finding ID, CVE or evidence string is rejected. The model can
+interpret findings, never create them. Re-running with unchanged input hits
+the cache (0 inference); `--force` bypasses it:
+
+```bash
+scanforge triage runs/example.com/2026-08-19T10:00:00Z
+scanforge triage runs/example.com/2026-08-19T10:00:00Z --force
+scanforge triage runs/example.com/2026-08-19T10:00:00Z --model qwen3.5-9b
+```
 
 ## Multi-target engagements
 

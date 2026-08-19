@@ -23,6 +23,26 @@ type Config struct {
 	// Zero (unset) means the module's own default applies.
 	ModuleTimeouts map[string]time.Duration `yaml:"module_timeouts"`
 	Webhook        Webhook                  `yaml:"webhook"`
+	// AI configures the LLM backend used by `scanforge triage`. When empty,
+	// triage runs in deterministic-only mode.
+	AI AI `yaml:"ai"`
+}
+
+// AI holds the OpenAI-compatible endpoint used by the triage analyzer. Any
+// server exposing /v1/chat/completions works: llama.cpp, vLLM, Ollama, LM
+// Studio, ...
+type AI struct {
+	// BaseURL is the full API base including /v1, e.g.
+	// http://127.0.0.1:8080/v1.
+	BaseURL string `yaml:"base_url"`
+	// Model is the model name reported by the server.
+	Model string `yaml:"model"`
+	// APIKey is sent as a Bearer token; empty for local servers.
+	APIKey string `yaml:"api_key"`
+	// Timeout bounds a single generation request (Go duration).
+	Timeout time.Duration `yaml:"timeout"`
+	// Temperature for triage generation. Low values keep output stable.
+	Temperature float64 `yaml:"temperature"`
 }
 
 // Webhook holds the end-of-run notification endpoint. The payload is a
@@ -193,6 +213,16 @@ tools:
 # module_timeouts:
 #   nuclei: 45m
 #   katana: 20m
+
+# LLM backend for the scanforge triage command (OpenAI-compatible API:
+# llama.cpp, vLLM, Ollama, LM Studio, ...). When omitted, triage runs in
+# deterministic-only mode (deduplication and grouping without a model).
+# ai:
+#   base_url: http://127.0.0.1:8080/v1
+#   model: qwen3.5-9b
+#   api_key: ""
+#   timeout: 5m
+#   temperature: 0.1
 `, DefaultConfigVersion, DefaultWorkspace, DefaultProfile, DefaultScope)
 }
 
@@ -250,6 +280,21 @@ func mergeDefaults(base, parsed *Config) {
 	}
 	if len(parsed.Profiles) == 0 {
 		parsed.Profiles = base.Profiles
+	}
+	if parsed.AI.BaseURL == "" {
+		parsed.AI.BaseURL = base.AI.BaseURL
+	}
+	if parsed.AI.Model == "" {
+		parsed.AI.Model = base.AI.Model
+	}
+	if parsed.AI.APIKey == "" {
+		parsed.AI.APIKey = base.AI.APIKey
+	}
+	if parsed.AI.Timeout == 0 {
+		parsed.AI.Timeout = base.AI.Timeout
+	}
+	if parsed.AI.Temperature == 0 {
+		parsed.AI.Temperature = base.AI.Temperature
 	}
 }
 

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -158,5 +159,77 @@ func TestToolPath(t *testing.T) {
 
 	if got := cfg.ToolPath("subfinder"); got != "/usr/local/bin/subfinder" {
 		t.Fatalf("unexpected tool path: %q", got)
+	}
+}
+
+func TestLoadAI(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "scanforge.yaml")
+
+	content := `config_version: 1
+ai:
+  base_url: http://127.0.0.1:8080/v1
+  model: qwen3.5-9b
+  api_key: secret
+  timeout: 2m
+  temperature: 0.05
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AI.BaseURL != "http://127.0.0.1:8080/v1" {
+		t.Errorf("base_url = %q", cfg.AI.BaseURL)
+	}
+	if cfg.AI.Model != "qwen3.5-9b" {
+		t.Errorf("model = %q", cfg.AI.Model)
+	}
+	if cfg.AI.APIKey != "secret" {
+		t.Errorf("api_key = %q", cfg.AI.APIKey)
+	}
+	if cfg.AI.Timeout != 2*time.Minute {
+		t.Errorf("timeout = %v, want 2m", cfg.AI.Timeout)
+	}
+	if cfg.AI.Temperature != 0.05 {
+		t.Errorf("temperature = %v, want 0.05", cfg.AI.Temperature)
+	}
+}
+
+func TestLoadAIMergesDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "scanforge.yaml")
+
+	content := `config_version: 1
+ai:
+  base_url: http://127.0.0.1:8080/v1
+  model: qwen3.5-9b
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AI.Timeout != DefaultAITimeout {
+		t.Errorf("timeout = %v, want default %v", cfg.AI.Timeout, DefaultAITimeout)
+	}
+	if cfg.AI.Temperature != DefaultAITemperature {
+		t.Errorf("temperature = %v, want default %v", cfg.AI.Temperature, DefaultAITemperature)
+	}
+}
+
+func TestYAMLTemplateIncludesAI(t *testing.T) {
+	cfg := Default()
+	template := cfg.YAMLTemplate()
+	for _, want := range []string{"ai:", "base_url:", "temperature:"} {
+		if !strings.Contains(template, want) {
+			t.Errorf("template missing %q", want)
+		}
 	}
 }

@@ -180,3 +180,89 @@ func TestValidateConfigMissingFileReturnsDefaults(t *testing.T) {
 		t.Fatalf("path = %q, want %q", result.Path, path)
 	}
 }
+
+func TestValidateConfigAIValid(t *testing.T) {
+	app := New(writeConfig(t, `config_version: 1
+ai:
+  base_url: http://127.0.0.1:8080/v1
+  model: qwen3.5-9b
+  temperature: 0.1
+`))
+	result, err := app.ValidateConfig(t.Context())
+	if err != nil {
+		t.Fatalf("ValidateConfig() error = %v", err)
+	}
+	for _, problem := range result.Problems {
+		if strings.Contains(problem, "ai.") {
+			t.Fatalf("unexpected ai problem: %v", result.Problems)
+		}
+	}
+}
+
+func TestValidateConfigAIMissingBaseURL(t *testing.T) {
+	app := New(writeConfig(t, `config_version: 1
+ai:
+  model: qwen3.5-9b
+`))
+	result, err := app.ValidateConfig(t.Context())
+	if err != nil {
+		t.Fatalf("ValidateConfig() error = %v", err)
+	}
+	if !containsProblem(result.Problems, "ai.base_url") {
+		t.Fatalf("problems = %v, want ai.base_url complaint", result.Problems)
+	}
+}
+
+func TestValidateConfigAIMissingModel(t *testing.T) {
+	app := New(writeConfig(t, `config_version: 1
+ai:
+  base_url: http://127.0.0.1:8080/v1
+`))
+	result, err := app.ValidateConfig(t.Context())
+	if err != nil {
+		t.Fatalf("ValidateConfig() error = %v", err)
+	}
+	if !containsProblem(result.Problems, "ai.model") {
+		t.Fatalf("problems = %v, want ai.model complaint", result.Problems)
+	}
+}
+
+func TestValidateConfigAIBadURL(t *testing.T) {
+	app := New(writeConfig(t, `config_version: 1
+ai:
+  base_url: not a url
+  model: qwen3.5-9b
+`))
+	result, err := app.ValidateConfig(t.Context())
+	if err != nil {
+		t.Fatalf("ValidateConfig() error = %v", err)
+	}
+	if !containsProblem(result.Problems, "ai.base_url") {
+		t.Fatalf("problems = %v, want ai.base_url complaint", result.Problems)
+	}
+}
+
+func TestValidateConfigAITemperatureOutOfRange(t *testing.T) {
+	app := New(writeConfig(t, `config_version: 1
+ai:
+  base_url: http://127.0.0.1:8080/v1
+  model: qwen3.5-9b
+  temperature: 3.5
+`))
+	result, err := app.ValidateConfig(t.Context())
+	if err != nil {
+		t.Fatalf("ValidateConfig() error = %v", err)
+	}
+	if !containsProblem(result.Problems, "ai.temperature") {
+		t.Fatalf("problems = %v, want ai.temperature complaint", result.Problems)
+	}
+}
+
+func containsProblem(problems []string, needle string) bool {
+	for _, problem := range problems {
+		if strings.Contains(problem, needle) {
+			return true
+		}
+	}
+	return false
+}
