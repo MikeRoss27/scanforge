@@ -73,12 +73,6 @@ func writeManifest(path string, entries []ManifestEntry) error {
 // validateOutputPath rejects traversals like "../../etc/passwd" or absolute paths.
 func validateOutputPath(path string) error {
 	clean := filepath.Clean(path)
-	if filepath.IsAbs(clean) {
-		// Absolute paths are allowed only if they are under the run dir; caller
-		// already joins with Run.Path, so absolute here is expected. We only
-		// reject embedded ".." that would escape.
-		// Fall through to check ".." components.
-	}
 	if strings.Contains(clean, "..") {
 		return fmt.Errorf("refusing output path with traversal %q", path)
 	}

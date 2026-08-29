@@ -37,6 +37,13 @@ var (
 	colorRed     = color("#f85149", "9")   // danger - muted github red
 )
 
+// suppress unused warnings for deprecated palette entries kept for compatibility
+var (
+	_ = colorBg
+	_ = colorSurface
+	_ = colorMagenta
+)
+
 // Exported brand colors for composing panels, headers and banners.
 var (
 	Accent        = colorAccent
@@ -137,6 +144,11 @@ var (
 	tagAbort   = lipgloss.NewStyle().Bold(true).Foreground(colorOrange)
 )
 
+var (
+	_ = tagSkip
+	_ = tagAbort
+)
+
 func printTag(style lipgloss.Style, label, format string, args ...any) {
 	bracket := lipgloss.NewStyle().Foreground(colorDim).Render("[")
 	bracketClose := lipgloss.NewStyle().Foreground(colorDim).Render("]")
@@ -214,6 +226,11 @@ func lerpHex(from, to [3]int, t float64) string {
 	}
 	return fmt.Sprintf("#%02x%02x%02x", c[0], c[1], c[2])
 }
+
+var (
+	_ = parseHex
+	_ = lerpHex
+)
 
 // ---------------------------------------------------------------------------
 // Layout primitives

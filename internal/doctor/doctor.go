@@ -158,12 +158,13 @@ func (r *Runner) Run(ctx context.Context, opts Options) ([]Check, int, error) {
 		}
 		check := r.checker.CheckTool(ctx, dependency.Name, binary, opts.Verbose)
 		check.Required = !dependency.Optional
-		if check.Status == SeverityFail {
+		switch check.Status {
+		case SeverityFail:
 			if dependency.Optional {
 				check.Status = SeverityWarn
 			}
 			check.Message += "; install: " + dependencies.InstallHint(dependency)
-		} else if check.Status == SeverityOK {
+		case SeverityOK:
 			expected := ""
 			if dependency.Compare {
 				expected = dependencies.ExpectedVersion(dependency.VersionKey)

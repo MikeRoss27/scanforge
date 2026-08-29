@@ -12,15 +12,17 @@ import (
 	"strings"
 )
 
-// Interfaces for dependency injection — production passes *os.File, tests pass bytes.Buffer.
+// EndpointReader abstracts endpoint extraction for testing.
 type EndpointReader interface {
 	ReadEndpoints(ctx context.Context, r io.Reader) ([]string, error)
 }
 
+// ParameterReader abstracts parameter extraction for testing.
 type ParameterReader interface {
 	ReadParameters(ctx context.Context, r io.Reader) ([]string, error)
 }
 
+// TechReader abstracts tech extraction for testing.
 type TechReader interface {
 	ReadTechs(ctx context.Context, r io.Reader) ([]string, error)
 }
@@ -217,6 +219,7 @@ func readTechsFromReader(ctx context.Context, r io.Reader, registry map[string][
 // Wrappers that open files — keep backward-compatible signatures for existing tests and callers.
 // They delegate to the io.Reader cores above.
 
+//nolint:unused // kept for backward compatibility
 func readJSEndpoints(path string) ([]string, error) {
 	return readJSEndpointsWithContext(context.Background(), path)
 }
@@ -249,6 +252,7 @@ func readParametersWithContext(ctx context.Context, path string) ([]string, erro
 	return readParametersFromReader(ctx, file)
 }
 
+//nolint:unused // kept for backward compatibility
 func readTechs(path string) ([]string, error) {
 	return readTechsWithContext(context.Background(), path)
 }
