@@ -262,20 +262,31 @@ func readJSEndpoints(runCtx *modules.RunContext, path string) ([]string, error) 
 
 // resolveEndpoint turns a possibly relative endpoint (e.g. "/api/users") into
 // an absolute URL using the JS file it was discovered in as the base.
+// Bare relative paths like "api/users" or "v1/login" are now resolved against
+// the JS file's directory (modern JS frequently uses them); protocol-relative
+// URLs (//cdn.example.com/lib.js) inherit the base scheme.
 func resolveEndpoint(jsURL, endpoint string) string {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" || strings.Contains(endpoint, " ") {
+		return ""
+	}
 	base, err := url.Parse(jsURL)
 	if err != nil || base.Hostname() == "" {
 		return ""
 	}
-	ref, err := url.Parse(strings.TrimSpace(endpoint))
-	if err != nil || ref.Path == "" {
+	ref, err := url.Parse(endpoint)
+	if err != nil {
+		return ""
+	}
+	if ref.Path == "" && ref.RawQuery == "" && ref.Fragment == "" {
 		return ""
 	}
 	if ref.IsAbs() {
 		return ref.String()
 	}
-	if !strings.HasPrefix(endpoint, "/") && !strings.HasPrefix(endpoint, "./") && !strings.HasPrefix(endpoint, "../") {
-		return ""
+	if ref.Host != "" {
+		ref.Scheme = base.Scheme
+		return ref.String()
 	}
 	return base.ResolveReference(ref).String()
 }

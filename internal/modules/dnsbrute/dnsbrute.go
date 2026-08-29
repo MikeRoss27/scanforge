@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikeRoss27/scanforge/internal/dependencies"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/runner"
 )
@@ -18,16 +19,6 @@ import (
 // means N×wordlist massdns queries. Beyond this, the first ones found are
 // kept and the rest skipped instead of exploding scan time.
 const maxBruteforceDomains = 10
-
-// defaultWordlistCandidates are searched in order when no wordlist is
-// configured, so an out-of-the-box run works on common distro layouts.
-var defaultWordlistCandidates = []string{
-	"/usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt",
-	"/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt",
-	"/usr/share/seclists/Discovery/DNS/namelist.txt",
-	"/opt/SecLists/Discovery/DNS/subdomains-top1million-20000.txt",
-	"/usr/share/wordlists/amass/subdomains.lst",
-}
 
 type Module struct {
 	binary string
@@ -65,7 +56,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	wordlist := resolveWordlist()
 	if !runCtx.DryRun {
 		if wordlist == "" {
-			return nil, fmt.Errorf("no DNS wordlist found (checked: %s); install SecLists (e.g. 'sudo apt install seclists')", strings.Join(defaultWordlistCandidates, ", "))
+			return nil, fmt.Errorf("no DNS wordlist found (checked: %s); install SecLists or set SCANFORGE_DNS_WORDLIST", strings.Join(dependencies.DNSWordlistPaths(), ", "))
 		}
 		if _, err := os.Stat(wordlist); os.IsNotExist(err) {
 			return nil, fmt.Errorf("wordlist not found: %s", wordlist)
@@ -197,7 +188,7 @@ func readDomains(path string) ([]string, error) {
 }
 
 func resolveWordlist() string {
-	for _, candidate := range defaultWordlistCandidates {
+	for _, candidate := range dependencies.DNSWordlistPaths() {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 			return candidate
 		}

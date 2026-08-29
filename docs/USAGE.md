@@ -28,6 +28,8 @@ From a clone of the repository, the local scripts do the same:
 .\install.ps1 -Full
 ```
 
+On Arch, `--full` uses `pacman -S --needed` only for official packages and never performs a full system upgrade. Pinned Go tools, isolated pipx and verified upstream artifacts cover the remaining automated dependencies; WhatWeb remains manual/AUR. No global pip install is used, preserving PEP 668 compatibility. The final verification and `scanforge doctor --profile NAME` identify anything still missing.
+
 You can also build the binary locally:
 
 ```bash

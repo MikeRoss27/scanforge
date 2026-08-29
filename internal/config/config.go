@@ -175,6 +175,7 @@ tools:
   nuclei: nuclei
   gau: gau
   tlsx: tlsx
+  shuffledns: shuffledns
   chromium: chromium
 
 # overrides for built-in profiles (safe, recon, web, ports, vuln, deep, full)
@@ -236,6 +237,9 @@ func mergeDefaults(base, parsed *Config) {
 	}
 	if parsed.Tools.Shuffledns == "" {
 		parsed.Tools.Shuffledns = base.Tools.Shuffledns
+	}
+	if parsed.Tools.Chromium == "" {
+		parsed.Tools.Chromium = base.Tools.Chromium
 	}
 	if len(parsed.Profiles) == 0 {
 		parsed.Profiles = base.Profiles

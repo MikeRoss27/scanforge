@@ -17,12 +17,12 @@ import (
 var (
 	headerStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(ui.Accent)
+			Foreground(lipgloss.Color("8"))
 
 	rowStyle = lipgloss.NewStyle().Padding(0, 1)
 
 	warnStyle = lipgloss.NewStyle().
-			Foreground(ui.AccentOrange).
+			Foreground(ui.AccentYellow).
 			Bold(true)
 )
 
@@ -206,11 +206,12 @@ func (m ScanModel) View() string {
 		out.WriteString(targetLine + "\n\n")
 	}
 
-	// Top banner with the brand gradient and a live run timer on the right.
-	banner := ui.Gradient("SCANFORGE ORCHESTRATOR", ui.AccentCyan, ui.AccentMagenta)
+	// Top banner — single calm brand color, no rainbow gradient.
+	// Matches ProjectDiscovery style: bold single accent + dim suffix.
+	banner := ui.AccentBold("SCANFORGE") + ui.Dim("  ORCHESTRATOR")
 	elapsed := ui.Dim("⏱ " + time.Since(m.started).Round(time.Second).String())
-	out.WriteString(ui.Bold(banner) + "  " + elapsed + "\n")
-	out.WriteString(ui.Dim(strings.Repeat("─", lipgloss.Width(banner))) + "\n\n")
+	out.WriteString(banner + "  " + elapsed + "\n")
+	out.WriteString(ui.Dim(strings.Repeat("─", 28)) + "\n\n")
 
 	// The table
 	if len(m.order) > 0 {
