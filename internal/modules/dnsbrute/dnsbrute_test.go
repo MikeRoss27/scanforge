@@ -87,18 +87,20 @@ func TestReadDomainsDedupesAndCaps(t *testing.T) {
 	}
 }
 
-func TestRunRealRunFailsWithoutWordlist(t *testing.T) {
+func TestRunDryRunSucceedsWithoutWordlist(t *testing.T) {
 	run := testRun(t)
 	writeFile(t, run.Path("01_subdomains", "subdomains.txt"), "example.com\n")
 
-	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	runCtx := modules.NewRunContext("example.com", "web", true, run)
 	if err := runCtx.AddArtifact("subdomains", modules.Artifact{Name: "subdomains", Type: "text", Path: "01_subdomains/subdomains.txt"}); err != nil {
 		t.Fatal(err)
 	}
 
+	t.Setenv("SCANFORGE_DNS_WORDLIST", "/nonexistent/wordlist.txt")
+
 	_, err := New("shuffledns").Run(context.Background(), runCtx, runner.NewDryRunExecutor(false))
-	if err == nil || !strings.Contains(err.Error(), "no DNS wordlist found") {
-		t.Fatalf("expected wordlist error, got: %v", err)
+	if err != nil {
+		t.Fatalf("dry-run should succeed without wordlist, got: %v", err)
 	}
 }
 

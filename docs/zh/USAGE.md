@@ -28,6 +28,8 @@ curl -fsSL https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.s
 .\install.ps1 -Full
 ```
 
+在 Arch 上，`--full` 只通过 `pacman -S --needed` 安装官方仓库软件包，不会执行完整系统升级。其余自动化依赖使用固定版本的 Go 工具、隔离的 pipx 环境以及经过 SHA-256 验证的上游文件；WhatWeb 仍需手动或通过 AUR 安装。安装器不会执行全局 `pip install`，因此兼容 PEP 668。最终检查与 `scanforge doctor --profile NAME` 会明确列出仍缺少的项目。
+
 你也可以在本地构建二进制文件：
 
 ```bash

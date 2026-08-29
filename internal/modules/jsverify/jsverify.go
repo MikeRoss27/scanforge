@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -105,6 +106,8 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	browser := m.browserPath
 	if browser == "" {
 		browser = detectBrowser()
+	} else if resolved, err := exec.LookPath(browser); err == nil {
+		browser = resolved
 	} else if _, err := os.Stat(browser); err != nil {
 		// A configured path that does not exist is as good as no browser:
 		// report the skip once instead of failing every replay.

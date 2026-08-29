@@ -28,6 +28,8 @@ Depuis un clone du dépôt, les scripts locaux font la même chose :
 .\install.ps1 -Full
 ```
 
+Sur Arch, `--full` utilise `pacman -S --needed` pour les seuls paquets officiels, sans mise à niveau globale, puis Go, pipx et des artefacts upstream vérifiés. WhatWeb reste manuel/AUR et aucun helper AUR n'est requis. L'installateur n'effectue aucun `pip install` global (compatibilité PEP 668). La vérification finale et `scanforge doctor --profile NOM` indiquent précisément ce qui manque encore.
+
 Vous pouvez aussi construire le binaire localement :
 
 ```bash

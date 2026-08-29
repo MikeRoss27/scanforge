@@ -69,8 +69,8 @@ func printPlanPanel(out io.Writer, plan *app.PlanResult) {
 	}
 
 	var info strings.Builder
-	fmt.Fprintf(&info, "%s\n", kv("TARGET", ui.Primary(plan.Target)))
-	fmt.Fprintf(&info, "%s\n", kv("PROFILE", ui.Secondary(plan.Profile)))
+	fmt.Fprintf(&info, "%s\n", kv("TARGET", ui.AccentBold(plan.Target)))
+	fmt.Fprintf(&info, "%s\n", kv("PROFILE", ui.Primary(plan.Profile)))
 	fmt.Fprintf(&info, "%s\n", kv("SCOPE", ui.Dim(plan.Scope)))
 	fmt.Fprintf(&info, "%s\n", kv("SOURCE", ui.Dim(fmt.Sprintf("%s (mode %s)", plan.ScopeSource, plan.ScopeMode))))
 	for _, entry := range plan.ScopeEntries {

@@ -51,8 +51,8 @@ func printRunInfoPanel(opts RunOptions, profile string, scanRun *storage.Run, ef
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", kv("TARGET", ui.Primary(opts.Target)))
-	fmt.Fprintf(&b, "%s\n", kv("PROFILE", ui.Secondary(profile)))
+	fmt.Fprintf(&b, "%s\n", kv("TARGET", ui.AccentBold(opts.Target)))
+	fmt.Fprintf(&b, "%s\n", kv("PROFILE", ui.Primary(profile)))
 	fmt.Fprintf(&b, "%s\n", kv("SCOPE", ui.Dim(fmt.Sprintf("%s (%s, mode %s)", scanRun.Manifest.ScopePath, effective.proposal.Source, effective.proposal.Mode))))
 	fmt.Fprintf(&b, "%s\n", kv("DRY RUN", dryTag))
 	fmt.Fprintf(&b, "%s", kv("OUTPUT", ui.Dim(scanRun.RootDir)))
