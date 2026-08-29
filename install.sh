@@ -58,6 +58,7 @@ make_temp_dir() {
         || err "Unable to create a secure temporary directory"
 }
 
+# shellcheck disable=SC2120 # called with and without args; default uses uname
 detect_os() {
     local kernel="${1:-${SCANFORGE_UNAME_S:-$(uname -s)}}"
     case "$kernel" in
@@ -68,6 +69,7 @@ detect_os() {
     esac
 }
 
+# shellcheck disable=SC2120 # called with and without args; default uses uname
 detect_arch() {
     local machine="${1:-${SCANFORGE_UNAME_M:-$(uname -m)}}"
     case "$machine" in
@@ -179,7 +181,9 @@ extract_archive() {
 install_scanforge() {
     local extension="tar.gz" binary_name="scanforge" release_name asset url archive
     local checksums expected binary embedded_checksum embedded_expected checksum_url http_code
+    # shellcheck disable=SC2119 # detect_* intentional: no args means auto-detect
     detect_os
+    # shellcheck disable=SC2119
     detect_arch
     resolve_version
     make_temp_dir
@@ -227,6 +231,7 @@ install_scanforge() {
 load_tool_versions() {
     local script_dir line key value
     make_temp_dir
+    # shellcheck disable=SC2015 # cd failure should still fallback to true
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
     if [ -n "$script_dir" ] && [ -f "${script_dir}/.tools-version" ]; then
         TOOLS_FILE="${script_dir}/.tools-version"
@@ -383,6 +388,7 @@ verify_full_install() {
 }
 
 install_full() {
+    # shellcheck disable=SC2119
     detect_os
     [ "$OS" != "windows" ] || err "Use install.ps1 -Full on Windows"
     load_tool_versions
