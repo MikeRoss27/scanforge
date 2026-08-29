@@ -19,9 +19,16 @@ func NewPlanCommand(application *app.App) *cobra.Command {
 	var exclusions []string
 	var targetsFile string
 	cmd := &cobra.Command{
-		Use:   "plan <target>",
-		Short: "Show the validated scan pipeline without creating a run",
-		Args:  cobra.MaximumNArgs(1),
+		Use:     "plan <target>",
+		GroupID: groupCore,
+		Short:   "Preview the validated scan pipeline without running it",
+		Long: `Validates the profile, scope and module dependencies, then prints the
+execution waves (which modules run, in what order, and what each one
+requires) without executing anything. Use it to sanity-check a profile
+before running a scan.`,
+		Example: `  scanforge plan example.com --preset deep
+  scanforge plan --targets targets.txt --profile web`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --profile takes precedence; --preset is shorthand for one of
 			// the built-in profile names.
@@ -46,7 +53,7 @@ func NewPlanCommand(application *app.App) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan preset/profile to inspect")
+	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan profile to inspect (default from config)")
 	cmd.Flags().StringVar(&preset, "preset", "", "User-oriented preset (safe, recon, web, ports, vuln, deep)")
 	cmd.Flags().StringVar(&targetsFile, "targets", "", "File with one target per line (multi-target engagement; exclusive with a positional target)")
 	cmd.Flags().StringVarP(&scopeFile, "scope", "s", "", "Scope file (default from config)")

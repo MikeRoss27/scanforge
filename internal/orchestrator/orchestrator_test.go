@@ -278,6 +278,59 @@ func TestOrchestratorDeadlockDoesNotOverstate(t *testing.T) {
 	}
 }
 
+// TestOrchestratorModuleTimeout: a module exceeding its configured
+// module_timeouts limit is killed via context deadline and reported as a
+// failure with an actionable message; its dependents are skipped.
+func TestOrchestratorModuleTimeout(t *testing.T) {
+	reg := modules.NewRegistry()
+	reg.Register(&mockModule{name: "slow", delay: 200 * time.Millisecond, produces: []string{"slow_art"}})
+	reg.Register(&mockModule{name: "dependent", requires: []string{"slow_art"}})
+
+	cfg := config.Default()
+	cfg.ModuleTimeouts["slow"] = 20 * time.Millisecond
+	cfg.Profiles["test"] = []string{"slow", "dependent"}
+
+	results, err := New(runner.NewDryRunExecutor(false), reg).Run(
+		context.Background(), nil,
+		Options{Target: "example.com", Profile: "test", Config: cfg},
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), `module "slow" timed out after 20ms`) {
+		t.Fatalf("expected a timeout error, got %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("result count = %d, want 2", len(results))
+	}
+	if results[0].Status != "failed" {
+		t.Fatalf("status = %q, want failed", results[0].Status)
+	}
+	if results[1].Status != "skipped" {
+		t.Fatalf("dependent status = %q, want skipped", results[1].Status)
+	}
+}
+
+// TestOrchestratorNoTimeoutLeavesModuleDefault: without a configured
+// module_timeouts entry the module runs to completion regardless of delay.
+func TestOrchestratorNoTimeoutLeavesModuleDefault(t *testing.T) {
+	reg := modules.NewRegistry()
+	reg.Register(&mockModule{name: "slow", delay: 20 * time.Millisecond})
+
+	cfg := config.Default()
+	cfg.Profiles["test"] = []string{"slow"}
+
+	results, err := New(runner.NewDryRunExecutor(false), reg).Run(
+		context.Background(), nil,
+		Options{Target: "example.com", Profile: "test", Config: cfg},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].Status != "completed" {
+		t.Fatalf("results = %+v, want a single completed module", results)
+	}
+}
+
 // TestAbortCancelsRemainingModules covers the user-quit path: cancelling the
 // context must mark running modules aborted, return ErrRunAborted, and never
 // report "context canceled" as a module failure.

@@ -62,6 +62,29 @@ profiles:
     - nuclei
 ```
 
+每个模块的时间限制在 `module_timeouts` 下配置，使用 Go 时长格式。超过限制的
+模块会被终止并标记为失败，其依赖模块会被标记为 `skipped`；未配置的模块使用
+各自的默认值：
+
+```yaml
+module_timeouts:
+  nuclei: 45m
+  katana: 20m
+```
+
+`ai` 部分配置 `scanforge triage` 使用的 LLM 后端。任何提供 OpenAI 兼容
+chat completions API 的服务器都可以（llama.cpp、vLLM、Ollama、LM Studio 等）。
+省略该部分时，triage 以纯确定性模式运行（无模型的去重和分组）：
+
+```yaml
+ai:
+  base_url: http://127.0.0.1:8080/v1
+  model: qwen3.5-9b
+  api_key: ""        # 本地服务器可省略
+  timeout: 5m
+  temperature: 0.1   # 低值可保持 triage 输出稳定
+```
+
 ## 推荐流程
 
 首先检查依赖和计划：
@@ -99,10 +122,34 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge plan TARGET` | 显示范围与 DAG 波次。 |
 | `scanforge run TARGET` | 运行已授权的配置文件。 |
 | `scanforge scan TARGET` | `run` 的别名。 |
+| `scanforge triage RUN` | 对一次运行的发现结果去重、分组并（配置 `ai:` 后端时）分析。 |
 | `scanforge auth` | 管理某些工具所需的密钥。 |
 | `scanforge version` | 显示二进制版本。 |
 
 查看 `scanforge <命令> --help` 获取完整选项列表。
+
+## 发现结果分诊
+
+`scanforge triage <run>` 将合并后的报告投影为规范化的发现结果，计算确定性关系
+（重复、共享 CVE、相同端点、相同资产），并将结果写入 `<run>/triage/`：
+
+```text
+triage/manifest.json    来源：模型、提示词版本、输入摘要
+triage/relations.json   发现结果之间的确定性关系
+triage/insights.json    洞察（去重组 + 已验证的 LLM 洞察）
+triage/report.md        人类可读摘要
+```
+
+配置 `ai:` 后端后，模型只收到刻意精简的发现结果投影（证据截断、绝不发送工具
+原始输出），其洞察在存储前会经过验证：任何引用未知发现 ID、CVE 或证据字符串
+的洞察都会被拒绝。模型可以解释发现结果，但绝不能创建它们。输入未变化时重新
+运行会命中缓存（0 次推理）；`--force` 可绕过缓存：
+
+```bash
+scanforge triage runs/example.com/2026-08-19T10:00:00Z
+scanforge triage runs/example.com/2026-08-19T10:00:00Z --force
+scanforge triage runs/example.com/2026-08-19T10:00:00Z --model qwen3.5-9b
+```
 
 ## 多目标评估
 

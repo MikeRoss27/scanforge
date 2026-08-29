@@ -66,6 +66,32 @@ profiles:
     - nuclei
 ```
 
+Les limites de temps par module se configurent sous `module_timeouts` avec des
+durées Go. Un module qui dépasse sa limite est tué et signalé comme échoué, et
+ses dépendants sont marqués `skipped` ; les modules sans limite gardent leur
+défaut :
+
+```yaml
+module_timeouts:
+  nuclei: 45m
+  katana: 20m
+```
+
+La section `ai` configure le backend LLM utilisé par `scanforge triage`. Tout
+serveur exposant l'API OpenAI-compatible chat completions fonctionne
+(llama.cpp, vLLM, Ollama, LM Studio, ...). Si la section est absente, le
+triage fonctionne en mode purement déterministe (déduplication et
+regroupement sans modèle) :
+
+```yaml
+ai:
+  base_url: http://127.0.0.1:8080/v1
+  model: qwen3.5-9b
+  api_key: ""        # facultatif pour les serveurs locaux
+  timeout: 5m
+  temperature: 0.1   # des valeurs basses stabilisent le triage
+```
+
 ## Templates nuclei intégrés
 
 `--nuclei-include-custom` ajoute au run nuclei les templates livrés dans le
@@ -114,10 +140,37 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge plan TARGET` | Affiche le scope et les vagues du DAG. |
 | `scanforge run TARGET` | Exécute un profil autorisé. |
 | `scanforge scan TARGET` | Alias de `run`. |
+| `scanforge triage RUN` | Regroupe et (avec un backend `ai:`) analyse les findings d'un run. |
 | `scanforge auth` | Gère les clés requises par certains outils. |
 | `scanforge version` | Affiche la version du binaire. |
 
 Consultez `scanforge <commande> --help` pour la liste exacte des options.
+
+## Triage des findings
+
+`scanforge triage <run>` projette le rapport consolidé en findings canoniques,
+calcule les relations déterministes (doublons, CVE partagée, endpoint commun,
+même actif) et écrit le résultat sous `<run>/triage/` :
+
+```text
+triage/manifest.json    provenance : modèle, version du prompt, empreinte d'entrée
+triage/relations.json   relations déterministes entre findings
+triage/insights.json    insights (groupes de doublons + insights LLM validés)
+triage/report.md        résumé lisible
+```
+
+Avec un backend `ai:` configuré, le modèle reçoit une projection volontairement
+réduite des findings (preuves tronquées, jamais de sortie brute d'outil) et ses
+insights sont validés avant stockage : tout insight référençant un ID de
+finding, une CVE ou une preuve inconnus est rejeté. Le modèle peut interpréter
+les findings, jamais en créer. Relancer avec une entrée inchangée touche le
+cache (0 inférence) ; `--force` le contourne :
+
+```bash
+scanforge triage runs/example.com/2026-08-19T10:00:00Z
+scanforge triage runs/example.com/2026-08-19T10:00:00Z --force
+scanforge triage runs/example.com/2026-08-19T10:00:00Z --model qwen3.5-9b
+```
 
 ## Engagements multi-cibles
 

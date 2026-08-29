@@ -42,8 +42,25 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "run <target>",
 		Aliases: []string{"scan"},
-		Short:   "Run a scan profile against an authorized target",
-		Args:    cobra.MaximumNArgs(1),
+		GroupID: groupCore,
+		Short:   "Run a scan against an authorized target",
+		Long: `Executes the scan pipeline for a target (or a list of targets) using
+the selected profile or preset. The effective scope is built from scope.txt
+and every artifact is filtered against it before downstream modules consume
+it. Results are written to runs/<target>/<timestamp>/ with a consolidated
+report (report.json / report.md).`,
+		Example: `  # Scan a single target with the default profile
+  scanforge run example.com
+
+  # Deep preset: full subdomain enumeration, port scan and vulnerability scan
+  scanforge run example.com --preset deep
+
+  # Multi-target engagement from a file
+  scanforge run --targets targets.txt --profile web
+
+  # Preview the commands without executing them
+  scanforge run example.com --dry-run`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --profile takes precedence; --preset is shorthand for one of
 			// the built-in profile names.

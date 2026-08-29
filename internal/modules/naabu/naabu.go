@@ -54,9 +54,10 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 
 	if err := runCtx.AddArtifact("open_ports", modules.Artifact{
-		Name: "open_ports",
-		Type: "text",
-		Path: "03_ports/naabu.txt",
+		Name:   "open_ports",
+		Type:   "text",
+		Path:   "03_ports/naabu.txt",
+		Scoped: true,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to publish open ports: %w", err)
 	}

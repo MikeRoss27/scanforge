@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/profile"
 	"gopkg.in/yaml.v3"
@@ -17,7 +18,32 @@ type Config struct {
 	DefaultScope   string              `yaml:"default_scope"`
 	Tools          Tools               `yaml:"tools"`
 	Profiles       map[string][]string `yaml:"profiles"`
-	Webhook        Webhook             `yaml:"webhook"`
+	// ModuleTimeouts bounds how long a module may run before it is killed,
+	// keyed by module name with Go duration values (e.g. "30m", "1h30m").
+	// Zero (unset) means the module's own default applies.
+	ModuleTimeouts map[string]time.Duration `yaml:"module_timeouts"`
+	Webhook        Webhook                  `yaml:"webhook"`
+	// AI configures the LLM backend used by `scanforge triage`. When empty,
+	// triage runs in deterministic-only mode.
+	AI AI `yaml:"ai"`
+}
+
+// AI holds the OpenAI-compatible endpoint used by the triage analyzer. Any
+// server exposing /v1/chat/completions works: llama.cpp, vLLM, Ollama, LM
+// Studio, ...
+type AI struct {
+	// BaseURL is the full API base including /v1, e.g.
+	// http://127.0.0.1:8080/v1.
+	BaseURL string `yaml:"base_url"`
+	// Model is the model name reported by the server.
+	Model string `yaml:"model"`
+	// APIKey is sent as a Bearer token; empty for local servers.
+	APIKey string `yaml:"api_key"`
+	// Timeout bounds a single generation request (Go duration).
+	Timeout time.Duration `yaml:"timeout"`
+	// Temperature for triage generation. Low values keep output stable.
+	// A nil value means unset (server default); a pointer to 0.0 means explicit zero.
+	Temperature *float64 `yaml:"temperature"`
 }
 
 // Webhook holds the end-of-run notification endpoint. The payload is a
@@ -183,6 +209,22 @@ tools:
 #   passive:
 #     - subfinder
 #     - httpx
+
+# per-module time limits (Go durations); a module exceeding its limit is
+# killed and reported as failed, and its dependents are skipped
+# module_timeouts:
+#   nuclei: 45m
+#   katana: 20m
+
+# LLM backend for the scanforge triage command (OpenAI-compatible API:
+# llama.cpp, vLLM, Ollama, LM Studio, ...). When omitted, triage runs in
+# deterministic-only mode (deduplication and grouping without a model).
+# ai:
+#   base_url: http://127.0.0.1:8080/v1
+#   model: qwen3.5-9b
+#   api_key: ""
+#   timeout: 5m
+#   temperature: 0.1
 `, DefaultConfigVersion, DefaultWorkspace, DefaultProfile, DefaultScope)
 }
 
@@ -243,6 +285,21 @@ func mergeDefaults(base, parsed *Config) {
 	}
 	if len(parsed.Profiles) == 0 {
 		parsed.Profiles = base.Profiles
+	}
+	if parsed.AI.BaseURL == "" {
+		parsed.AI.BaseURL = base.AI.BaseURL
+	}
+	if parsed.AI.Model == "" {
+		parsed.AI.Model = base.AI.Model
+	}
+	if parsed.AI.APIKey == "" {
+		parsed.AI.APIKey = base.AI.APIKey
+	}
+	if parsed.AI.Timeout == 0 {
+		parsed.AI.Timeout = base.AI.Timeout
+	}
+	if parsed.AI.Temperature == nil {
+		parsed.AI.Temperature = base.AI.Temperature
 	}
 }
 
