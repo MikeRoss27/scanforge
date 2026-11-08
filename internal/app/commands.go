@@ -71,7 +71,8 @@ func (a *App) Init(ctx context.Context, opts InitOptions) error {
 	}
 
 	fmt.Println()
-	fmt.Println(ui.Header("Initialization Complete", ui.AccentGreen))
+	fmt.Println(ui.Green(ui.Bold("✓ Initialization complete")))
+	fmt.Println()
 
 	ui.Info("Next steps:")
 	fmt.Printf("  %s %s\n", ui.Primary("1."), ui.Bold("scanforge doctor"))

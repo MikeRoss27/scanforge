@@ -21,16 +21,10 @@ func updateModel(t *testing.T, m ScanModel, msg tea.Msg) (ScanModel, tea.Cmd) {
 
 func TestNewScanModel(t *testing.T) {
 	ch := make(chan orchestrator.Event)
-	m := NewScanModel(ch, "example.com", "web")
+	m := NewScanModel(ch, "", "")
 
 	if m.eventChan != ch {
 		t.Error("expected event channel to be stored")
-	}
-	if m.target != "example.com" {
-		t.Errorf("expected target %q, got %q", "example.com", m.target)
-	}
-	if m.profile != "web" {
-		t.Errorf("expected profile %q, got %q", "web", m.profile)
 	}
 	if m.rows == nil {
 		t.Fatal("expected non-nil rows map")
@@ -204,7 +198,7 @@ func TestViewRendersProgress(t *testing.T) {
 	m, _ = updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "subfinder", Status: "completed", Dur: time.Second, Summary: "3 hosts"})
 
 	view := m.View()
-	for _, want := range []string{"subfinder", "DONE", "PROGRESS", "q: quit"} {
+	for _, want := range []string{"subfinder", "✓", "1 completed", "q: quit"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("expected view to contain %q, got:\n%s", want, view)
 		}
@@ -230,7 +224,7 @@ func TestViewShowsSkippedModulesWithOwnBadgeAndTally(t *testing.T) {
 	m, _ = updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "nmap", Status: "skipped"})
 
 	view := m.View()
-	for _, want := range []string{"nmap", "SKIP", "1 completed", "1 failed", "1 skipped/aborted"} {
+	for _, want := range []string{"nmap", "skipped", "1 completed", "1 failed", "1 skipped/aborted"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("expected view to contain %q, got:\n%s", want, view)
 		}

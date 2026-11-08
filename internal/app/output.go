@@ -51,13 +51,13 @@ func printRunInfoPanel(opts RunOptions, profile string, scanRun *storage.Run, ef
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", kv("TARGET", ui.AccentBold(opts.Target)))
-	fmt.Fprintf(&b, "%s\n", kv("PROFILE", ui.Primary(profile)))
+	fmt.Fprintf(&b, "%s\n", kv("TARGET", ui.Bold(opts.Target)))
+	fmt.Fprintf(&b, "%s\n", kv("PROFILE", ui.Secondary(profile)))
 	fmt.Fprintf(&b, "%s\n", kv("SCOPE", ui.Dim(fmt.Sprintf("%s (%s, mode %s)", scanRun.Manifest.ScopePath, effective.proposal.Source, effective.proposal.Mode))))
 	fmt.Fprintf(&b, "%s\n", kv("DRY RUN", dryTag))
 	fmt.Fprintf(&b, "%s", kv("OUTPUT", ui.Dim(scanRun.RootDir)))
 
-	fmt.Println(ui.PanelWith("⚡ RUN STARTED", b.String(), ui.Accent, ui.Accent))
+	fmt.Println(ui.Section("RUN STARTED", b.String()))
 	fmt.Println()
 }
 
@@ -92,16 +92,6 @@ func printRunSummaryBox(out io.Writer, scanRun *storage.Run, results []*modules.
 		return fmt.Sprintf("%-9s %s", ui.DimBold(key), val)
 	}
 
-	border := ui.Accent
-	switch scanRun.Manifest.Status {
-	case "completed":
-		border = ui.AccentGreen
-	case "partial":
-		border = ui.AccentYellow
-	case "failed":
-		border = ui.AccentRed
-	}
-
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", statusLine(scanRun.Manifest.Status))
 	fmt.Fprintf(&b, "%s\n", kv("DURATION", ui.Dim(duration)))
@@ -118,7 +108,7 @@ func printRunSummaryBox(out io.Writer, scanRun *storage.Run, results []*modules.
 	}
 	fmt.Fprintf(&b, "%s", kv("OUTPUT", ui.Dim(scanRun.RootDir)))
 
-	_, _ = fmt.Fprintln(out, ui.PanelWith("🏁 SCAN SUMMARY", b.String(), border, border))
+	_, _ = fmt.Fprintln(out, ui.Section("SCAN SUMMARY", b.String()))
 }
 
 // wrapModuleList renders "name (status)" entries on lines of at most

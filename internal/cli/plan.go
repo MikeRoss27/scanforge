@@ -69,8 +69,8 @@ func printPlanPanel(out io.Writer, plan *app.PlanResult) {
 	}
 
 	var info strings.Builder
-	fmt.Fprintf(&info, "%s\n", kv("TARGET", ui.AccentBold(plan.Target)))
-	fmt.Fprintf(&info, "%s\n", kv("PROFILE", ui.Primary(plan.Profile)))
+	fmt.Fprintf(&info, "%s\n", kv("TARGET", ui.Bold(plan.Target)))
+	fmt.Fprintf(&info, "%s\n", kv("PROFILE", ui.Secondary(plan.Profile)))
 	fmt.Fprintf(&info, "%s\n", kv("SCOPE", ui.Dim(plan.Scope)))
 	fmt.Fprintf(&info, "%s\n", kv("SOURCE", ui.Dim(fmt.Sprintf("%s (mode %s)", plan.ScopeSource, plan.ScopeMode))))
 	for _, entry := range plan.ScopeEntries {
@@ -95,6 +95,6 @@ func printPlanPanel(out io.Writer, plan *app.PlanResult) {
 	}
 	table := ui.Table([]string{"WAVE", "MODULE", "RISK", "REQUIRES"}, rows)
 
-	_, _ = fmt.Fprintln(out, ui.PanelWith("⚙ SCAN PLAN", info.String()+"\n"+table, ui.Accent, ui.Accent))
+	_, _ = fmt.Fprintln(out, ui.Section("SCAN PLAN", info.String()+"\n"+table))
 	_, _ = fmt.Fprintln(out)
 }

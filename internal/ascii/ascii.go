@@ -72,15 +72,11 @@ $$    $$/ $$    $$/ $$ |  $$ |$$ | $$$ |$$ |     $$    $$/ $$ |  $$ |$$    $$/ $
 `
 )
 
-// PrintBanner prints one of the 4 banners. By default it picks randomly
-// among Blocks/Classic/Slanted/Skull so l'ascii art change à chaque run.
-// Pour figer un style : SCANFORGE_BANNER=blocks|classic|slanted|skull|off
-// (ex: SCANFORGE_BANNER=classic ./scanforge run ...). Sans env, random.
-// Le rendu reste monochrome bleu calme (ui.Primary) — plus de dégradé
-// violet/rose. Historiquement le code tirait au hasard parmi 3 banners avec
-// 3 gradients (a18501d), puis a été figé sur Blocks + gradient cyan→magenta
-// pour "branding stable" — d'où l'impression que "ça ne change jamais"
-// alors que 4 const existent mais une seule était utilisée.
+// PrintBanner prints one of the 4 banners (Blocks/Classic/Slanted/Skull),
+// picked randomly unless pinned via SCANFORGE_BANNER=blocks|classic|slanted
+// |skull|off (e.g. SCANFORGE_BANNER=classic ./scanforge run ...). Each line
+// renders with a constant slate → cyan gradient, matching the rest of the
+// CLI's accent color.
 func PrintBanner() {
 	style := strings.ToLower(strings.TrimSpace(os.Getenv("SCANFORGE_BANNER")))
 	var banner string
@@ -108,7 +104,7 @@ func PrintBanner() {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		fmt.Println(ui.Primary(line))
+		fmt.Println(ui.Gradient(line, ui.BorderColor, ui.Accent))
 	}
 	fmt.Println()
 }

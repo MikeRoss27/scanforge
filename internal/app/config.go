@@ -153,14 +153,14 @@ func (a *App) PrintValidateConfig(result *ValidateConfigResult) error {
 
 	if len(result.Problems) > 0 {
 		fmt.Println()
-		fmt.Println(ui.Header("Problems", ui.AccentRed))
+		fmt.Println(ui.Red(ui.Bold("PROBLEMS")))
 		for _, problem := range result.Problems {
 			fmt.Printf("  - %s\n", problem)
 		}
 	}
 	if len(result.Warnings) > 0 {
 		fmt.Println()
-		fmt.Println(ui.Header("Warnings", ui.AccentYellow))
+		fmt.Println(ui.Yellow(ui.Bold("WARNINGS")))
 		for _, warning := range result.Warnings {
 			fmt.Printf("  - %s\n", warning)
 		}
