@@ -103,7 +103,7 @@ curl -fsSL https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.s
 
 ### Option 2: Full installation (binary + scan tools)
 
-ScanForge orchestrates external tools (nmap, nuclei, subfinder, httpx, ...). To install them automatically **on top of** ScanForge (requires Go):
+ScanForge orchestrates external tools (nmap, nuclei, subfinder, httpx, ...). `--full` installs dependencies that have a reliable unattended method (a recent Go remains required on Debian/Ubuntu and Windows):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.sh | bash -s -- --full
@@ -116,9 +116,16 @@ chmod +x install.sh && ./install.sh --full   # Linux / macOS
 .\install.ps1 -Full                           # Windows (PowerShell)
 ```
 
+- Arch uses only official pacman packages (`nmap`, `chromium`, `go`, `python-pipx`, `base-devel`) and never runs `pacman -Syu`. Pinned Go tools use `go install`, `wafw00f` uses pipx, and verified upstream artifacts provide massdns and the DNS wordlist. WhatWeb remains manual/AUR-only; no AUR helper is assumed.
+- Debian/Ubuntu installs packages available in the current apt release, builds verified massdns when needed, and never modifies system Python with global pip.
+- macOS uses Homebrew, pinned Go tools and pipx; WhatWeb and a Chrome-family browser may remain manual.
+- Native Windows installs pinned Go tools and uses pipx when available. Nmap, massdns and WhatWeb remain manual; WSL or Docker is recommended for profiles that need them.
+
+The final verification reports anything still missing. `scanforge doctor --profile NAME` then gives profile-specific status and installation guidance.
+
 ### Option 3: Docker (Zero local installation)
 
-If you don't want to install Go or the other tools on your host system, use Docker. Everything is pre-configured in the image!
+If you don't want to install Go or the other tools on your host system, use Docker. Runtime tools, massdns, Chromium and a verified pinned DNS wordlist are included.
 
 ```bash
 # With docker-compose

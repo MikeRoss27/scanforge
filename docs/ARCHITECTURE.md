@@ -49,3 +49,43 @@ report.md      readable summary
 
 The manifest distinguishes the `completed`, `partial` and `failed` states,
 references the produced artifacts and keeps the scope source for audit.
+
+## Triage layer (H3.1)
+
+`scanforge triage <run>` derives interpretation from the report without ever
+modifying it:
+
+```text
+report.json ──► finding.FromReport ──► canonical findings (deterministic IDs)
+                                          │
+                                          ▼
+                              finding.BuildRelations (L0/L1)
+                                          │
+                                          ▼
+                              triage engine: group → bundle → analyze → validate
+                                          │
+                                          ▼
+                          <run>/triage/ (manifest, relations, insights, report.md)
+```
+
+The boundary is strict: **ScanForge owns facts, AI owns interpretations,
+validation sits between them.**
+
+- `internal/finding` projects the report into flat findings with
+  deterministic IDs (`F-` + hash of source|template|asset|matched_at|evidence)
+  and computes deterministic relations (duplicate 1.00, shared CVE 0.99,
+  same endpoint 0.95, same asset 0.80). L2 (semantic) relations can add to
+  them but never override them.
+- `internal/triage` runs the pipeline: grouping (union-find over the relation
+  graph), deterministic insights (summary + duplicate groups), optional LLM
+  analysis, validation and reconciliation (priority-ordered, stable IDs).
+- The LLM receives only a reduced projection (`TriageBundle`): truncated
+  evidence, no raw tool output, capped at 150 findings. Its output is
+  validated against the facts — unknown finding IDs, CVEs or evidence strings
+  reject the whole insight — so the model cannot inject new truths.
+- `internal/inference` abstracts the transport behind a `Client` interface;
+  the bundled implementation speaks the OpenAI-compatible chat completions
+  API (llama.cpp, vLLM, Ollama, ...).
+- Provenance is recorded in `triage/manifest.json` (model, prompt version,
+  input digest, temperature) and the cache reuses results when the input
+  digest, model and prompt version are unchanged (`--force` bypasses it).

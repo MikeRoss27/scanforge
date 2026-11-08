@@ -9,9 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
+	"github.com/MikeRoss27/scanforge/internal/dependencies"
 	"github.com/MikeRoss27/scanforge/internal/ui"
 )
 
@@ -66,16 +68,54 @@ func (DefaultToolChecker) CheckTool(ctx context.Context, name, binary string, ve
 
 	check.Status = SeverityOK
 	version := extractVersionLine(versionOutput)
+
+	goModVersion := ""
+	if name == "dnsx" || name == "tlsx" || name == "ffuf" {
+		goModVersion = goModVersionForBinary(ctx, path, goModulePathForTool(name))
+	}
+
 	if verbose {
-		check.Message = fmt.Sprintf("%s (%s)", version, path)
+		if goModVersion != "" {
+			check.Message = fmt.Sprintf("%s (%s; tool reports %s)", goModVersion, path, version)
+		} else {
+			check.Message = fmt.Sprintf("%s (%s)", version, path)
+		}
 	} else {
-		check.Message = version
+		if goModVersion != "" {
+			check.Message = goModVersion
+		} else {
+			check.Message = version
+		}
 		if check.Message == "" {
 			check.Message = path
 		}
 	}
 
 	return check
+}
+
+func goModVersionForBinary(ctx context.Context, binaryPath, modulePath string) string {
+	if modulePath == "" {
+		return ""
+	}
+	goModOutput, err := runGoVersionCommand(ctx, binaryPath)
+	if err != nil {
+		return ""
+	}
+	return extractVersionFromGoMod(goModOutput, modulePath)
+}
+
+func goModulePathForTool(name string) string {
+	switch name {
+	case "dnsx":
+		return "github.com/projectdiscovery/dnsx"
+	case "tlsx":
+		return "github.com/projectdiscovery/tlsx"
+	case "ffuf":
+		return "github.com/ffuf/ffuf/v2"
+	default:
+		return ""
+	}
 }
 
 type Runner struct {
@@ -100,45 +140,59 @@ func (r *Runner) Run(ctx context.Context, opts Options) ([]Check, int, error) {
 		profile = cfg.DefaultProfile
 	}
 
-	checks := make([]Check, 0, 8)
+	checks := make([]Check, 0, 20)
 
 	moduleNames, err := cfg.ProfileModules(profile)
 	if err != nil {
-		// fallback to empty set if profile is unknown
-		moduleNames = []string{}
+		return nil, 1, err
 	}
-	moduleSet := make(map[string]bool)
+	moduleSet := make(map[string]bool, len(moduleNames))
 	for _, m := range moduleNames {
 		moduleSet[m] = true
 	}
 
-	requiredTools := []struct {
-		name   string
-		binary string
-	}{
-		{name: "subfinder", binary: cfg.ToolPath("subfinder")},
-		{name: "dnsx", binary: cfg.ToolPath("dnsx")},
-		{name: "httpx", binary: cfg.ToolPath("httpx")},
-		{name: "naabu", binary: cfg.ToolPath("naabu")},
-		{name: "nmap", binary: cfg.ToolPath("nmap")},
-		{name: "whatweb", binary: cfg.ToolPath("whatweb")},
-		{name: "wafw00f", binary: cfg.ToolPath("wafw00f")},
-		{name: "katana", binary: cfg.ToolPath("katana")},
-		{name: "ffuf", binary: cfg.ToolPath("ffuf")},
-		{name: "nuclei", binary: cfg.ToolPath("nuclei")},
-		{name: "gau", binary: cfg.ToolPath("gau")},
-		{name: "tlsx", binary: cfg.ToolPath("tlsx")},
-		{name: "shuffledns", binary: cfg.ToolPath("shuffledns")},
-	}
-
-	for _, tool := range requiredTools {
-		if len(moduleSet) > 0 && !moduleSet[tool.name] {
-			continue
+	for _, dependency := range dependencies.ForModules(moduleNames) {
+		binary := cfg.ToolPath(dependency.Binary)
+		if dependency.Name == "chromium" {
+			binary = resolveBrowserBinary(binary)
 		}
-
-		check := r.checker.CheckTool(ctx, tool.name, tool.binary, opts.Verbose)
-		check.Required = true
+		check := r.checker.CheckTool(ctx, dependency.Name, binary, opts.Verbose)
+		check.Required = !dependency.Optional
+		switch check.Status {
+		case SeverityFail:
+			if dependency.Optional {
+				check.Status = SeverityWarn
+			}
+			check.Message += "; install: " + dependencies.InstallHint(dependency)
+		case SeverityOK:
+			expected := ""
+			if dependency.Compare {
+				expected = dependencies.ExpectedVersion(dependency.VersionKey)
+			}
+			if expected != "" {
+				if dependency.Name == "dnsx" || dependency.Name == "tlsx" || dependency.Name == "ffuf" {
+					resolvedPath := binary
+					if p, err := exec.LookPath(binary); err == nil {
+						resolvedPath = p
+					}
+					modVersion := goModVersionForBinary(ctx, resolvedPath, goModulePathForTool(dependency.Name))
+					if modVersion == "" {
+						// Go not available or binary without module info — skip strict
+						// comparison to avoid false positives from stale embedded version.
+					} else if !strings.EqualFold(modVersion, strings.TrimPrefix(expected, "v")) {
+						check.Status = SeverityWarn
+						check.Message += fmt.Sprintf("; expected v%s (pinned in .tools-version)", expected)
+					}
+				} else if !versionMatches(check.Message, expected) {
+					check.Status = SeverityWarn
+					check.Message += fmt.Sprintf("; expected v%s (pinned in .tools-version)", expected)
+				}
+			}
+		}
 		checks = append(checks, check)
+	}
+	if moduleSet["dnsbrute"] {
+		checks = append(checks, checkDNSWordlist())
 	}
 
 	checks = append(checks, checkWorkspace(cfg))
@@ -153,6 +207,40 @@ func (r *Runner) Run(ctx context.Context, opts Options) ([]Check, int, error) {
 	}
 
 	return checks, exitCode, nil
+}
+
+func resolveBrowserBinary(configured string) string {
+	if configured != "" && configured != "chromium" {
+		return configured
+	}
+	for _, candidate := range []string{"chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome-headless-shell"} {
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path
+		}
+	}
+	return configured
+}
+
+var semanticVersion = regexp.MustCompile(`(?i)\bv?([0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9a-z.-]+)?)\b`)
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+
+func versionMatches(message, expected string) bool {
+	match := semanticVersion.FindStringSubmatch(ansiEscape.ReplaceAllString(message, ""))
+	return len(match) > 1 && strings.EqualFold(match[1], strings.TrimPrefix(expected, "v"))
+}
+
+func checkDNSWordlist() Check {
+	for _, candidate := range dependencies.DNSWordlistPaths() {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Size() > 0 {
+			return Check{Name: "dns-wordlist", Status: SeverityOK, Message: candidate, Required: true}
+		}
+	}
+	return Check{
+		Name:     "dns-wordlist",
+		Status:   SeverityFail,
+		Message:  "no compatible wordlist found; rerun install.sh --full, install SecLists, or set SCANFORGE_DNS_WORDLIST",
+		Required: true,
+	}
 }
 
 func checkWorkspace(cfg *config.Config) Check {
@@ -237,6 +325,8 @@ func checkScopeFile(cfg *config.Config) Check {
 
 func runVersionCommand(ctx context.Context, binary string) (string, error) {
 	args := [][]string{
+		{"--version"},
+		{"-V"},
 		{"-version"},
 		{"-v"},
 		{"version"},
@@ -253,6 +343,35 @@ func runVersionCommand(ctx context.Context, binary string) (string, error) {
 	}
 
 	return "", lastErr
+}
+
+func runGoVersionCommand(ctx context.Context, binary string) (string, error) {
+	cmd := exec.CommandContext(ctx, "go", "version", "-m", binary)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+	return string(output), nil
+}
+
+func extractVersionFromGoMod(output, modulePath string) string {
+	for _, raw := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && fields[0] == "mod" && fields[1] == modulePath {
+			return strings.TrimPrefix(fields[2], "v")
+		}
+		if strings.HasPrefix(line, "mod\t"+modulePath+"\t") {
+			parts := strings.Split(line, "\t")
+			if len(parts) >= 3 {
+				return strings.TrimPrefix(parts[2], "v")
+			}
+		}
+	}
+	return ""
 }
 
 // extractVersionLine pulls the one meaningful line out of a tool's version

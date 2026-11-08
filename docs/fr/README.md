@@ -105,7 +105,7 @@ curl -fsSL https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.s
 
 ### Option 2 : Installation complète (binaire + outils de scan)
 
-ScanForge orchestre des outils externes (nmap, nuclei, subfinder, httpx, ...). Pour les installer automatiquement **en plus** de ScanForge (requiert Go) :
+ScanForge orchestre des outils externes (nmap, nuclei, subfinder, httpx, ...). `--full` installe les dépendances disposant d'une méthode non interactive fiable (Go récent reste requis sur Debian/Ubuntu et Windows) :
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.sh | bash -s -- --full
@@ -118,9 +118,16 @@ chmod +x install.sh && ./install.sh --full   # Linux / macOS
 .\install.ps1 -Full                           # Windows (PowerShell)
 ```
 
+- Arch utilise uniquement les dépôts officiels pour `nmap`, `chromium`, `go`, `python-pipx` et `base-devel`, sans jamais lancer `pacman -Syu`. Les outils Go sont épinglés, `wafw00f` passe par pipx, et massdns ainsi que la wordlist DNS viennent d'artefacts upstream vérifiés. WhatWeb reste manuel/AUR ; aucun helper AUR n'est supposé.
+- Debian/Ubuntu installe les paquets disponibles dans la version apt courante et ne modifie jamais Python système avec un `pip install` global.
+- macOS utilise Homebrew, Go et pipx ; WhatWeb et un navigateur Chrome/Chromium peuvent rester manuels.
+- Sous Windows natif, Nmap, massdns et WhatWeb restent manuels ; WSL ou Docker est recommandé pour les profils qui les utilisent.
+
+La vérification finale liste les éventuels manques. `scanforge doctor --profile NOM` fournit ensuite un diagnostic spécifique au profil avec les commandes d'installation adaptées.
+
 ### Option 3 : Docker (Zéro installation locale)
 
-Si vous ne souhaitez pas installer Go ou les autres outils sur votre système hôte, utilisez Docker. Tout est pré-configuré dans l'image !
+Si vous ne souhaitez pas installer Go ou les autres outils sur votre système hôte, utilisez Docker. Les outils runtime, massdns, Chromium et une wordlist DNS épinglée et vérifiée sont inclus.
 
 ```bash
 # Avec docker-compose

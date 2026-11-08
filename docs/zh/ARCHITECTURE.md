@@ -39,3 +39,36 @@ report.md      可读摘要
 ```
 
 清单区分 `completed`、`partial` 和 `failed` 状态，引用已产生的产物，并保留范围来源以供审计。
+
+## 分诊层（H3.1）
+
+`scanforge triage <run>` 从报告中派生解释，而绝不修改报告本身：
+
+```text
+report.json ──► finding.FromReport ──► 规范化发现结果（确定性 ID）
+                                          │
+                                          ▼
+                              finding.BuildRelations（L0/L1）
+                                          │
+                                          ▼
+                              分诊引擎：group → bundle → analyze → validate
+                                          │
+                                          ▼
+                          <run>/triage/（manifest、relations、insights、report.md）
+```
+
+边界是严格的：**ScanForge 拥有事实，AI 拥有解释，验证位于两者之间。**
+
+- `internal/finding` 将报告投影为扁平发现结果，使用确定性 ID
+  （`F-` + source|template|asset|matched_at|evidence 的哈希），并计算确定性
+  关系（重复 1.00、共享 CVE 0.99、相同端点 0.95、相同资产 0.80）。语义关系
+  （L2）可以补充它们，但绝不能覆盖它们。
+- `internal/triage` 运行流水线：分组（对关系图做 union-find）、确定性洞察
+  （摘要 + 去重组）、可选的 LLM 分析、验证与协调（按优先级排序、ID 稳定）。
+- LLM 只收到精简投影（`TriageBundle`）：证据被截断、绝不发送工具原始输出、
+  上限 150 条发现。其输出会对照事实进行验证——未知的发现 ID、CVE 或证据
+  字符串会拒绝整个洞察——因此模型无法注入新的事实。
+- `internal/inference` 将传输抽象为 `Client` 接口；内置实现使用 OpenAI 兼容
+  chat completions API（llama.cpp、vLLM、Ollama 等）。
+- 来源记录在 `triage/manifest.json` 中（模型、提示词版本、输入摘要、温度），
+  当输入摘要、模型和提示词版本不变时，缓存会复用结果（`--force` 可绕过）。

@@ -33,7 +33,8 @@ Typical workflow:
   scanforge doctor   verify that the required tools are installed
   scanforge plan     preview the validated pipeline without running it
   scanforge run      execute the scan and produce a report
-  scanforge diff     compare two runs to track changes over time`,
+  scanforge diff     compare two runs to track changes over time
+  scanforge triage   analyze and prioritize a run's findings`,
 		// Runtime errors (a failed module, a deadlock, ...) must not dump
 		// the full flag reference: the scan summary already explains what
 		// happened. Errors are printed once by cmd/scanforge/main.go.
@@ -65,6 +66,7 @@ Typical workflow:
 	cmd.AddCommand(NewPlanCommand(application))
 	cmd.AddCommand(NewDiffCommand(application))
 	cmd.AddCommand(NewExportCommand(application))
+	cmd.AddCommand(NewTriageCommand(application))
 	cmd.AddCommand(NewInitCommand(application))
 	cmd.AddCommand(NewAuthCommand(application))
 	cmd.AddCommand(NewConfigCommand(application))

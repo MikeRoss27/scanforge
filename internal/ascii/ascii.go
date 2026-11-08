@@ -3,6 +3,8 @@ package ascii
 
 import (
 	"fmt"
+	"math/rand"
+	"os"
 	"strings"
 
 	"github.com/MikeRoss27/scanforge/internal/ui"
@@ -20,15 +22,15 @@ const (
          ███ ███    █▄    ███    ███ ███   ███   ███        ███    ███ ▀███████████   ███    ███   ███    █▄
    ▄█    ███ ███    ███   ███    ███ ███   ███   ███        ███    ███   ███    ███   ███    ███   ███    ███
  ▄████████▀  ████████▀    ███    █▀   ▀█   █▀    ███         ▀██████▀    ███    ███   ████████▀    ██████████
-                                                                          ███    ███`
+                                                                           ███    ███`
 
 	// Style 2: classic slant, very readable
 	BannerClassic = `
-   _____                 ______                       
-  / ___/_________ _____ / ____/___  _________ ____  
-  \__ \/ ___/ __ '/ __ \/ /_  / __ \/ ___/ __ '/ _ \ 
- ___/ / /__/ /_/ / / / / __/ / /_/ / /  / /_/ /  __/ 
-/____/\___/\__,_/_/ /_/_/    \____/_/   \__, /\___/  
+   _____                 ______
+  / ___/_________ _____ / ____/___  _________ ____
+  \__ \/ ___/ __ '/ __ \/ /_  / __ \/ ___/ __ '/ _ \
+ ___/ / /__/ /_/ / / / / __/ / /_/ / /  / /_/ /  __/
+/____/\___/\__,_/_/ /_/_/    \____/_/   \__, /\___/
                                        /____/       `
 
 	// Style 3: 3D shaded (from ascii.txt)
@@ -42,17 +44,72 @@ $$      \ $$ |      $$    $$ |$$$$  $$ |$$    |  $$ |  $$ |$$    $$< $$ |/    |$
 /  \__$$ |$$ \__/  |$$ |  $$ |$$ |$$$$ |$$ |     $$ \__$$ |$$ |  $$ |$$ \__$$ |$$ |_____
 $$    $$/ $$    $$/ $$ |  $$ |$$ | $$$ |$$ |     $$    $$/ $$ |  $$ |$$    $$/ $$       |
  $$$$$$/   $$$$$$/  $$/   $$/ $$/   $$/ $$/       $$$$$$/  $$/   $$/  $$$$$$/  $$$$$$$$/`
+
+	// Style 4: Skull
+	BannerSkull = `
+	.                                                      .
+        .n                   .                 .                  n.
+   .   .dP                  dP                   9b                 9b.    .
+  4    qXb         .       dX                     Xb       .        dXp     t
+ dX.    9Xb      .dXb    __                         __    dXb.     dXP     .Xb
+ 9XXb._       _.dXXXXb dXXXXbo.                 .odXXXXb dXXXXb._       _.dXXP
+  9XXXXXXXXXXXXXXXXXXXVXXXXXXXXOo.           .oOXXXXXXXXVXXXXXXXXXXXXXXXXXXXP
+   9XXXXXXXXXXXXXXXXXXXXX'~   ~'OOO8b   d8OOO'~   ~'XXXXXXXXXXXXXXXXXXXXXP'
+     9XXXXXXXXXXXP' '9XX'          '98v8P'          'XXP' '9XXXXXXXXXXXP'
+         ~~~~~~~       9X.    .db|db.   .   .db|db.    .XP       ~~~~~~~
+                           )b.  .dbo.dP''b  dP''bo.db.  .dX(
+                         ,dXXXXXXXXXXXb     dXXXXXXXXXXXb.
+                        dXXXXXXXXXXXP'   .   '9XXXXXXXXXXXb
+                       dXXXXXXXXXXXXb   d|b   dXXXXXXXXXXXXb
+                       9XXb'   'XXXXXb.dX|Xb.dXXXXX'   'dXXP
+                        '      9XXXXXX(   )XXXXXXP      '
+                                 XXXX X.' '.X XXXX
+                                 XP^X'b   d'X^XX
+                                 X. 9  '   '  P )X
+                                 'b  '       '  d'
+                                  '             '
+                                By MikeRoss
+`
 )
 
-// PrintBanner prints the "Blocks" banner with a constant slate → cyan
-// gradient, for a consistent visual identity on every run (random banner and
-// gradient selection made the branding unstable from one run to the next).
+// PrintBanner prints one of the 4 banners (Blocks/Classic/Slanted/Skull),
+// picked randomly unless pinned via SCANFORGE_BANNER=blocks|classic|slanted
+// |skull|off (e.g. SCANFORGE_BANNER=classic ./scanforge run ...). Each line
+// renders with a constant slate → cyan gradient, matching the rest of the
+// CLI's accent color.
 func PrintBanner() {
-	for _, line := range strings.Split(BannerBlocks, "\n") {
+	style := strings.ToLower(strings.TrimSpace(os.Getenv("SCANFORGE_BANNER")))
+	var banner string
+	switch style {
+	case "blocks":
+		banner = BannerBlocks
+	case "classic":
+		banner = BannerClassic
+	case "slanted":
+		banner = BannerSlanted
+	case "skull":
+		banner = BannerSkull
+	case "off", "none", "0", "false":
+		return
+	case "random", "":
+		banners := []string{BannerBlocks, BannerClassic, BannerSlanted, BannerSkull}
+		banner = banners[rand.Intn(len(banners))]
+	default:
+		// valeur inconnue -> random par défaut
+		banners := []string{BannerBlocks, BannerClassic, BannerSlanted, BannerSkull}
+		banner = banners[rand.Intn(len(banners))]
+	}
+
+	for _, line := range strings.Split(banner, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		fmt.Println(ui.Gradient(line, ui.BorderColor, ui.Accent))
 	}
 	fmt.Println()
+}
+
+// BannerNames returns the list of valid SCANFORGE_BANNER values.
+func BannerNames() []string {
+	return []string{"blocks", "classic", "slanted", "skull", "random", "off"}
 }

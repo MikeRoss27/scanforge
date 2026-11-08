@@ -105,7 +105,7 @@ curl -fsSL https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.s
 
 ### 方式 2：完整安装（二进制 + 扫描工具）
 
-ScanForge 编排外部工具（nmap、nuclei、subfinder、httpx 等）。如需在 ScanForge 之外自动安装它们（需要 Go）：
+ScanForge 编排外部工具（nmap、nuclei、subfinder、httpx 等）。`--full` 会安装具备可靠非交互安装方式的依赖（Debian/Ubuntu 和 Windows 仍需预先安装较新的 Go）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.sh | bash -s -- --full
@@ -118,9 +118,16 @@ chmod +x install.sh && ./install.sh --full   # Linux / macOS
 .\install.ps1 -Full                           # Windows (PowerShell)
 ```
 
+- Arch 仅从官方仓库安装 `nmap`、`chromium`、`go`、`python-pipx` 和 `base-devel`，且绝不运行 `pacman -Syu`。Go 工具使用固定版本，`wafw00f` 通过 pipx 隔离安装，massdns 与 DNS 字典来自经过 SHA-256 验证的上游文件。WhatWeb 仍需手动或通过 AUR 安装，脚本不假设存在 AUR helper。
+- Debian/Ubuntu 只安装当前 apt 版本中存在的软件包，且不会通过全局 pip 修改系统 Python。
+- macOS 使用 Homebrew、Go 和 pipx；WhatWeb 与 Chrome/Chromium 浏览器可能仍需手动安装。
+- 原生 Windows 上的 Nmap、massdns 和 WhatWeb 仍需手动安装；需要这些工具时建议使用 WSL 或 Docker。
+
+最终检查会列出所有缺失项，`scanforge doctor --profile NAME` 会给出按 profile 区分的状态和安装提示。
+
 ### 方式 3：Docker（零本地安装）
 
-如果你不想在宿主机上安装 Go 或其他工具，可以使用 Docker。镜像已预配置好一切！
+如果你不想在宿主机上安装 Go 或其他工具，可以使用 Docker。镜像包含运行时工具、massdns、Chromium 以及固定版本并经过验证的 DNS 字典。
 
 ```bash
 # 使用 docker-compose
