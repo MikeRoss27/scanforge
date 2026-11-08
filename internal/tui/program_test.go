@@ -22,7 +22,7 @@ func TestProgramAutoQuitsOnChannelClose(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		_, err := tea.NewProgram(NewScanModel(ch), tea.WithInput(nil), tea.WithoutRenderer()).Run()
+		_, err := tea.NewProgram(NewScanModel(ch, "", ""), tea.WithInput(nil), tea.WithoutRenderer()).Run()
 		if err != nil {
 			t.Errorf("program error: %v", err)
 		}

@@ -38,7 +38,7 @@ func NewDiffCommand(application *app.App) *cobra.Command {
 				_, err = fmt.Fprintln(out, string(data))
 				return err
 			}
-			_, err = fmt.Fprintln(out, ui.Panel("🔍 RUN DIFF", ui.Primary(rendered)))
+			_, err = fmt.Fprintln(out, ui.Section("RUN DIFF", rendered))
 			return err
 		},
 	}

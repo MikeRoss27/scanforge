@@ -44,7 +44,7 @@ $$    $$/ $$    $$/ $$ |  $$ |$$ | $$$ |$$ |     $$    $$/ $$ |  $$ |$$    $$/ $
  $$$$$$/   $$$$$$/  $$/   $$/ $$/   $$/ $$/       $$$$$$/  $$/   $$/  $$$$$$/  $$$$$$$$/`
 )
 
-// PrintBanner prints the "Blocks" banner with a constant cyan → magenta
+// PrintBanner prints the "Blocks" banner with a constant slate → cyan
 // gradient, for a consistent visual identity on every run (random banner and
 // gradient selection made the branding unstable from one run to the next).
 func PrintBanner() {
@@ -52,7 +52,7 @@ func PrintBanner() {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		fmt.Println(ui.Gradient(line, ui.AccentCyan, ui.AccentMagenta))
+		fmt.Println(ui.Gradient(line, ui.BorderColor, ui.Accent))
 	}
 	fmt.Println()
 }

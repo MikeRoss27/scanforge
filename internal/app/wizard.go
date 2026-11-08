@@ -44,8 +44,8 @@ func (p *terminalWizardPrompter) intro() {
 	}
 	p.introed = true
 	_, _ = fmt.Fprintln(p.output)
-	_, _ = fmt.Fprintln(p.output, ui.PanelWith("✨ INTERACTIVE SETUP",
-		"Press Enter to accept the suggested value.", ui.Accent, ui.Accent))
+	_, _ = fmt.Fprintln(p.output, ui.Section("INTERACTIVE SETUP",
+		"Press Enter to accept the suggested value."))
 	_, _ = fmt.Fprintln(p.output)
 }
 

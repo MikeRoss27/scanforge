@@ -25,7 +25,7 @@ import (
 // the TUI itself failed and the scan was aborted.
 func (s *runSession) consumeEvents(cancel context.CancelFunc, eventChan <-chan orchestrator.Event, done <-chan struct{}) error {
 	if !s.opts.DryRun && term.IsTerminal(int(os.Stdout.Fd())) {
-		model := tui.NewScanModel(eventChan)
+		model := tui.NewScanModel(eventChan, s.opts.Target, s.profile)
 		if _, err := tea.NewProgram(model).Run(); err != nil {
 			cancel()
 			drainEvents(eventChan)

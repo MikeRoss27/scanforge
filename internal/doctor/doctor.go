@@ -307,7 +307,7 @@ func FormatChecks(checks []Check) string {
 	}
 	b.WriteString("\n")
 
-	return ui.PanelWith("🩺 DOCTOR", b.String(), ui.Accent, ui.Accent)
+	return ui.Section("DOCTOR", b.String())
 }
 
 func FormatChecksJSON(checks []Check) (string, error) {

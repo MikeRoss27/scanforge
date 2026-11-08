@@ -143,6 +143,7 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 		executor = runner.NewRealExecutor(s.opts.Verbose)
 	}
 
+	fmt.Println()
 	ascii.PrintBanner()
 	fmt.Println(ui.Dim("  by MikeRoss · v" + version.Version))
 	fmt.Println()

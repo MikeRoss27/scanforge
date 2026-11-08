@@ -21,7 +21,7 @@ func updateModel(t *testing.T, m ScanModel, msg tea.Msg) (ScanModel, tea.Cmd) {
 
 func TestNewScanModel(t *testing.T) {
 	ch := make(chan orchestrator.Event)
-	m := NewScanModel(ch)
+	m := NewScanModel(ch, "", "")
 
 	if m.eventChan != ch {
 		t.Error("expected event channel to be stored")
@@ -38,7 +38,7 @@ func TestNewScanModel(t *testing.T) {
 }
 
 func TestUpdateWaveStartCreatesRows(t *testing.T) {
-	m := NewScanModel(make(chan orchestrator.Event))
+	m := NewScanModel(make(chan orchestrator.Event), "", "")
 
 	model, _ := updateModel(t, m, orchestrator.WaveStartEvent{Wave: 1, Modules: []string{"subfinder", "dnsx"}})
 
@@ -66,7 +66,7 @@ func TestUpdateWaveStartCreatesRows(t *testing.T) {
 }
 
 func TestUpdateModuleDoneMarksRow(t *testing.T) {
-	m, _ := updateModel(t, NewScanModel(make(chan orchestrator.Event)), orchestrator.WaveStartEvent{Wave: 1, Modules: []string{"nuclei"}})
+	m, _ := updateModel(t, NewScanModel(make(chan orchestrator.Event), "", ""), orchestrator.WaveStartEvent{Wave: 1, Modules: []string{"nuclei"}})
 
 	model, _ := updateModel(t, m, orchestrator.ModuleDoneEvent{
 		Name: "nuclei", Status: "completed", Dur: 3 * time.Second, Failed: false, Summary: "2 findings",
@@ -100,7 +100,7 @@ func TestUpdateModuleDoneMarksRow(t *testing.T) {
 // orchestrator only sends their ModuleDoneEvent. The TUI must materialize the
 // row on that event instead of silently dropping the module.
 func TestUpdateModuleDoneCreatesRowForNeverStartedModule(t *testing.T) {
-	m := NewScanModel(make(chan orchestrator.Event))
+	m := NewScanModel(make(chan orchestrator.Event), "", "")
 	model, _ := updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "nmap", Status: "skipped"})
 
 	if len(model.order) != 1 || model.order[0] != "nmap" {
@@ -119,7 +119,7 @@ func TestUpdateModuleDoneCreatesRowForNeverStartedModule(t *testing.T) {
 }
 
 func TestUpdateDeadlockAppendsWarning(t *testing.T) {
-	m := NewScanModel(make(chan orchestrator.Event))
+	m := NewScanModel(make(chan orchestrator.Event), "", "")
 	model, _ := updateModel(t, m, orchestrator.DeadlockEvent{Message: "deadlock detected"})
 	if len(model.warnings) != 1 {
 		t.Fatalf("expected 1 warning, got %v", model.warnings)
@@ -130,7 +130,7 @@ func TestUpdateDeadlockAppendsWarning(t *testing.T) {
 }
 
 func TestUpdateModuleWarningAppendsWarning(t *testing.T) {
-	m := NewScanModel(make(chan orchestrator.Event))
+	m := NewScanModel(make(chan orchestrator.Event), "", "")
 	model, _ := updateModel(t, m, orchestrator.WarningEvent{Message: "jssecrets: 0 JS files"})
 	if len(model.warnings) != 1 {
 		t.Fatalf("expected 1 warning, got %v", model.warnings)
@@ -150,7 +150,7 @@ func TestUpdateQuitKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewScanModel(make(chan orchestrator.Event))
+			m := NewScanModel(make(chan orchestrator.Event), "", "")
 			model, cmd := updateModel(t, m, tt.msg)
 			if len(model.order) != 0 {
 				t.Errorf("expected unchanged model, got %v", model.order)
@@ -168,7 +168,7 @@ func TestUpdateQuitKeys(t *testing.T) {
 func TestUpdateClosedChannelQuits(t *testing.T) {
 	ch := make(chan orchestrator.Event)
 	close(ch)
-	m := NewScanModel(ch)
+	m := NewScanModel(ch, "", "")
 
 	model, cmd := updateModel(t, m, scanFinishedMsg{})
 	if len(model.order) != 0 {
@@ -184,7 +184,7 @@ func TestUpdateClosedChannelQuits(t *testing.T) {
 
 func TestInitStartsSpinnerAndWaits(t *testing.T) {
 	ch := make(chan orchestrator.Event)
-	m := NewScanModel(ch)
+	m := NewScanModel(ch, "", "")
 
 	cmd := m.Init()
 	if cmd == nil {
@@ -193,12 +193,12 @@ func TestInitStartsSpinnerAndWaits(t *testing.T) {
 }
 
 func TestViewRendersProgress(t *testing.T) {
-	m := NewScanModel(make(chan orchestrator.Event))
+	m := NewScanModel(make(chan orchestrator.Event), "", "")
 	m, _ = updateModel(t, m, orchestrator.WaveStartEvent{Wave: 1, Modules: []string{"subfinder"}})
 	m, _ = updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "subfinder", Status: "completed", Dur: time.Second, Summary: "3 hosts"})
 
 	view := m.View()
-	for _, want := range []string{"subfinder", "DONE", "PROGRESS", "q: quit"} {
+	for _, want := range []string{"subfinder", "✓", "1 completed", "q: quit"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("expected view to contain %q, got:\n%s", want, view)
 		}
@@ -206,7 +206,7 @@ func TestViewRendersProgress(t *testing.T) {
 }
 
 func TestViewShowsWarning(t *testing.T) {
-	m := NewScanModel(make(chan orchestrator.Event))
+	m := NewScanModel(make(chan orchestrator.Event), "", "")
 	m, _ = updateModel(t, m, orchestrator.DeadlockEvent{Message: "wave stalled"})
 
 	view := m.View()
@@ -216,7 +216,7 @@ func TestViewShowsWarning(t *testing.T) {
 }
 
 func TestViewShowsSkippedModulesWithOwnBadgeAndTally(t *testing.T) {
-	m := NewScanModel(make(chan orchestrator.Event))
+	m := NewScanModel(make(chan orchestrator.Event), "", "")
 	m, _ = updateModel(t, m, orchestrator.WaveStartEvent{Wave: 1, Modules: []string{"subfinder", "naabu"}})
 	m, _ = updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "subfinder", Status: "completed", Dur: time.Second})
 	m, _ = updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "naabu", Status: "failed", Failed: true, Dur: time.Second})
@@ -224,7 +224,7 @@ func TestViewShowsSkippedModulesWithOwnBadgeAndTally(t *testing.T) {
 	m, _ = updateModel(t, m, orchestrator.ModuleDoneEvent{Name: "nmap", Status: "skipped"})
 
 	view := m.View()
-	for _, want := range []string{"nmap", "SKIP", "1 completed", "1 failed", "1 skipped/aborted"} {
+	for _, want := range []string{"nmap", "skipped", "1 completed", "1 failed", "1 skipped/aborted"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("expected view to contain %q, got:\n%s", want, view)
 		}
@@ -232,7 +232,7 @@ func TestViewShowsSkippedModulesWithOwnBadgeAndTally(t *testing.T) {
 }
 
 func TestViewFindingsHeaderCountsAllFindings(t *testing.T) {
-	m := NewScanModel(make(chan orchestrator.Event))
+	m := NewScanModel(make(chan orchestrator.Event), "", "")
 	for i := 0; i < maxFindingsShown+3; i++ {
 		m, _ = updateModel(t, m, orchestrator.FindingEvent{
 			Module: "nuclei", Severity: "high", Title: "finding", Target: "https://example.com",
@@ -249,7 +249,7 @@ func TestViewFindingsHeaderCountsAllFindings(t *testing.T) {
 }
 
 func TestAnyRunning(t *testing.T) {
-	m := NewScanModel(make(chan orchestrator.Event))
+	m := NewScanModel(make(chan orchestrator.Event), "", "")
 	if m.anyRunning() {
 		t.Error("expected no running rows initially")
 	}
