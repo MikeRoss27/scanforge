@@ -143,6 +143,18 @@ func TestFromTargetExact(t *testing.T) {
 	}
 }
 
+// TestFromTargetAcceptsUnderscoreLabels guards against regressing to the
+// strict RFC 952/1123 validation that rejected real-world DNS labels like
+// _dmarc/_domainkey and underscored subdomains (api_v1.example.com),
+// incorrectly marking legitimate in-scope hosts as out of scope.
+func TestFromTargetAcceptsUnderscoreLabels(t *testing.T) {
+	s, err := FromTarget("example.com", ModeDomain, nil, nil)
+	if err != nil {
+		t.Fatalf("FromTarget() error = %v", err)
+	}
+	assertAllowed(t, s, []string{"_dmarc.example.com", "_domainkey.example.com", "api_v1.example.com"}, true)
+}
+
 func TestFromTargetDomainIncludesRootAndSubdomains(t *testing.T) {
 	s, err := FromTarget("https://Example.com/path", ModeDomain, nil, nil)
 	if err != nil {
@@ -246,7 +258,7 @@ func TestFromTargetRejectsMalformedInput(t *testing.T) {
 		{name: "empty target", target: "", mode: ModeExact},
 		{name: "unknown mode", target: "example.com", mode: Mode("recursive")},
 		{name: "wildcard target", target: "*.example.com", mode: ModeExact},
-		{name: "bad hostname", target: "bad_host.example", mode: ModeExact},
+		{name: "bad hostname", target: "bad@host.example", mode: ModeExact},
 		{name: "empty label", target: "api..example.com", mode: ModeExact},
 		{name: "bad port", target: "example.com:99999", mode: ModeExact},
 		{name: "port-scoped target", target: "example.com:443", mode: ModeExact},
@@ -255,7 +267,7 @@ func TestFromTargetRejectsMalformedInput(t *testing.T) {
 		{name: "port-scoped addition", target: "example.com", mode: ModeExact, additions: []string{"api.other.test:8080"}},
 		{name: "port-scoped exclusion", target: "example.com", mode: ModeExact, exclusions: []string{"admin.example.com:8443"}},
 		{name: "URL credentials", target: "https://user:pass@example.com", mode: ModeExact},
-		{name: "bad addition", target: "example.com", mode: ModeExact, additions: []string{"*.bad_host.test"}},
+		{name: "bad addition", target: "example.com", mode: ModeExact, additions: []string{"*.bad@host.test"}},
 		{name: "bad CIDR", target: "example.com", mode: ModeExact, additions: []string{"10.0.0.0/99"}},
 		{name: "bad exclusion", target: "example.com", mode: ModeExact, exclusions: []string{"!"}},
 	}
@@ -310,7 +322,7 @@ func TestEntriesAndWriteFileRoundTrip(t *testing.T) {
 
 func TestLoadFromFileRejectsMalformedEntries(t *testing.T) {
 	for _, entry := range []string{
-		"bad_host.example",
+		"bad@host.example",
 		"api..example.com",
 		"*.192.0.2.1",
 		"10.0.0.0/99",

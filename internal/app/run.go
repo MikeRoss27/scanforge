@@ -151,7 +151,9 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 	printRunInfoPanel(s.opts, s.profile, s.scanRun, *s.effective)
 
 	orch := orchestrator.New(executor, buildRegistry(s.cfg))
-	eventChan := make(chan orchestrator.Event)
+	// Buffered so a module emitting a burst of findings (e.g. nuclei) doesn't
+	// block on the TUI's render loop catching up.
+	eventChan := make(chan orchestrator.Event, 64)
 
 	var results []*modules.Result
 	var runErr error

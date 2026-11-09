@@ -141,12 +141,22 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 	wg.Wait()
 
-	if len(scanErrs) > 0 {
-		return nil, errors.Join(scanErrs...)
-	}
+	// Publish whatever XML files were written even if one host's scan
+	// failed (timeout, host down, nmap crash): a single bad host must not
+	// discard every other host's results from the report.
+	artifactErr := addArtifact(runCtx)
 
-	if err := addArtifact(runCtx); err != nil {
-		return nil, fmt.Errorf("failed to publish nmap results: %w", err)
+	if len(scanErrs) > 0 || artifactErr != nil {
+		if artifactErr != nil {
+			scanErrs = append(scanErrs, fmt.Errorf("failed to publish nmap results: %w", artifactErr))
+		}
+		return &modules.Result{
+			Name:   m.Name(),
+			Status: "partial",
+			OutputFiles: map[string]string{
+				"nmap_xml": "03_ports/nmap",
+			},
+		}, errors.Join(scanErrs...)
 	}
 
 	return &modules.Result{
@@ -252,10 +262,13 @@ func validHostname(host string) bool {
 			return false
 		}
 		for _, char := range label {
+			// '_' is technically non-conformant DNS but common in the wild
+			// (_dmarc, _domainkey...); reject it here and nmap simply never
+			// scans a legitimate in-scope host.
 			if (char < 'a' || char > 'z') &&
 				(char < 'A' || char > 'Z') &&
 				(char < '0' || char > '9') &&
-				char != '-' {
+				char != '-' && char != '_' {
 				return false
 			}
 		}

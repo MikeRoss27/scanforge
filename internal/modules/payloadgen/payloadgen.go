@@ -36,6 +36,14 @@ func (m *Module) Description() string {
 	return "Generates contextual wordlists (API paths, parameters, tech endpoints) from scan findings"
 }
 func (m *Module) Requires() []string { return []string{"alive_urls"} }
+
+// SoftRequires makes payloadgen wait for js_secrets and whatweb_raw when
+// jssecrets/whatweb are part of the profile, so it doesn't read those files
+// before they're written (they're read conditionally below either way, but
+// without this the DAG can schedule payloadgen in the same wave and the
+// files simply don't exist yet).
+func (m *Module) SoftRequires() []string { return []string{"js_secrets", "whatweb_raw"} }
+
 func (m *Module) Produces() []string { return []string{"payload_wordlists"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.Executor) (*modules.Result, error) {

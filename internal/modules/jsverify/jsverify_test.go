@@ -275,6 +275,9 @@ func TestRunDryRunWritesEmptyVerdicts(t *testing.T) {
 // some runners expose a chrome binary that never answers the CDP websocket,
 // which only proves the test environment is broken, not the replay engine.
 func TestReplayLocalVulnerablePage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("launches a real browser; skipped with -short")
+	}
 	if os.Getenv("CI") != "" {
 		t.Skip("browser launch is not reliable on CI runners")
 	}
@@ -321,6 +324,9 @@ window.addEventListener("message", function (e) { document.getElementById("b").i
 // sink-reached verdict derived from our own injected hash/params. It needs a
 // real chrome binary and is skipped on CI like TestReplayLocalVulnerablePage.
 func TestReplaySafePageNotObserved(t *testing.T) {
+	if testing.Short() {
+		t.Skip("launches a real browser; skipped with -short")
+	}
 	if os.Getenv("CI") != "" {
 		t.Skip("browser launch is not reliable on CI runners")
 	}

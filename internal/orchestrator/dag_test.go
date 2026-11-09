@@ -101,21 +101,34 @@ func TestBuildDAGSoftRequiresGatesWhenProducerSelected(t *testing.T) {
 		t.Fatalf("BuildDAG() error = %v", err)
 	}
 
-	// The consumer must wait for the selected optional producer.
+	// The consumer must wait for the selected optional producer while it has
+	// not completed; the producer itself has no unmet requirements, so it is
+	// the only module ready to run at this point.
 	ready := dag.NextReady(
-		map[string]bool{"producer": true, "optional": true},
+		map[string]bool{"producer": true},
 		map[string]bool{"hard_output": true},
 	)
-	if len(ready) != 0 {
-		t.Fatalf("ready modules = %v, want none while the optional artifact is missing", moduleNames(ready))
+	if len(ready) != 1 || ready[0].Name() != "optional" {
+		t.Fatalf("ready modules = %v, want [optional] while the optional producer has not completed", moduleNames(ready))
 	}
 
+	// Once the optional producer completes and publishes the artifact, the consumer is ready.
 	ready = dag.NextReady(
 		map[string]bool{"producer": true, "optional": true},
 		map[string]bool{"hard_output": true, "optional_output": true},
 	)
 	if len(ready) != 1 || ready[0].Name() != "consumer" {
 		t.Fatalf("ready modules = %v, want [consumer]", moduleNames(ready))
+	}
+
+	// If the optional producer completes WITHOUT publishing the artifact (e.g. failed),
+	// the consumer must still be ready to run (soft requirement).
+	ready = dag.NextReady(
+		map[string]bool{"producer": true, "optional": true},
+		map[string]bool{"hard_output": true},
+	)
+	if len(ready) != 1 || ready[0].Name() != "consumer" {
+		t.Fatalf("ready modules = %v, want [consumer] even if optional artifact was not produced", moduleNames(ready))
 	}
 }
 

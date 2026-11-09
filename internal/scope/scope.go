@@ -327,7 +327,10 @@ func validateHost(input string) (string, error) {
 			return "", fmt.Errorf("invalid hostname %q", host)
 		}
 		for i, char := range label {
-			if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || (char == '-' && i > 0 && i < len(label)-1) {
+			// Strict RFC 952/1123 forbids '_', but it's common in real-world
+			// DNS (_dmarc, _domainkey, api_v1...); rejecting it would mark
+			// legitimate in-scope subdomains as out of scope.
+			if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '_' || (char == '-' && i > 0 && i < len(label)-1) {
 				continue
 			}
 			return "", fmt.Errorf("invalid hostname %q", host)

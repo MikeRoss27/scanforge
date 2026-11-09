@@ -73,6 +73,11 @@ func (m *Module) Description() string {
 	return "Correlates detected technologies and versions with known CVEs from a bundled dataset"
 }
 func (m *Module) Requires() []string { return []string{"httpx_raw"} }
+
+// SoftRequires makes techcve wait for whatweb_raw when whatweb is part of
+// the profile, so it doesn't read the file before whatweb has written it.
+func (m *Module) SoftRequires() []string { return []string{"whatweb_raw"} }
+
 func (m *Module) Produces() []string { return []string{"cve_findings"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.Executor) (*modules.Result, error) {

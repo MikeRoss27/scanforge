@@ -139,13 +139,16 @@ func (d *DAG) NextReady(completed map[string]bool, availableArtifacts map[string
 			}
 		}
 		// Soft requirements only gate execution when their producer is part
-		// of the profile: the module must then wait for it, but a profile
-		// without the producer must still run.
+		// of the profile and has not completed yet: the module must wait for
+		// it to finish, but if the producer finishes without publishing the
+		// artifact (or fails), the consumer still runs with conditional upstreams.
 		if canRun {
 			for _, req := range node.SoftRequires {
-				if _, hasProducer := d.producers[req]; hasProducer && !availableArtifacts[req] {
-					canRun = false
-					break
+				if producer, hasProducer := d.producers[req]; hasProducer {
+					if !completed[producer] && !availableArtifacts[req] {
+						canRun = false
+						break
+					}
 				}
 			}
 		}
