@@ -40,15 +40,16 @@ func (m *Module) SoftRequires() []string { return []string{"wp_plugins", "wp_the
 func (m *Module) Produces() []string     { return []string{"wp_cve_findings"} }
 
 type cveEntry struct {
-	ID         string  `yaml:"id"`
-	Tech       string  `yaml:"tech"`
-	Title      string  `yaml:"title"`
-	Severity   string  `yaml:"severity"`
-	CVSS       float64 `yaml:"cvss"`
-	MinVersion string  `yaml:"min-version"`
-	MaxVersion string  `yaml:"max-version"`
-	Reference  string  `yaml:"reference"`
-	Note       string  `yaml:"note"`
+	ID           string  `yaml:"id"`
+	Tech         string  `yaml:"tech"`
+	Title        string  `yaml:"title"`
+	Severity     string  `yaml:"severity"`
+	CVSS         float64 `yaml:"cvss"`
+	MinVersion   string  `yaml:"min-version"`
+	MaxVersion   string  `yaml:"max-version"`
+	MaxInclusive bool    `yaml:"max-inclusive"`
+	Reference    string  `yaml:"reference"`
+	Note         string  `yaml:"note"`
 }
 
 type finding struct {
@@ -93,6 +94,20 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	}
 	findings = append(findings, matchArtifact(runCtx, entries, "wp_plugins", func(slug string) string { return slug })...)
 	findings = append(findings, matchArtifact(runCtx, entries, "wp_themes", func(slug string) string { return "theme-" + slug })...)
+
+	// Dedupe overlapping entries (curated vs generated, multi-branch ranges)
+	// that may match the same host/tech/version/CVE pair.
+	seen := make(map[string]struct{}, len(findings))
+	deduped := findings[:0]
+	for _, f := range findings {
+		key := f.Host + "|" + f.Tech + "|" + f.Version + "|" + f.CVEID
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		deduped = append(deduped, f)
+	}
+	findings = deduped
 
 	if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, runner.Command{
 		Name: "wpcve (native)",
@@ -192,8 +207,15 @@ func match(entries []cveEntry, host, tech, version string) []finding {
 		if entry.MinVersion != "" && compareVersions(version, entry.MinVersion) < 0 {
 			continue
 		}
-		if entry.MaxVersion != "" && compareVersions(version, entry.MaxVersion) >= 0 {
-			continue
+		if entry.MaxVersion != "" {
+			cmp := compareVersions(version, entry.MaxVersion)
+			if entry.MaxInclusive {
+				if cmp > 0 {
+					continue
+				}
+			} else if cmp >= 0 {
+				continue
+			}
 		}
 		matches = append(matches, finding{
 			Host:      host,

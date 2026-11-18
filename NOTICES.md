@@ -1,16 +1,18 @@
 # Third-party data bundled with ScanForge
 
-## Embedded advisory dataset
+## Embedded advisory datasets
 
-`internal/modules/wpcve/cves_wp.yaml` is a **curated starter set** of
-high-impact WordPress advisories verified against the NVD
-(https://nvd.nist.gov/) and WPScan (https://wpscan.com/) on 2026-11-18. Each
-entry carries its NVD reference. Extend the file with the advisories relevant
-to your assessments; keep `cvss`, `min-version`, `max-version` and the
-`reference` link for every entry.
-
-`internal/modules/techcve/cves.yaml` likewise bundles a curated starter set
-of third-party technology advisories.
+`internal/modules/wpcve/cves_wp.yaml` is a merged dataset: a hand-curated
+set of high-impact advisories (verified against the NVD,
+https://nvd.nist.gov/) plus a generated export of the **OWVD**
+(github.com/ihuzaifashoukat/wordpress-vulnerability-database, MIT license) —
+which itself redistributes the **Wordfence Intelligence** vulnerability data
+feed (https://www.wordfence.com/threat-intel/vulnerabilities/). It covers
+~2,100 advisories selected for all Core rows, all Critical-rated rows and
+all bundled plugins/themes slugs; references point at the NVD. Regenerate with
+`python3 scripts/wpdata_refresh.py` (network) or `--csv <file>` offline.
+The `techcve` dataset (`internal/modules/techcve/cves.yaml`) remains a
+curated starter set of third-party advisories.
 
 ## WordPress plugin / theme slug wordlists
 

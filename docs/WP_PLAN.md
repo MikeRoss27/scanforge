@@ -100,7 +100,7 @@ Règles : tout artefact texte host/URL/host:port produit → `Artifact.Scoped: t
 
 ### 4.3 Données embarquées (dataset)
 
-- `internal/modules/techcve/data/wordpress.json` — snapshot **WP core / plugins / thèmes** : slug, noms, versions vulnérables, `fixed_in`, CVE, CVSS. Source candidate : **WPScan Vulnerability Database** (usage gratuit, attribution requise) — snapshot figé dans le repo + notice `NOTICES` + version dénotée `wp_data_version` (date) ; `scanforge doctor` affiche la date.
+- `internal/modules/wpcve/cves_wp.yaml` — dataset embarqué généré : **~2 100 advisories** (toutes les entrées Core + toutes celles de sévérité Critical + toutes celles des slugs plugins/thèmes embarqués), issue du flux Wordfence Intelligence via le miroir MIT OWVD, mergé avec une curation NVD faite main ; `reference` pointe toujours vers la NVD. Régénération : `python3 scripts/wpdata_refresh.py` (télécharge CSV public, ou `--csv local.csv` hors-ligne).
 - `templates/wordpress/*.yaml` — templates Nuclei ciblés WordPress (expo backups, debug.log accessible, listing, payloads version discovery). livrés comme le pack existant `templates/`.
 - `templates/wordpress/plugins-top.txt`, `themes-top.txt` — wordlists slugs taillées (~3 000 entrées chacune, largeur tokens courante). Possibilité `--wp-wordlist / chemin/full_list.txt` pour parité totale (wordlist complète de l'utilisateur, ex. export WPScan offline — pas embarquée pour taille/licence).
 - Refresh : manuel à chaque release + job CI optionnel (`wp-data-refresh` non-bloquant).
@@ -177,7 +177,7 @@ M0 ½ j · M1 2–3 j · M2 3–4 j · M3 2–3 j · M4 2–3 j + docs i18n ~1 j
 ## 12. Décisions ouvertes (arbitrées comme experts le 2026-11-18)
 
 1. **DAG du preset `wp`** : DAG WP-uniquement (proposé) **adopté** — `web --wp` couvre le cas mixte.
-2. **Dataset** : snapshot statique + attribution, refresh manuel par release — **adopté**. La génération CI quotidienne est rejetée (fragilité + licence/attribution floue).
+2. **Dataset WP** : **OWVD/Wordfence export généré + merge curation** — décidé le 2026-11-18 (nouveau référentiel : pas d'API token à chaque release, données complètes pour notre périmètre, attribution dans NOTICES). Une génération CI quotidienne reste rejetée (bruit dans les diffs).
 3. **Wordlists agressives** : liste taillée embarquée (`templates/wordpress/plugins.txt`, `themes.txt`, ~1 000–1 500 entrées, données publiques WP.org, attribution dans `NOTICES`) + `--wp-wordlist` pour la liste complète — **adopté**.
 4. **wpbrute absent de `--preset wp`** : opt-in strict uniquement — **confirmé**.
 5. **Nom du preset** : `wp` canonique + alias `wordpress` résolu vers la même chaîne — **adopté** (cohérence avec les noms de presets courts : `web`, `safe`).
@@ -190,9 +190,9 @@ Branche : `feat/wp-parity`. Ordre : M0 scaffold (profil, flag, doctor) → M1 mo
 
 - ✅ M0 — preset `wp` (+ alias `wordpress`), flag `--wp`, chaîne WP injectable sur tout profil, `moduleRisk` WP, tests DAG/`applyWordPress`
 - ✅ M1 — `wpdetect` (multi-signal : generator, RSS, readme.html, REST index, confidence), `wpplugins`/`wpthemes` mode **passive** par défaut (assets crawlés, `?ver=`), report parsers alimentés (`"wp_fingerprint" → technologies`)
-- ✅ M2 — modes `mixed`/`aggressive` (`--wp-detection-mode`, wordlists embarquées plugins ~200 / thèmes ~116 + `--wp-wordlist`, sondes `readme.txt`/`style.css`), dataset `wpcve` (core + plugins, NVD-vérifié, 7 advisories), templates Nuclei livrés (`wordpress-config-backup-exposed`, `wordpress-install-exposed`, `wordpress-readme-exposed`)
+- ✅ M2 — modes `mixed`/`aggressive` (`--wp-detection-mode`, wordlists embarquées plugins ~200 / thèmes ~116 + `--wp-wordlist`, sondes `readme.txt`/`style.css`), dataset `wpcve` généré (**~2 141 entrées** : Core + Critical + slugs embarqués, source OWVD/Wordfence avec attribution, NVD refs, `max-inclusive` pour les plages `<=`/`A-B`, merge curations ; régénéré via `scripts/wpdata_refresh.py`), templates Nuclei livrés (`wordpress-config-backup-exposed`, `wordpress-install-exposed`, `wordpress-readme-exposed`)
 - ✅ M3 — `wpusers` (?author=N + REST users), `wpexposure` (18 checks : wp-config backups, debug.log, install/setup-config, listings, .git/.env/phpinfo), `wpxmlrpc` (listMethods, multicall, pingback informatif), intégration report (`wp_users` info, `wp_exposure`, `wpxmlrpc`)
 - ✅ M4 — `wpbrute` opt-in strict (wp-login + XML-RPC `wp.getUsersBlogs`, caps, stop-on-success/lockout, refus sans users énumérés ou sans `--wp-passwords`), `scanforge export` consomme les findings WP via le modèle `Vulnerability` existant (SARIF/DefectDojo gratis), docs USAGE/README/AGENTS + miroirs fr/zh
 - Tests : unit (modules + helpers + refus de `wpbrute`), **intégration E2E** `internal/app/wordpress_integration_test.go` (faux site WP via httptest + chaîne complète orchestrée, assertions sur tous les artefacts dont `CVE-2020-35489` corrélation)
 
-**Reste à faire / décisions reportées** : dataset WP riche (au-delà des 7 advisories vérifiées), wordlists agressives complètes (~150k slugs, non embarquées par licence/taille), refresh CI du dataset (rejeté), `wpbrute` jamais dans le preset, packaging `NOTICES.md` complet, licence/wordlist review avant merge.
+**Reste à faire / décisions reportées** : ~~dataset WP riche~~ ✅ livré (~2 141 entrées, voir ci-dessus) ; wordlists agressives complètes (~150k slugs, non embarquées par licence/taille, `--wp-wordlist`) ; refresh CI du dataset (rejeté) ; `wpbrute` jamais dans le preset ; licence/wordlist review finale avant merge.

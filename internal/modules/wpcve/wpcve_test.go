@@ -48,9 +48,11 @@ func TestMatchCoreAdvisory(t *testing.T) {
 		t.Fatalf("expected CVE-2021-29447 for WP 5.7.0, got %+v", findings)
 	}
 
-	findings = match(entries, "example.com", "wordpress", "6.4.2")
-	if len(findings) != 0 {
-		t.Fatalf("expected no advisories for WP 6.4.2, got %+v", findings)
+	findings = match(entries, "example.com", "wordpress", "6.9.0")
+	for _, f := range findings {
+		if f.Severity == "high" || f.Severity == "critical" {
+			t.Fatalf("unexpected %s core advisory for WP 6.9.0: %+v", f.Severity, f)
+		}
 	}
 }
 
@@ -60,20 +62,44 @@ func TestMatchPluginAdvisory(t *testing.T) {
 		t.Fatal(err)
 	}
 	findings := match(entries, "example.com", "contact-form-7", "5.3.0")
-	if len(findings) != 1 || findings[0].CVEID != "CVE-2020-35489" {
-		t.Fatalf("contact-form-7 5.3.0 findings = %+v, want CVE-2020-35489", findings)
+	byCVE := map[string]finding{}
+	for _, f := range findings {
+		byCVE[f.CVEID] = f
 	}
-	if findings[0].Severity != "critical" {
-		t.Fatalf("severity = %q, want critical", findings[0].Severity)
+	f, ok := byCVE["CVE-2020-35489"]
+	if !ok {
+		t.Fatalf("expected CVE-2020-35489 for contact-form-7 5.3.0, got %+v", findings)
 	}
-
-	if got := match(entries, "example.com", "contact-form-7", "5.4.0"); len(got) != 0 {
-		t.Fatalf("contact-form-7 5.4.0 findings = %+v, want none", got)
+	if f.Severity != "critical" {
+		t.Fatalf("CVE-2020-35489 severity = %q, want critical", f.Severity)
+	}
+	for _, f := range match(entries, "example.com", "contact-form-7", "6.1.0") {
+		if f.CVEID == "CVE-2020-35489" {
+			t.Fatalf("CVE-2020-35489 must not match contact-form-7 6.1.0")
+		}
 	}
 
 	findings = match(entries, "example.com", "duplicator", "1.3.0")
-	if len(findings) != 1 || findings[0].CVEID != "CVE-2020-11738" {
-		t.Fatalf("duplicator 1.3.0 findings = %+v, want CVE-2020-11738", findings)
+	byCVE = map[string]finding{}
+	for _, f := range findings {
+		byCVE[f.CVEID] = f
+	}
+	if _, ok := byCVE["CVE-2020-11738"]; !ok {
+		t.Fatalf("expected CVE-2020-11738 for duplicator 1.3.0, got %+v", findings)
+	}
+
+	elementor := match(entries, "example.com", "elementor", "3.5.5")
+	byCVE = map[string]finding{}
+	for _, f := range elementor {
+		byCVE[f.CVEID] = f
+	}
+	if _, ok := byCVE["CVE-2022-29455"]; !ok {
+		t.Fatalf("expected CVE-2022-29455 for elementor 3.5.5, got %+v", elementor)
+	}
+	for _, f := range match(entries, "example.com", "elementor", "3.6.0") {
+		if f.CVEID == "CVE-2022-29455" {
+			t.Fatalf("CVE-2022-29455 must not match elementor 3.6.0")
+		}
 	}
 }
 
