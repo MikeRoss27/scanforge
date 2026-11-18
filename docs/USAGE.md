@@ -111,9 +111,21 @@ ai:
 `--nuclei-include-custom` adds the templates bundled in the `templates/`
 directory of this repository to the nuclei run (`spring-actuator-exposed`,
 `swagger-openapi-exposed`, `cors-wildcard-credentials`,
-`go-debug-endpoints-exposed`, `wordpress-debug-log-exposed`). They are located
+`go-debug-endpoints-exposed`, `wordpress-debug-log-exposed`, `wordpress-config-backup-exposed`, `wordpress-install-exposed`, `wordpress-readme-exposed`). They are located
 via `SCANFORGE_TEMPLATES_DIR`, then the working directory (`./templates`) and
 finally the executable directory.
+
+## WordPress (wp)
+
+`scanforge run example.com --preset wp` runs the WordPress engagement chain:
+`subfinder → dnsbrute → dnsx → httpx → whatweb → wpdetect → wpplugins → wpthemes → wpusers → wpexposure → wpxmlrpc → wpcve → techcve → httpcheck → attacksurface → nuclei → screenshot`.
+
+- Detection is **passive by default**: plugin/theme versions are read from crawled assets (`?ver=`), exposed `readme.html` files, the REST index and the RSS feed. Nothing fuzzable happens without your say-so.
+- `--wp-detection-mode mixed` additionally reads `readme.txt` for the passively detected slugs (versions + confirmation). `--wp-detection-mode aggressive --wp-wordlist slugs.txt` probes plugin/theme slugs from a bundled top list (or your own file, one slug per line) for the closest wpscan parity. Aggressive mode can be noisy; tune it on a low-noise engagement.
+- `--wp` adds the WordPress chain to any other profile (`scanforge run example.com --profile web --wp`).
+- `wpcve` correlates core/plugin/theme versions with the bundled advisory dataset (offline; verified against NVD, see `internal/modules/wpcve/cves_wp.yaml`). No API key required.
+- `wpbrute` (credential probe against enumerated users) is **OFF everywhere by default** and only runs with all of: `--wp-bruteforce` + `--confirm-scope` (implicit scopes) + `--wp-passwords <wordlist>`. It caps at `--wp-bruteforce-max` attempts per user (default 100), stops on the first success or on any lockout signal, and refuses to run when `wpusers` produced no usernames. No password list is bundled.
+- `scanforge doctor --profile wp` reports the bundled wordlists/dataset and the external tooling availability.
 
 ## Recommended flow
 

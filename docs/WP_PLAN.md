@@ -174,10 +174,25 @@ M0 ½ j · M1 2–3 j · M2 3–4 j · M3 2–3 j · M4 2–3 j + docs i18n ~1 j
 
 `README.md` (+ fr/zh), `docs/{USAGE,SCOPE,ARCHITECTURE,ROADMAP}.md` (+ fr/zh), `AGENTS.md` (modules `wp_*`, artifacts, garde-fous), `docs/WP_PLAN.md` → version "livrée".
 
-## 12. Décisions encore ouvertes (si tu veux trancher autrement)
+## 12. Décisions ouvertes (arbitrées comme experts le 2026-11-18)
 
-1. Preset `wp` = chaîne WP-uniquement (actuellement proposé) — accepte aussi `web --wp`. OK ?
-2. Dataset : snapshot statique + attribution (choix actuel) vs génération CI quotidienne.
-3. Wordlists agressives taillées embarquées (~3k) — taille acceptable ? licence OK ?
-4. `wpbrute` : absent de `--preset wp` (opt-in sévère) — confirmé.
-5. Nom officiel du preset : `wp` (proposé) vs `wordpress`.
+1. **DAG du preset `wp`** : DAG WP-uniquement (proposé) **adopté** — `web --wp` couvre le cas mixte.
+2. **Dataset** : snapshot statique + attribution, refresh manuel par release — **adopté**. La génération CI quotidienne est rejetée (fragilité + licence/attribution floue).
+3. **Wordlists agressives** : liste taillée embarquée (`templates/wordpress/plugins.txt`, `themes.txt`, ~1 000–1 500 entrées, données publiques WP.org, attribution dans `NOTICES`) + `--wp-wordlist` pour la liste complète — **adopté**.
+4. **wpbrute absent de `--preset wp`** : opt-in strict uniquement — **confirmé**.
+5. **Nom du preset** : `wp` canonique + alias `wordpress` résolu vers la même chaîne — **adopté** (cohérence avec les noms de presets courts : `web`, `safe`).
+
+## 13. Implémentation
+
+Branche : `feat/wp-parity`. Ordre : M0 scaffold (profil, flag, doctor) → M1 modules de détection/passifs → M2 agressif + dataset CVE → M3 surface (users/exposure/xmlrpc) → M4 wpbrute + reporting/diff/export + docs. `wpcve` est un module natif dédié (artefact `wp_fingerprint`/`wp_plugins`/`wp_themes` → findings), sur le modèle technique de `techcve` (dataset YAML embarqué, version compare semi-semver).
+
+**État au 2026-11-18 (itération M0–M4 livrée dans cette branche) :**
+
+- ✅ M0 — preset `wp` (+ alias `wordpress`), flag `--wp`, chaîne WP injectable sur tout profil, `moduleRisk` WP, tests DAG/`applyWordPress`
+- ✅ M1 — `wpdetect` (multi-signal : generator, RSS, readme.html, REST index, confidence), `wpplugins`/`wpthemes` mode **passive** par défaut (assets crawlés, `?ver=`), report parsers alimentés (`"wp_fingerprint" → technologies`)
+- ✅ M2 — modes `mixed`/`aggressive` (`--wp-detection-mode`, wordlists embarquées plugins ~200 / thèmes ~116 + `--wp-wordlist`, sondes `readme.txt`/`style.css`), dataset `wpcve` (core + plugins, NVD-vérifié, 7 advisories), templates Nuclei livrés (`wordpress-config-backup-exposed`, `wordpress-install-exposed`, `wordpress-readme-exposed`)
+- ✅ M3 — `wpusers` (?author=N + REST users), `wpexposure` (18 checks : wp-config backups, debug.log, install/setup-config, listings, .git/.env/phpinfo), `wpxmlrpc` (listMethods, multicall, pingback informatif), intégration report (`wp_users` info, `wp_exposure`, `wpxmlrpc`)
+- ✅ M4 — `wpbrute` opt-in strict (wp-login + XML-RPC `wp.getUsersBlogs`, caps, stop-on-success/lockout, refus sans users énumérés ou sans `--wp-passwords`), `scanforge export` consomme les findings WP via le modèle `Vulnerability` existant (SARIF/DefectDojo gratis), docs USAGE/README/AGENTS + miroirs fr/zh
+- Tests : unit (modules + helpers + refus de `wpbrute`), **intégration E2E** `internal/app/wordpress_integration_test.go` (faux site WP via httptest + chaîne complète orchestrée, assertions sur tous les artefacts dont `CVE-2020-35489` corrélation)
+
+**Reste à faire / décisions reportées** : dataset WP riche (au-delà des 7 advisories vérifiées), wordlists agressives complètes (~150k slugs, non embarquées par licence/taille), refresh CI du dataset (rejeté), `wpbrute` jamais dans le preset, packaging `NOTICES.md` complet, licence/wordlist review avant merge.

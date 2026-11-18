@@ -33,6 +33,7 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
 - **Scan authentifié** : `-H/--header` (répétable) injecte des headers/cookies (session, bearer token) dans toutes les requêtes HTTP émises.
 - **Scanner de secrets JavaScript** : le module `jssecrets` récupère les fichiers `.js` crawlés et détecte clés API/tokens/creds exposés, buckets cloud publics, hôtes internes, emails, endpoints API sensibles et source maps accessibles ; le module `jsverify` rejoue ensuite les payloads PoC générés dans un navigateur headless et rapporte des verdicts exécuté / sink atteint / non observé.
 - **Captures d'écran visuelles** : le module `screenshot` capture des captures d'écran des URL vivantes via `httpx`, listées dans le rapport.
+- **Mode parité WordPress** : `--preset wp` (ou `--wp` sur tout profil) enchaîne wpdetect (version core multi-signal), wpplugins/wpthemes (énumération passive ou agressive), wpusers (author + API REST), wpexposure (sauvegardes wp-config, debug.log, listings), wpxmlrpc (méthodes/multicall/pingback) et wpcve (corrélation d’advisories) — la même surface que wpscan, sans aucun nouvel outil externe. `wpbrute` en opt-in strict (désactivé par défaut partout).
 - **Corrélation tech-to-CVE** : `techcve` croise les technologies et versions détectées avec un dataset embarqué aux scores CVSS réels issus de la NVD.
 - **Nuclei entièrement paramétrable** : sévérité, tags, rate-limit, timeout global, templates personnalisés et mise à jour des templates via des flags dédiés.
 - **Nmap parallélisé** : pool de workers borné (`--nmap-concurrency`) au lieu d'un scan séquentiel hôte par hôte.
@@ -47,7 +48,7 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
 
 ## 🛠️ Outils Supportés
 
-ScanForge centralise et orchestre **14 outils de sécurité externes** et **6 modules natifs** :
+ScanForge centralise et orchestre **14 outils de sécurité externes** et **14 modules natifs** :
 
 Outils externes :
 
@@ -74,6 +75,13 @@ Modules natifs (aucun binaire externe) :
 - **techcve** — corrèle les technologies et versions détectées avec des CVE connues d'un dataset embarqué (scores CVSS réels issus de la NVD)
 - **httpcheck** — vérifie les headers de sécurité HTTP (CSP, HSTS, clickjacking, cookies) sur la surface d'attaque découverte
 - **payloadgen** — génère des wordlists contextuelles (chemins API, paramètres, endpoints par technologie) à partir des findings du scan
+- **wpdetect** — détection multi-signal de WordPress et fingerprint de la version core (generator, RSS, readme.html, index REST)
+- **wpplugins** / **wpthemes** — énumère les plugins/thèmes installés passivement (assets crawlés, `?ver=`) ou activement (`readme.txt`/`style.css`, listes top embarquées, `--wp-detection-mode`/`--wp-wordlist`)
+- **wpusers** — énumère les utilisateurs WordPress via les redirections `?author=N` et l’endpoint REST `/wp/v2/users`
+- **wpexposure** — vérifie les sauvegardes de wp-config, debug.log, pages d’installation par défaut, listings de répertoires, expositions `.git`/`.env`
+- **wpxmlrpc** — sonde XML-RPC : état, liste des méthodes, multicall et disponibilité de pingback
+- **wpcve** — corrèle les versions core/plugins/thèmes avec le dataset fourni (hors ligne)
+- **wpbrute** — sonde de credentials en opt-in pour les utilisateurs énumérés (`--wp-bruteforce` + `--confirm-scope` + `--wp-passwords` ; désactivé par défaut)
 
 `httpx`, `nuclei`, `katana`, `ffuf`, `whatweb`, `wafw00f`, `subfinder`, `gau`, `jssecrets`, `jsverify`, `httpcheck` et `screenshot` supportent `--proxy` et `-H/--header` pour router le trafic vers Caido/Burp et scanner en authentifié.
 
@@ -325,6 +333,7 @@ Le payload est un document JSON générique avec un champ `text`, si bien que ch
 | `vuln` | subfinder, dnsbrute, dnsx, httpx, tlsx, katana, jssecrets, attacksurface, techcve, nuclei | Détection ciblée de vulnérabilités (tech-to-CVE + templates). |
 | `deep` | Tous les modules | Pipeline complet et bruyant. |
 | `full` | Tous les modules | Profil complet compatible historique. |
+| `wp` | subfinder, dnsbrute, dnsx, httpx, whatweb, wpdetect, wpplugins, wpthemes, wpusers, wpexposure, wpxmlrpc, wpcve, techcve, httpcheck, attacksurface, nuclei, screenshot | Engagement WordPress : détection, énumération plugins/thèmes, utilisateurs, exposures, XML-RPC et corrélation advisories. Alias `wordpress`. `--wp` injecte la chaîne dans tout autre profil. `wpbrute` en opt-in uniquement (`--wp-bruteforce` + `--confirm-scope` + `--wp-passwords`). |
 
 Utilisez indifféremment `--preset safe` ou `--profile safe`. Avant un profil actif, contrôlez toujours son DAG avec `scanforge plan`.
 

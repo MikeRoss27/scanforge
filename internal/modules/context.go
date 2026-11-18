@@ -59,6 +59,9 @@ type RunContext struct {
 	// NmapConcurrency bounds how many nmap processes run at once. <= 0 means
 	// the module picks its own default.
 	NmapConcurrency int
+	// WordPress carries WordPress-engagement tuning (enumeration mode,
+	// aggressive wordlists, opt-in brute force).
+	WordPress WordPressOptions
 
 	onFinding func(Finding)
 	onWarn    func(string)
@@ -185,6 +188,31 @@ type FfufOptions struct {
 	// FilterCodes are comma-separated HTTP status codes to filter out
 	// (ffuf -fc), e.g. "404,500".
 	FilterCodes string
+}
+
+// WordPressOptions configures how aggressively the WordPress modules
+// interrogate their targets. The defaults are strictly passive: nothing
+// sends fuzzing traffic and the brute-force module stays inert unless
+// explicitly enabled with --wp-bruteforce.
+type WordPressOptions struct {
+	// DetectionMode is "passive" (default), "mixed" or "aggressive" and
+	// controls wpplugins/wpthemes probing.
+	DetectionMode string
+	// Wordlist overrides the bundled plugin/theme slug list used in
+	// aggressive mode (one slug per line).
+	Wordlist string
+	// Bruteforce enables the wpbrute module. Off by default everywhere,
+	// including the wp preset: it only runs when the operator passes
+	// --wp-bruteforce and confirms the scope.
+	Bruteforce bool
+	// PasswordsFile is the explicit password wordlist wpbrute reads. Always
+	// required when Bruteforce is true (no defaults bundled).
+	PasswordsFile string
+	// BruteMax caps password attempts per user (default 100).
+	BruteMax int
+	// BruteMethod picks the auth probe used for brute force: "login"
+	// (wp-login.php form, default) or "xmlrpc" (wp.getUsersBlogs).
+	BruteMethod string
 }
 
 // NucleiOptions configures the nuclei module's template selection and pacing.

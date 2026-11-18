@@ -66,6 +66,22 @@ func GenerateReport(runDir string, manifest *storage.RunManifest) (*Report, erro
 			err = ParseNuclei(absPath, rep)
 		case "cve_findings":
 			err = ParseTechCVE(absPath, rep)
+		case "wp_cve_findings":
+			err = ParseWPCVE(absPath, rep)
+		case "wp_fingerprint":
+			err = ParseWPFingerprint(absPath, rep)
+		case "wp_plugins":
+			err = ParseWPPlugins(absPath, rep)
+		case "wp_themes":
+			err = ParseWPThemes(absPath, rep)
+		case "wp_users":
+			err = ParseWPUsers(absPath, rep)
+		case "wp_exposure":
+			err = ParseWPExposure(absPath, rep)
+		case "wp_xmlrpc":
+			err = ParseWPXMLRPC(absPath, rep)
+		case "wp_brute":
+			err = ParseWPBrute(absPath, rep)
 		case "http_checks":
 			err = ParseHTTPChecks(absPath, rep)
 		case "screenshots":

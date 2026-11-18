@@ -23,6 +23,14 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/modules/tlsx"
 	"github.com/MikeRoss27/scanforge/internal/modules/wafw00f"
 	"github.com/MikeRoss27/scanforge/internal/modules/whatweb"
+	"github.com/MikeRoss27/scanforge/internal/modules/wpbrute"
+	"github.com/MikeRoss27/scanforge/internal/modules/wpcve"
+	"github.com/MikeRoss27/scanforge/internal/modules/wpdetect"
+	"github.com/MikeRoss27/scanforge/internal/modules/wpexposure"
+	"github.com/MikeRoss27/scanforge/internal/modules/wpplugins"
+	"github.com/MikeRoss27/scanforge/internal/modules/wpthemes"
+	"github.com/MikeRoss27/scanforge/internal/modules/wpusers"
+	"github.com/MikeRoss27/scanforge/internal/modules/wpxmlrpc"
 )
 
 // buildRegistry wires every scanner integration into a registry, resolving
@@ -49,5 +57,13 @@ func buildRegistry(cfg *config.Config) *modules.Registry {
 	registry.Register(httpcheck.New())
 	registry.Register(payloadgen.New())
 	registry.Register(screenshot.New(cfg.ToolPath("httpx")))
+	registry.Register(wpdetect.New())
+	registry.Register(wpplugins.New())
+	registry.Register(wpthemes.New())
+	registry.Register(wpusers.New())
+	registry.Register(wpexposure.New())
+	registry.Register(wpxmlrpc.New())
+	registry.Register(wpcve.New())
+	registry.Register(wpbrute.New())
 	return registry
 }

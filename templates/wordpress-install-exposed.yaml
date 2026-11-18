@@ -1,0 +1,30 @@
+id: scanforge-wordpress-install-exposed
+
+info:
+  name: WordPress Installer Exposed
+  author: ScanForge
+  severity: medium
+  description: /wp-admin/install.php or setup-config.php is reachable on a production instance, exposing the installation flow (default credentials, unpatched fresh installs).
+  tags: exposure,wordpress,setup
+  reference:
+    - https://developer.wordpress.org/themes/templates/
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-admin/install.php"
+      - "{{BaseURL}}/wp-admin/setup-config.php"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "<title>WordPress &raquo;"
+          - "<title>WordPress ›"
+          - "install.php"
+          - "setup-config.php"
+          - "Welcome to WordPress"
+        condition: or

@@ -219,6 +219,16 @@ func ParseNuclei(path string, report *Report) error {
 
 // ParseTechCVE parses the techcve module's version-based CVE findings.
 func ParseTechCVE(path string, report *Report) error {
+	return parseVersionCVE(path, report, "techcve")
+}
+
+// ParseWPCVE is the same schema, tagged as coming from the WordPress
+// wpcve advisory correlation module.
+func ParseWPCVE(path string, report *Report) error {
+	return parseVersionCVE(path, report, "wpcve")
+}
+
+func parseVersionCVE(path string, report *Report, source string) error {
 	return scanJSONLines(path, func(line []byte) {
 		var record struct {
 			Host           string  `json:"host"`
@@ -237,7 +247,7 @@ func ParseTechCVE(path string, report *Report) error {
 		}
 		asset := report.GetOrCreateAsset(normalizeAssetName(record.Host))
 		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
-			Source:         "techcve",
+			Source:         source,
 			TemplateID:     record.CVEID,
 			Title:          record.Title,
 			Severity:       record.Severity,
@@ -459,5 +469,206 @@ func ParseJSVerify(path string, report *Report) error {
 			return
 		}
 		report.JSVerified = append(report.JSVerified, record)
+	})
+}
+
+// ParseWPFingerprint parses wpdetect's output and records the detected
+// WordPress technology (and version, when available) per host.
+func ParseWPFingerprint(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			Target      string `json:"target"`
+			IsWordPress bool   `json:"is_wordpress"`
+			CoreVersion string `json:"core_version"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.Target == "" {
+			return
+		}
+		if !record.IsWordPress {
+			return
+		}
+		host := normalizeAssetName(record.Target)
+		if host == "" {
+			return
+		}
+		tech := "WordPress"
+		if record.CoreVersion != "" {
+			tech = "WordPress " + record.CoreVersion
+		}
+		asset := report.GetOrCreateAsset(host)
+		asset.Technologies = appendUnique(asset.Technologies, tech)
+	})
+}
+
+// ParseWPPlugins parses wpplugins' JSONL output and records the detected
+// plugins (with versions when available) per host.
+func ParseWPPlugins(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			URL     string `json:"url"`
+			Plugin  string `json:"plugin"`
+			Version string `json:"version"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.URL == "" || record.Plugin == "" {
+			return
+		}
+		host := normalizeAssetName(record.URL)
+		if host == "" {
+			return
+		}
+		tech := "wp-plugin:" + record.Plugin
+		if record.Version != "" {
+			tech += " " + record.Version
+		}
+		asset := report.GetOrCreateAsset(host)
+		asset.Technologies = appendUnique(asset.Technologies, tech)
+	})
+}
+
+// ParseWPThemes parses wpthemes' JSONL output and records the detected
+// themes (with versions when available) per host.
+func ParseWPThemes(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			URL     string `json:"url"`
+			Theme   string `json:"theme"`
+			Version string `json:"version"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.URL == "" || record.Theme == "" {
+			return
+		}
+		host := normalizeAssetName(record.URL)
+		if host == "" {
+			return
+		}
+		tech := "wp-theme:" + record.Theme
+		if record.Version != "" {
+			tech += " " + record.Version
+		}
+		asset := report.GetOrCreateAsset(host)
+		asset.Technologies = appendUnique(asset.Technologies, tech)
+	})
+}
+
+// ParseWPUsers parses wpusers' JSONL output and records enumerated users as
+// informational vulnerabilities.
+func ParseWPUsers(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			URL        string `json:"url"`
+			Login      string `json:"login"`
+			Source     string `json:"source"`
+			Confidence string `json:"confidence"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.URL == "" || record.Login == "" {
+			return
+		}
+		host := normalizeAssetName(record.URL)
+		if host == "" {
+			return
+		}
+		asset := report.GetOrCreateAsset(host)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+			Source:      "wpusers",
+			TemplateID:  "wp-user-enumerated",
+			Title:       "WordPress user enumerated",
+			Severity:    "info",
+			MatchedAt:   record.URL,
+			Description: record.Login,
+		})
+	})
+}
+
+// ParseWPExposure parses wpexposure's JSONL output.
+func ParseWPExposure(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			URL      string `json:"url"`
+			Check    string `json:"check"`
+			Severity string `json:"severity"`
+			Title    string `json:"title"`
+			Detail   string `json:"detail"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.URL == "" || record.Check == "" {
+			return
+		}
+		host := normalizeAssetName(record.URL)
+		if host == "" {
+			return
+		}
+		asset := report.GetOrCreateAsset(host)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+			Source:      "wpexposure",
+			TemplateID:  record.Check,
+			Title:       record.Title,
+			Severity:    record.Severity,
+			MatchedAt:   record.URL,
+			Description: record.Detail,
+		})
+	})
+}
+
+// ParseWPXMLRPC parses wpxmlrpc's JSONL output and records enabled XML-RPC
+// endpoints as medium vulnerabilities.
+func ParseWPXMLRPC(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			URL          string   `json:"url"`
+			Enabled      bool     `json:"enabled"`
+			Methods      []string `json:"methods"`
+			HasMulticall bool     `json:"has_multicall"`
+			Pingback     bool     `json:"pingback"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.URL == "" || !record.Enabled {
+			return
+		}
+		host := normalizeAssetName(record.URL)
+		if host == "" {
+			return
+		}
+		detail := ""
+		if n := len(record.Methods); n > 0 {
+			detail = "multicall=" + map[bool]string{true: "yes", false: "no"}[record.HasMulticall]
+			detail += "; pingback=" + map[bool]string{true: "yes", false: "no"}[record.Pingback]
+		}
+		asset := report.GetOrCreateAsset(host)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+			Source:      "wpxmlrpc",
+			TemplateID:  "xmlrpc-enabled",
+			Title:       "XML-RPC endpoint enabled",
+			Severity:    "medium",
+			MatchedAt:   record.URL,
+			Description: detail,
+		})
+	})
+}
+
+// ParseWPBrute parses wpbrute's JSONL output and records validated
+// credentials as critical vulnerabilities.
+func ParseWPBrute(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			URL      string `json:"url"`
+			Username string `json:"username"`
+			Method   string `json:"method"`
+			Success  bool   `json:"success"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.URL == "" || record.Username == "" || !record.Success {
+			return
+		}
+		host := normalizeAssetName(record.URL)
+		if host == "" {
+			return
+		}
+		asset := report.GetOrCreateAsset(host)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+			Source:      "wpbrute",
+			TemplateID:  "wp-credentials-validated",
+			Title:       "WordPress credentials validated",
+			Severity:    "critical",
+			MatchedAt:   record.URL,
+			Evidence:    record.Username,
+			Description: "method: " + record.Method,
+		})
 	})
 }

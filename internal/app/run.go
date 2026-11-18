@@ -108,6 +108,10 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 	if err != nil {
 		return nil, err
 	}
+	moduleNames = applyWordPress(moduleNames, opts.WP, opts.WordPress.Bruteforce)
+	if opts.WordPress.Bruteforce && opts.WordPress.PasswordsFile == "" {
+		return nil, fmt.Errorf("--wp-bruteforce requires --wp-passwords <file> (no password list is bundled)")
+	}
 	if effective.proposal.Source == scopeSourceImplicit {
 		if err := a.confirmScope(effective.proposal, opts.ConfirmScope); err != nil {
 			return nil, err
@@ -199,6 +203,7 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 			Nuclei:          s.opts.Nuclei,
 			Ffuf:            s.opts.Ffuf,
 			NmapConcurrency: s.opts.NmapConcurrency,
+			WordPress:       s.opts.WordPress,
 		}, eventChan)
 	}()
 

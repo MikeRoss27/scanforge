@@ -31,6 +31,7 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 - **Authenticated scanning**: `-H/--header` (repeatable) injects headers/cookies (session, bearer token) into every HTTP request issued.
 - **JavaScript secrets scanner**: the `jssecrets` module fetches crawled `.js` files and detects exposed API keys/tokens/creds, public cloud buckets, internal hosts, emails, sensitive API endpoints and accessible source maps; the `jsverify` module then replays the generated PoC payloads in a headless browser and reports executed, sink-reached or not-observed verdicts.
 - **Visual snapshots**: the `screenshot` module captures screenshots of alive URLs via `httpx`, listed in the report.
+- **WordPress parity mode**: `--preset wp` (or `--wp` on any profile) chains wpdetect (multi-signal core version), wpplugins/wpthemes (passive or aggressive enumeration), wpusers (author + REST API), wpexposure (wp-config backups, debug.log, listings), wpxmlrpc (methods/multicall/pingback) and wpcve (advisory correlation) — the same surface wpscan covers, without new external tools. `wpbrute` is opt-in strict (off by default everywhere).
 - **Tech-to-CVE correlation**: `techcve` matches detected technologies and versions against a bundled dataset with real CVSS base scores from NVD.
 - **Fully configurable Nuclei**: severity, tags, rate-limit, overall timeout, custom templates and template updates via dedicated flags.
 - **Parallelized Nmap**: bounded worker pool (`--nmap-concurrency`) instead of sequential host-by-host scans.
@@ -45,7 +46,7 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 
 ## 🛠️ Supported Tools
 
-ScanForge centralizes and orchestrates **14 external security tools** and **6 native modules**:
+ScanForge centralizes and orchestrates **14 external security tools** and **14 native modules**:
 
 External tools:
 
@@ -72,6 +73,13 @@ Native modules (no external binary):
 - **techcve** — correlates detected technologies and versions with known CVEs from a bundled dataset (real CVSS base scores from NVD)
 - **httpcheck** — checks HTTP security headers (CSP, HSTS, clickjacking, cookies) on the discovered attack surface
 - **payloadgen** — generates contextual wordlists (API paths, parameters, per-technology endpoints) from scan findings
+- **wpdetect** — multi-signal WordPress detection and core version fingerprinting (generator, RSS, readme.html, REST index)
+- **wpplugins** / **wpthemes** — enumerate installed plugins/themes passively (crawled assets, `?ver=`) or actively (`readme.txt`/`style.css`, bundled top lists, `--wp-detection-mode`/`--wp-wordlist`)
+- **wpusers** — enumerate WordPress users via `?author=N` redirects and the REST `/wp/v2/users` endpoint
+- **wpexposure** — checks wp-config backups, debug.log, default setup pages, directory listings, `.git`/`.env` exposure
+- **wpxmlrpc** — probes XML-RPC: enabled state, method list, multicall and pingback availability
+- **wpcve** — correlates WordPress core/plugin/theme versions with the bundled advisory dataset (offline)
+- **wpbrute** — opt-in credential probe for enumerated users (`--wp-bruteforce` + `--confirm-scope` + `--wp-passwords`; off by default)
 
 `httpx`, `nuclei`, `katana`, `ffuf`, `whatweb`, `wafw00f`, `subfinder`, `gau`, `jssecrets`, `jsverify`, `httpcheck` and `screenshot` support `--proxy` and `-H/--header` to route traffic through Caido/Burp and scan in authenticated mode.
 
@@ -339,6 +347,7 @@ ports, vulnerabilities by severity, run directory).
 | `vuln` | subfinder, dnsbrute, dnsx, httpx, tlsx, katana, jssecrets, attacksurface, techcve, nuclei | Targeted vulnerability detection (tech-to-CVE + templates). |
 | `deep` | All modules | Full and noisy pipeline. |
 | `full` | All modules | Full profile, history-compatible. |
+| `wp` | subfinder, dnsbrute, dnsx, httpx, whatweb, wpdetect, wpplugins, wpthemes, wpusers, wpexposure, wpxmlrpc, wpcve, techcve, httpcheck, attacksurface, nuclei, screenshot | WordPress engagement: detection, plugin/theme enumeration, user mapping, exposure checks, XML-RPC and advisory correlation. `wordpress` is accepted as an alias. `--wp` injects the chain into any other profile. `wpbrute` is opt-in only (`--wp-bruteforce` + `--confirm-scope` + `--wp-passwords`). |
 
 Use `--preset safe` or `--profile safe` interchangeably. Before any active
 profile, always review its DAG with `scanforge plan`.

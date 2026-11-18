@@ -1,0 +1,66 @@
+# WordPress advisory dataset for the wpcve module.
+#
+# Same shape as techcve's cves.yaml: an entry matches when the detected
+# version is >= min-version and < max-version (bounds inclusive/exclusive).
+# Omitting min-version means "any version below max-version".
+#
+# Curated starter set of high-impact advisories, verified against NVD on
+# 2026-11-18. `tech` values: "wordpress" for the core, the plugin slug for
+# plugins, "theme-<slug>" for themes. Extend this file as new advisories
+# matter to the targets you assess, keeping the verification links.
+
+- id: CVE-2022-21661
+  tech: wordpress
+  title: WordPress SQL injection via WP_Query before 5.8.3
+  severity: high
+  max-version: "5.8.3"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2022-21661
+  note: "Patched in 5.8.3 and backported to branches back to 3.7.37+."
+
+- id: CVE-2021-29447
+  tech: wordpress
+  title: WordPress XXE in Media Library (PHP 8, authenticated) before 5.7.1
+  severity: high
+  min-version: "5.6.0"
+  max-version: "5.7.1"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2021-29447
+  note: "ID3 parsing; fixed in 5.7.1 and 5.6.2."
+
+- id: CVE-2023-2745
+  tech: wordpress
+  title: WordPress directory traversal via wp_lang parameter before 6.2.1
+  severity: high
+  max-version: "6.2.1"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2023-2745
+  note: "Unauthenticated path traversal; fixed in 6.2.1/6.2.2."
+
+- id: CVE-2019-17671
+  tech: wordpress
+  title: WordPress unauthenticated view of private/draft content before 5.2.4
+  severity: medium
+  max-version: "5.2.4"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2019-17671
+
+- id: CVE-2020-35489
+  tech: contact-form-7
+  title: Contact Form 7 unrestricted file upload (RCE) before 5.3.2
+  severity: critical
+  cvss: 9.8
+  max-version: "5.3.2"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2020-35489
+
+- id: CVE-2022-29455
+  tech: elementor
+  title: Elementor DOM-based reflected XSS through 3.5.5
+  severity: medium
+  cvss: 6.1
+  max-version: "3.5.6"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2022-29455
+
+- id: CVE-2020-11738
+  tech: duplicator
+  title: Duplicator directory traversal before 1.3.28
+  severity: high
+  max-version: "1.3.28"
+  reference: https://nvd.nist.gov/vuln/detail/CVE-2020-11738
+  note: "Duplicator Pro affected below 3.8.7.1."

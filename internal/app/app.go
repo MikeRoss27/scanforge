@@ -51,6 +51,12 @@ type RunOptions struct {
 	Ffuf modules.FfufOptions
 	// NmapConcurrency bounds how many nmap processes run at once.
 	NmapConcurrency int
+	// WP adds the WordPress engagement chain to the selected profile
+	// (--wp). The chain modules are no-ops on non-WordPress hosts.
+	WP bool
+	// WordPress carries WordPress-engagement tuning (enumeration mode,
+	// aggressive wordlist, opt-in brute force).
+	WordPress modules.WordPressOptions
 }
 
 type DoctorOptions struct {
