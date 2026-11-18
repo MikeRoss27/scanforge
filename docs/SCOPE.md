@@ -6,7 +6,12 @@ the artifacts passed between modules.
 
 ## Implicit scope
 
-Without an applicable file, the `exact` mode only allows the target:
+Without an applicable file, DNS domains default to `domain`: the supplied
+domain and its discovered subdomains automatically feed the rest of the
+pipeline. A subdomain target stays rooted at that subdomain, without expanding
+to its parent domain or siblings. IPs and single-label hosts default to `exact`.
+
+Request `exact` explicitly to allow only the supplied host:
 
 ```bash
 scanforge plan example.com --scope-mode exact

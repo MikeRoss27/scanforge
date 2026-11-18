@@ -4,17 +4,26 @@
 
 Chaque module déclare les artefacts qu'il exige et produit. ScanForge construit
 un DAG, rejette les producteurs dupliqués, dépendances introuvables et cycles,
-puis exécute les modules prêts par vagues.
+puis démarre chaque module dès que ses artefacts requis sont disponibles. Un
+module indépendant lent ne bloque donc plus une autre branche prête.
 
 Chaînes principales :
 
 ```text
-subfinder → subdomains → dnsx → resolved_hosts
+                         ┌→ dnsx (entrée passive) ─────────────┐
+subfinder → subdomains ──┤                                     ├→ resolved_hosts
+                         └→ dnsbrute → dnsx (résultats tardifs)┘
 resolved_hosts → httpx → alive_urls
 resolved_hosts → naabu → open_ports → nmap
 alive_urls → tlsx / whatweb / wafw00f / katana / ffuf / nuclei
 target → gau → historical_urls
 ```
+
+DNSX résout les découvertes passives pendant le bruteforce DNS. Quand le
+producteur optionnel termine, DNSX résout uniquement ses hôtes supplémentaires,
+fusionne les deux flux JSONL et publie l’artefact final filtré par le scope. Si
+le producteur optionnel échoue, l’attente est libérée et la branche passive
+continue.
 
 `scanforge plan TARGET --preset deep` affiche les vagues validées sans lancer
 d'outil ni créer de run.

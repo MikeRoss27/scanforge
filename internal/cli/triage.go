@@ -72,5 +72,5 @@ func printTriageSummary(cmd *cobra.Command, result *triage.Result) {
 	}
 	body += fmt.Sprintf("\n%s %s\n", ui.Green("✓ triage written to"), ui.Primary(result.Dir))
 
-	_, _ = fmt.Fprintln(out, ui.Panel("🧠 TRIAGE", body))
+	_, _ = fmt.Fprintln(out, ui.Section("Triage", body))
 }

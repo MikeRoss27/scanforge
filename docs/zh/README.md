@@ -1,7 +1,7 @@
 # README（简体中文）
 
 <p align="center">
-  <img src="../../public/SCANFORGE.gif" width="100%" alt="ScanForge">
+  <img src="../../public/scanforge-banner.png" width="100%" alt="ScanForge — 网络侦察框架">
 </p>
 
 # ScanForge
@@ -12,6 +12,10 @@
 
 借助其以产物（artifact）为驱动的架构，ScanForge 智能地串联业界公认的安全工具，同时实施极其严格的扫描范围（scope）验证规则，防止任何未经授权的扫描。
 
+<p align="center">
+  <img src="../../public/scanforge-icons.png" width="100%" alt="ScanForge 像素风图标包">
+</p>
+
 ## 📚 文档
 
 - [使用指南](USAGE.md)：安装、配置、命令与示例。
@@ -21,8 +25,8 @@
 
 ## 🚀 核心特性
 
-- **产物驱动的流水线**：模块通过产物有序通信（例如 `subfinder` 的输出自动喂给 `dnsx` 和 `httpx`），并按 DAG 波次并行执行。
-- **严格的扫描范围验证**：通过文件显式指定范围，或确认隐式范围（默认为 `exact`，可请求 `domain`），然后对每个产物进行过滤。
+- **产物驱动的流水线**：模块通过产物有序通信（例如 `subfinder` 的输出自动喂给 `dnsx` 和 `httpx`），每个独立分支会在输入就绪后立即继续执行。
+- **严格的扫描范围验证**：通过文件显式指定范围，或确认隐式范围（DNS 域名默认为 `domain`，IP 或显式指定时使用 `exact`），然后对每个产物进行过滤。
 - **多目标项目**：`--targets 文件` 可对一个配置文件中的多个目标运行（每行一个，忽略注释与空行）；每个目标都有独立的范围验证、运行目录和报告，单个目标失败不会中断其余目标。
 - **交互式向导**：在终端上直接运行 `scanforge run` 会询问缺失的目标和配置文件，而不是报错。
 - **代理集成（Caido / Burp Suite）**：`--proxy` 将相关模块的 HTTP 流量路由到你的拦截代理，便于手动分类/重放。
@@ -32,7 +36,7 @@
 - **技术到 CVE 关联**：`techcve` 将检测到的技术与版本与内置数据集匹配，该数据集包含来自 NVD 的真实 CVSS 基础评分。
 - **完全可配置的 Nuclei**：通过专用参数控制严重级别、标签、速率限制、整体超时、自定义模板和模板更新。
 - **Nmap 并行化**：有界工作线程池（`--nmap-concurrency`），替代逐主机顺序扫描。
-- **实时进度**：扫描期间每个活动模块显示 spinner（默认可见，不仅限于 `--verbose`），发现结果随模块发现实时呈现，模块警告在 TUI 结束后重放，`plan`/`doctor` 显示彩色表格，运行结束时显示汇总面板。
+- **实时控制台**：扫描会流式输出按时间排列、带标签的事件日志（无全屏界面）——流水线阶段、模块生命周期、发现结果即时打印（含泄露的邮箱、密钥或主机）、交互式终端上的可变进度行（默认是 生成的像素锤与铁砧动画，16 列 × 6 行，旁边显示进度；终端窄于 50 列时使用单行指示器；`SCANFORGE_SPINNER=forge|dots|off` 可切换）、high/critical 级别发现的展开严重程度块、去重后计入 `Finding types` 汇总的重复项，以及最终的 `── SCAN COMPLETE ──` 汇总。输出对 grep/tee/CI 友好；`-v/-vv/-vvv` 提升详细程度，`-q` 只保留发现项、错误和汇总。
 - **Webhook 通知**：每次运行结束时，将摘要发布到 `scanforge.yaml` 中配置的 Slack/Discord/Teams webhook。
 - **运行对比与导出**：`scanforge diff` 列出同一目标两次运行之间的变化（资产、端口、漏洞）；`scanforge export` 将运行序列化为 SARIF 2.1.0（GitHub/GitLab 代码扫描）或 DefectDojo 通用发现。
 - **Dry-Run 模式**：在发出任何网络请求之前，预览将要执行的命令和生成的文件。
@@ -140,6 +144,30 @@ docker run -v $(pwd):/workspace scanforge run target.com --profile web
 
 ---
 
+## 🔧 从源码构建（开发）
+
+克隆仓库后，`Makefile` 封装了 Go 工具链：
+
+```bash
+make build      # 使用版本 ldflags 构建 ./scanforge
+make install    # 同上，安装到 $GOPATH/bin
+```
+
+常用开发目标：
+
+| 命令 | 作用 |
+| --- | --- |
+| `make dev` / `make run` | 通过 `go run` 运行 CLI，无需构建；用 `ARGS="plan example.com --preset deep"` 传参 |
+| `make test` / `make race` | 测试套件（快速 / 带竞态检测） |
+| `make check` | 推送前检查：格式检查、`go vet`、golangci-lint 和测试 |
+| `make cover` | 带覆盖率报告的测试及按函数汇总 |
+| `make fmt` / `make fmt-check` | 格式化代码 / 仅列出未格式化的文件而不改写 |
+| `make vet` / `make lint` | 静态分析；`make tools` 安装 CI 固定版本的 golangci-lint |
+| `make tidy` | 清理 `go.mod` / `go.sum` |
+| `make clean` | 删除二进制文件和 `coverage.out` |
+
+---
+
 ## 🚦 快速入门指南
 
 ### 1. 初始化项目
@@ -165,13 +193,13 @@ scanforge doctor --profile web
 
 ### 3. 启动扫描
 
-在没有适用的范围文件时，ScanForge 会从目标推导出最小范围，显示它并在创建运行前请求显式确认：
+在没有适用的范围文件时，ScanForge 默认包含所提供的 DNS 域名及其子域名，显示范围并在创建运行前请求确认。发现的子域名会自动传递给 DNSX、HTTPX 和后续模块。IP 和单标签主机名仍使用精确范围：
 
 ```bash
 scanforge run example.com --profile web
 ```
 
-在终端上，直接运行 `scanforge run`（不带目标和配置文件）会打开一个交互式向导，询问两者。要包含该域名及其子域名、添加规则或排除项：
+在终端上，直接运行 `scanforge run`（不带目标和配置文件）会打开一个交互式向导，询问两者。使用 `--scope-mode exact` 可将运行限制为所提供的主机。添加规则或排除主机：
 
 ```bash
 scanforge run example.com --scope-mode domain \
@@ -321,3 +349,7 @@ webhook:
 - `06_vulns/nuclei.jsonl`：nuclei 原始发现（`nuclei` 模块）。
 
 > ScanForge 只能用于你拥有明确授权的资产。
+
+<p align="center">
+  <img src="../../public/scanforge-footer.png" width="100%" alt="ScanForge — pentest autorisé uniquement">
+</p>

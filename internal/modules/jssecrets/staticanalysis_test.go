@@ -157,11 +157,6 @@ func TestScanASTDetectsPostMessageIssues(t *testing.T) {
 			"postmessage:postmessage-wildcard",
 		},
 		{
-			"missing origin",
-			`parent.postMessage(userData);`,
-			"postmessage:postmessage-missing-origin",
-		},
-		{
 			"listener without origin check",
 			`window.addEventListener("message", function(e) { doSomething(e.data); });`,
 			"postmessage:message-listener-no-origin-check",
@@ -169,6 +164,19 @@ func TestScanASTDetectsPostMessageIssues(t *testing.T) {
 		{
 			"safe explicit origin",
 			`window.parent.postMessage(userData, "https://app.example.com");`,
+			"",
+		},
+		{
+			// The HTML standard defaults targetOrigin to "/" (same origin),
+			// so an absent argument is not a wildcard.
+			"missing target origin is same-origin",
+			`parent.postMessage(userData);`,
+			"",
+		},
+		{
+			// A handler imported from another module cannot be inspected.
+			"unresolved named listener",
+			`window.addEventListener("message", importedHandler, false);`,
 			"",
 		},
 		{
@@ -192,6 +200,72 @@ func TestScanASTDetectsPostMessageIssues(t *testing.T) {
 				t.Fatalf("missing %s (got: %+v)", tc.want, findings)
 			}
 		})
+	}
+}
+
+func TestScanASTKeepsLibraryCandidatesForReview(t *testing.T) {
+	body := strings.Join([]string{
+		// core-js Function.prototype.bind polyfill.
+		`var bind = Function("binder", "return function (" + args + "){ return binder.apply(this,arguments); }");`,
+		// vm-browserify runInThisContext/runInNewContext shim.
+		`Script.prototype.runInThisContext = function () { return eval(this.code); };`,
+		`Script.prototype.runInNewContext = function (e) { return this.runInContext(e); };`,
+		// core-js setImmediate polyfill: postMessage to itself, no origin.
+		`var shared = "__core-js_shared__";`,
+		`var dispatchImmediate = function (t) { run(t.data); };`,
+		`i.addEventListener("message", dispatchImmediate, false);`,
+		`var channel = new MessageChannel(); channel.port2.postMessage(null);`,
+	}, "\n")
+
+	findings := scanAST("https://target.example/chunk.js", body)
+	if len(findings) != 3 {
+		t.Fatalf("expected Function, eval and message listener candidates, got %+v", findings)
+	}
+	for _, f := range findings {
+		if f.Severity != "medium" {
+			t.Errorf("library candidate should remain for review: %+v", f)
+		}
+	}
+}
+
+func TestScanASTSkipsStaticMarkup(t *testing.T) {
+	body := strings.Join([]string{
+		`el.innerHTML = "<b>hello</b>";`,
+		"el.outerHTML = `<span>hi</span>`;",
+		`frame.srcdoc = "<p>static</p>";`,
+		`location.href = "/search";`,
+	}, "\n")
+
+	if findings := scanAST("https://target.example/app.js", body); len(findings) != 0 {
+		t.Fatalf("expected no findings for static markup, got %+v", findings)
+	}
+}
+
+func TestScanASTSeverityDependsOnUserControlledSource(t *testing.T) {
+	body := strings.Join([]string{
+		`el.innerHTML = location.hash;`,
+		`other.innerHTML = data;`,
+		`sub.__proto__ = superClass;`,
+		`target.__proto__ = JSON.parse(location.hash);`,
+		`box.innerHTML = e.data;`,
+	}, "\n")
+
+	severityBySnippet := make(map[string]string)
+	for _, f := range scanAST("https://target.example/app.js", body) {
+		severityBySnippet[strings.TrimSuffix(f.Snippet, ";")] = f.Severity
+	}
+
+	cases := map[string]string{
+		`el.innerHTML = location.hash;`:                 "high",
+		`other.innerHTML = data;`:                       "medium",
+		`sub.__proto__ = superClass;`:                   "low",
+		`target.__proto__ = JSON.parse(location.hash);`: "high",
+		`box.innerHTML = e.data;`:                       "high",
+	}
+	for snippet, want := range cases {
+		if got := severityBySnippet[strings.TrimSuffix(snippet, ";")]; got != want {
+			t.Errorf("severity for %q = %q, want %q (findings: %+v)", snippet, got, want, severityBySnippet)
+		}
 	}
 }
 
@@ -271,5 +345,22 @@ func TestMemberNameUnresolvable(t *testing.T) {
 	expr := parseExpr(t, `obj[key]`)
 	if got := memberName(expr); got != "" {
 		t.Errorf("memberName(obj[key]) = %q, want empty (dynamic member)", got)
+	}
+}
+
+func TestScanASTLibraryMarkersDoNotHideApplicationSinks(t *testing.T) {
+	body := `var shared="__core-js_shared__"; var runInThisContext, runInNewContext;
+	function execute() { eval(this.code); }
+	Function("binder", location.hash + "binder.apply(this,arguments)");
+	window.addEventListener("message", function(e) { execute(e.data); });`
+	got := byKindPattern(scanAST("https://target.example/_next/static/chunks/app.js", body))
+	for pattern, severity := range map[string]string{
+		"dom-sink:eval-call":                           "medium",
+		"dom-sink:function-sink":                       "high",
+		"postmessage:message-listener-no-origin-check": "medium",
+	} {
+		if got[pattern].Severity != severity {
+			t.Errorf("%s = %+v, want %s", pattern, got[pattern], severity)
+		}
 	}
 }

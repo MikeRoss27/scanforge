@@ -4,6 +4,7 @@ package modules
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -38,6 +39,7 @@ type RunContext struct {
 	Scope          *scanScope.Scope
 	Artifacts      map[string]Artifact
 	artifactErrors map[string]error
+	artifactStates map[string]*artifactState
 	mu             sync.RWMutex
 
 	// Proxy is an optional HTTP/SOCKS proxy (e.g. a Caido or Burp listener
@@ -60,9 +62,21 @@ type RunContext struct {
 
 	onFinding func(Finding)
 	onWarn    func(string)
+	// onProgress optionally receives live module progress for the volatile
+	// console line. Modules that expose no reliable metrics stay silent.
+	onProgress func(ModuleProgressEvent)
 	// rejected counts per-artifact how many lines the scope filter dropped,
 	// so consumers can tell an empty input apart from a filtered one.
 	rejected map[string]int
+}
+
+// artifactState lets a running module wait for an optional artifact without
+// imposing a scheduler dependency. done closes when the artifact is published
+// or when its selected producer finishes without publishing it.
+type artifactState struct {
+	expected bool
+	done     bool
+	ready    chan struct{}
 }
 
 // Finding is a single vulnerability/exposure a module has just discovered.
@@ -124,6 +138,36 @@ func (c *RunContext) EmitWarning(message string) {
 	}
 }
 
+// SetProgressSink installs the callback used to publish live progress (real
+// counts only) while a module runs. Same concurrency contract as
+// SetFindingSink.
+func (c *RunContext) SetProgressSink(sink func(ModuleProgressEvent)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onProgress = sink
+}
+
+// EmitProgress publishes a live progress update for the volatile console
+// line. Safe to call from concurrent goroutines; a no-op when no sink is
+// installed. Modules must only emit values they actually measured.
+func (c *RunContext) EmitProgress(e ModuleProgressEvent) {
+	c.mu.RLock()
+	sink := c.onProgress
+	c.mu.RUnlock()
+	if sink != nil {
+		sink(e)
+	}
+}
+
+// ModuleProgressEvent is one live progress update published by a module.
+type ModuleProgressEvent struct {
+	Name    string
+	Current int
+	Total   int
+	Unit    string
+	Message string
+}
+
 // RejectedCount returns how many lines of the named artifact were dropped by
 // scope filtering. Zero means either nothing was rejected or the artifact was
 // never scope-filtered (missing scope, dry run, non-text artifact).
@@ -178,8 +222,72 @@ func NewRunContext(target, profile string, dryRun bool, run *storage.Run, scopes
 		Scope:          allowedScope,
 		Artifacts:      make(map[string]Artifact),
 		artifactErrors: make(map[string]error),
+		artifactStates: make(map[string]*artifactState),
 		rejected:       make(map[string]int),
 	}
+}
+
+// ExpectArtifact declares that a selected module may publish name. The
+// orchestrator calls this before dispatching any module.
+func (c *RunContext) ExpectArtifact(name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	state := c.artifactState(name)
+	state.expected = true
+	if _, ok := c.Artifacts[name]; ok {
+		c.finishArtifactState(state)
+	}
+}
+
+// CompleteArtifact marks a producer finished. Waiters wake even when the
+// producer failed and no artifact was published.
+func (c *RunContext) CompleteArtifact(name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.finishArtifactState(c.artifactState(name))
+}
+
+// WaitArtifact waits for an optional selected producer. It returns found=false
+// immediately when no selected module produces name, and after producer
+// completion when the producer failed to publish it.
+func (c *RunContext) WaitArtifact(ctx context.Context, name string) (artifact Artifact, found bool, err error) {
+	c.mu.Lock()
+	if artifact, found = c.Artifacts[name]; found {
+		c.mu.Unlock()
+		return artifact, true, nil
+	}
+	state, tracked := c.artifactStates[name]
+	if !tracked || !state.expected {
+		c.mu.Unlock()
+		return Artifact{}, false, nil
+	}
+	ready := state.ready
+	c.mu.Unlock()
+
+	select {
+	case <-ctx.Done():
+		return Artifact{}, false, ctx.Err()
+	case <-ready:
+	}
+	artifact, found = c.GetArtifact(name)
+	return artifact, found, nil
+}
+
+func (c *RunContext) artifactState(name string) *artifactState {
+	state, ok := c.artifactStates[name]
+	if !ok {
+		state = &artifactState{ready: make(chan struct{})}
+		c.artifactStates[name] = state
+	}
+	return state
+}
+
+func (c *RunContext) finishArtifactState(state *artifactState) {
+	if state.done {
+		return
+	}
+	state.done = true
+	close(state.ready)
 }
 
 // AddArtifact publishes a module output for downstream consumers. Text artifacts
@@ -195,6 +303,7 @@ func (c *RunContext) AddArtifact(name string, artifact Artifact) error {
 	}
 	c.Artifacts[name] = artifact
 	delete(c.artifactErrors, name)
+	c.finishArtifactState(c.artifactState(name))
 	return nil
 }
 

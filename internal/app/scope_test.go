@@ -45,6 +45,9 @@ func TestResolveScopeUsesConfiguredFileWhenItAllowsTarget(t *testing.T) {
 	if resolved.proposal.Source != scopeSourceConfigured || resolved.proposal.Mode != scopeModeFile {
 		t.Fatalf("proposal = %+v, want configured file", resolved.proposal)
 	}
+	if resolved.value.IsAllowed("api.example.com") {
+		t.Fatal("configured file must not be expanded to include subdomains")
+	}
 }
 
 func TestResolveScopeFallsBackWhenConfiguredFileRejectsTarget(t *testing.T) {
@@ -62,7 +65,7 @@ func TestResolveScopeFallsBackWhenConfiguredFileRejectsTarget(t *testing.T) {
 	if resolved.proposal.Source != scopeSourceImplicit {
 		t.Fatalf("source = %q, want implicit", resolved.proposal.Source)
 	}
-	if got, want := resolved.proposal.Entries, []string{"example.com"}; !reflect.DeepEqual(got, want) {
+	if got, want := resolved.proposal.Entries, []string{"example.com", "*.example.com"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("entries = %v, want %v", got, want)
 	}
 }

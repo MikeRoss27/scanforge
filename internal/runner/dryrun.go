@@ -10,18 +10,33 @@ import (
 )
 
 type DryRunExecutor struct {
-	verbose bool
+	verbose     bool
+	commandSink CommandSink
 }
 
-func NewDryRunExecutor(verbose bool) *DryRunExecutor {
-	return &DryRunExecutor{verbose: verbose}
+// NewDryRunExecutor records commands without running them. When a command
+// sink is installed it owns the command transcript (the scan console prints
+// it); standalone callers without a sink get the historical stdout lines.
+func NewDryRunExecutor(verbose bool, opts ...ExecutorOption) *DryRunExecutor {
+	cfg := applyOptions(opts)
+	return &DryRunExecutor{verbose: verbose, commandSink: cfg.commandSink}
 }
 
 func (e *DryRunExecutor) Run(ctx context.Context, command Command) (*CommandResult, error) {
 	start := time.Now()
 
-	fmt.Println(ui.CommandLine(command.Name + " " + strings.Join(command.Args, " ")))
+	result := &CommandResult{
+		Command:  command,
+		ExitCode: 0,
+		Duration: time.Since(start),
+	}
 
+	if e.commandSink != nil {
+		e.commandSink(command, result, nil)
+		return result, nil
+	}
+
+	fmt.Println(ui.CommandLine(command.Name + " " + strings.Join(command.Args, " ")))
 	if e.verbose {
 		if command.StdoutFile != "" {
 			fmt.Println("stdout:", command.StdoutFile)
@@ -30,10 +45,5 @@ func (e *DryRunExecutor) Run(ctx context.Context, command Command) (*CommandResu
 			fmt.Println("stderr:", command.StderrFile)
 		}
 	}
-
-	return &CommandResult{
-		Command:  command,
-		ExitCode: 0,
-		Duration: time.Since(start),
-	}, nil
+	return result, nil
 }

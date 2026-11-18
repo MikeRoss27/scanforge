@@ -576,3 +576,36 @@ func readFindings(t *testing.T, path string) []finding {
 	}
 	return findings
 }
+
+func TestScanBodyEmailBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		want       bool
+	}{
+		{"minified blob", `"Pp Rfe@Rm.Rs#T2O}"`, false},
+		{"mixed case domain", `"support@acmecorp.Rs"`, true},
+		{"quoted email", `"security@acmecorp.io"`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			found := false
+			for _, f := range scanBody("https://target.example/chunk.js", tc.body) {
+				if f.Kind == kindEmail {
+					found = true
+				}
+			}
+			if found != tc.want {
+				t.Fatalf("email found = %v, want %v", found, tc.want)
+			}
+		})
+	}
+}
+
+func TestScanBodyKeepsUUIDCredentialCandidate(t *testing.T) {
+	findings := scanBody("https://target.example/_next/static/chunks/app.js", `{"API-Key":"12345678-1234-4234-8234-123456789abc"}`)
+	for _, f := range findings {
+		if f.Pattern == "generic-secret-assignment" && f.Severity == "medium" {
+			return
+		}
+	}
+	t.Fatalf("UUID credential candidate missing: %+v", findings)
+}

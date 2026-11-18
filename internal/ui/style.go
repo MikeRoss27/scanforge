@@ -12,13 +12,12 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
-	"golang.org/x/term"
 )
 
 // ScanForge palette — inspired by ProjectDiscovery's tools (nuclei, httpx:
-// mostly neutral text with a cyan "[INF]" tag and severity-only color) for
+// mostly neutral text with a amber "[INF]" tag and severity-only color) for
 // one-shot command output, and lazygit/k9s (bordered, purposeful panes, one
-// accent for focus) for the live TUI. Color is reserved for meaning: cyan is
+// accent for focus) for the live TUI. Color is reserved for meaning: ember amber is
 // the one brand/focus accent, not a wash applied to everything. Every color
 // carries an ANSI 256 fallback so output stays readable without truecolor.
 var (
@@ -26,7 +25,7 @@ var (
 	colorDim    = color("#6b7280", "243") // secondary/meta text (durations, paths)
 	colorSubtle = color("#9ca3af", "248") // slightly lighter than dim — descriptions
 	colorText   = color("#e5e7eb", "254") // primary body text — off-white, not accent-colored
-	colorAccent = color("#38bdf8", "38")  // brand / focus / "[INF]": the one recurring accent
+	colorAccent = color("#e8b059", "179") // brand / focus / "[INF]": the one recurring accent
 	colorGreen  = color("#4ade80", "78")  // success
 	colorYellow = color("#facc15", "220") // warning
 	colorOrange = color("#fb923c", "215") // medium severity / user-initiated abort
@@ -85,6 +84,12 @@ func Gray(s string) string      { return Dim(s) }
 func Dim(s string) string       { return lipgloss.NewStyle().Foreground(colorDim).Render(s) }
 func Bold(s string) string      { return lipgloss.NewStyle().Bold(true).Render(s) }
 func DimBold(s string) string   { return lipgloss.NewStyle().Bold(true).Foreground(colorDim).Render(s) }
+
+// Title renders a bold accent-colored section heading (help sections,
+// grouped listings).
+func Title(s string) string {
+	return lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(s)
+}
 
 // Severity colors a finding severity label: critical/high → red, medium →
 // orange, low → subtle, info → dim. Mirrors nuclei's own severity colors so
@@ -198,15 +203,6 @@ func lerpHex(from, to [3]int, t float64) string {
 // Layout primitives
 // ---------------------------------------------------------------------------
 
-// terminalWidth returns the current stdout width, falling back to 80 columns
-// when stdout isn't a TTY (redirected output, CI logs, dry-run to a file).
-func terminalWidth() int {
-	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
-		return w
-	}
-	return 80
-}
-
 // Justify pads `left` and `right` on a single line of exactly `width`
 // columns, e.g. a status bar's title on the left and a timer on the right.
 // If both sides don't fit, a single space separates them instead of
@@ -221,12 +217,7 @@ func Justify(left, right string, width int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// Section renders a flat, unboxed block for one-shot command output (doctor,
-// plan, version, run start/summary): a bold title, a dim divider the width
-// of the title, then the body. Deliberately has no border — boxing every
-// single piece of output is the kind of decorative filler that makes a CLI
-// feel templated rather than purpose-built; the box is reserved for the live
-// TUI's panes, where it marks a real functional region.
+// Section renders a heading and body for one-shot command output.
 func Section(title, body string) string {
 	return SectionWith(title, body, colorAccent)
 }
@@ -240,7 +231,6 @@ func SectionWith(title, body string, titleColor lipgloss.Color) string {
 		rendered := lipgloss.NewStyle().Bold(true).Foreground(titleColor).Render(title)
 		b.WriteString(rendered)
 		b.WriteString("\n")
-		b.WriteString(Dim(strings.Repeat("─", lipgloss.Width(rendered))))
 		b.WriteString("\n")
 	}
 	b.WriteString(body)
@@ -301,23 +291,6 @@ func ProgressBar(completed, total, width int) string {
 	return fmt.Sprintf("%s %d/%d", barStyle.Render(bar), completed, total)
 }
 
-// WaveHeader renders a full-width section header for an execution wave, e.g.
-// "────── Wave 1 · subfinder, dnsx ──────".
-func WaveHeader(wave int, modules string) string {
-	label := fmt.Sprintf("Wave %d", wave)
-	if modules != "" {
-		label += " · " + modules
-	}
-	head := lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(label)
-	width := terminalWidth()
-	fill := width - lipgloss.Width(head) - 4
-	if fill < 2 {
-		fill = 2
-	}
-	rule := lipgloss.NewStyle().Foreground(colorBorder).Render(strings.Repeat("─", fill))
-	return rule + " " + head + " " + rule
-}
-
 // CommandLine renders a shell command dimmed with a colored prompt, as used
 // by dry runs and the commands log.
 func CommandLine(command string) string {
@@ -325,11 +298,15 @@ func CommandLine(command string) string {
 	return prompt + " " + lipgloss.NewStyle().Foreground(colorDim).Render(command)
 }
 
-// Table renders a bordered, header-having table, replacing
-// pterm.DefaultTable.WithHasHeader().WithBoxed().
+// Table renders a compact table with a rule below its headings.
 func Table(headers []string, rows [][]string) string {
 	t := table.New().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderColumn(false).
 		BorderStyle(lipgloss.NewStyle().Foreground(colorBorder)).
 		Headers(headers...).
 		Rows(rows...).

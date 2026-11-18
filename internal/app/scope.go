@@ -4,11 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
+	"github.com/MikeRoss27/scanforge/internal/modules"
 	scanscope "github.com/MikeRoss27/scanforge/internal/scope"
+	"github.com/MikeRoss27/scanforge/internal/ui"
 	"golang.org/x/term"
 )
 
@@ -52,14 +55,21 @@ func (p *terminalScopePrompter) Confirm(proposal ScopeProposal) (bool, error) {
 	if p == nil || p.input == nil {
 		return false, fmt.Errorf("scope confirmation input is unavailable")
 	}
-	_, _ = fmt.Fprintf(p.output, "Effective scope (%s, mode %s):\n", proposal.Source, proposal.Mode)
+	// One context line, the entries as a plain list, one question — no box.
+	source := fmt.Sprintf("Scope from %s (%s)", proposal.Source, proposal.Mode)
+	if proposal.Source == scopeSourceImplicit {
+		source = fmt.Sprintf("Scope inferred from target (%s)", proposal.Mode)
+	}
+	_, _ = fmt.Fprintln(p.output, ui.Secondary(source))
 	if proposal.Note != "" {
-		_, _ = fmt.Fprintf(p.output, "Reason: %s\n", proposal.Note)
+		_, _ = fmt.Fprintln(p.output, ui.Secondary("Reason: "+proposal.Note))
 	}
+	_, _ = fmt.Fprintln(p.output)
 	for _, entry := range proposal.Entries {
-		_, _ = fmt.Fprintf(p.output, "  - %s\n", entry)
+		_, _ = fmt.Fprintf(p.output, "  %s %s\n", ui.Green("+"), entry)
 	}
-	_, _ = fmt.Fprint(p.output, "Continue with this scope? [y/N] ")
+	_, _ = fmt.Fprintln(p.output)
+	_, _ = fmt.Fprint(p.output, ui.Bold("Continue?")+" [y/N] › ")
 
 	answer, err := bufio.NewReader(p.input).ReadString('\n')
 	if err != nil && len(answer) == 0 {
@@ -108,7 +118,7 @@ func resolveScope(cfg *config.Config, target, explicitPath, modeValue string, ad
 		fallbackNote = "implicit scope requested by command-line options"
 	}
 
-	mode, err := parseScopeMode(modeValue)
+	mode, err := parseScopeMode(modeValue, target)
 	if err != nil {
 		return nil, err
 	}
@@ -153,9 +163,18 @@ func loadFileScope(path, target, source string, strictTarget bool) (*effectiveSc
 	}, nil
 }
 
-func parseScopeMode(value string) (scanscope.Mode, error) {
+func parseScopeMode(value, target string) (scanscope.Mode, error) {
 	switch scanscope.Mode(strings.ToLower(strings.TrimSpace(value))) {
-	case "", scanscope.ModeExact:
+	case "":
+		host, err := modules.TargetHost(target)
+		if err != nil {
+			return "", err
+		}
+		if net.ParseIP(host) != nil || !strings.Contains(host, ".") {
+			return scanscope.ModeExact, nil
+		}
+		return scanscope.ModeDomain, nil
+	case scanscope.ModeExact:
 		return scanscope.ModeExact, nil
 	case scanscope.ModeDomain:
 		return scanscope.ModeDomain, nil

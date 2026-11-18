@@ -2,17 +2,21 @@
 
 ## 产物驱动的流水线
 
-每个模块声明它需要和产生的产物。ScanForge 构建 DAG，拒绝重复的生产者、缺失的依赖和循环依赖，然后按波次运行就绪的模块。
+每个模块声明它需要和产生的产物。ScanForge 构建 DAG，拒绝重复的生产者、缺失的依赖和循环依赖，并在所需产物就绪后立即启动对应模块。因此，缓慢的独立模块不会阻塞另一个已就绪的分支。
 
 主要链路：
 
 ```text
-subfinder → subdomains → dnsx → resolved_hosts
+                         ┌→ dnsx（被动输入）──────────┐
+subfinder → subdomains ──┤                           ├→ resolved_hosts
+                         └→ dnsbrute → dnsx（后续结果）┘
 resolved_hosts → httpx → alive_urls
 resolved_hosts → naabu → open_ports → nmap
 alive_urls → tlsx / whatweb / wafw00f / katana / ffuf / nuclei
 target → gau → historical_urls
 ```
+
+DNSX 会在 DNS 暴力破解运行时解析被动发现结果。可选生产者结束后，DNSX 只解析新增主机，合并两个 JSONL 流并发布最终的范围过滤产物。如果可选生产者失败，等待也会结束，被动分支仍可继续。
 
 `scanforge plan TARGET --preset deep` 显示已验证的波次，而不运行任何工具或创建运行。
 

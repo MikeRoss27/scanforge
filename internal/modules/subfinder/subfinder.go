@@ -5,8 +5,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -45,7 +43,7 @@ func (m *Module) Produces() []string {
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	outputFile := runCtx.Run.Path("01_subdomains", "subfinder.txt")
 	stderrFile := runCtx.Run.Path("00_meta", "subfinder.stderr.log")
-	target, err := enumerationTarget(runCtx.Target)
+	target, err := modules.TargetHost(runCtx.Target)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +82,9 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 
 	status := "completed"
+	if rejected := runCtx.RejectedCount("subdomains"); rejected > 0 {
+		runCtx.EmitWarning(fmt.Sprintf("subfinder: %d discovered hosts excluded by scope; the module summary counts retained hosts only (see 00_meta/scope-rejections.jsonl).", rejected))
+	}
 	if res.ExitCode != 0 {
 		status = fmt.Sprintf("failed (exit code %d)", res.ExitCode)
 	}
@@ -96,29 +97,6 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			"subfinder_stderr": "00_meta/subfinder.stderr.log",
 		},
 	}, nil
-}
-
-func enumerationTarget(raw string) (string, error) {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return "", fmt.Errorf("subfinder target is empty")
-	}
-
-	if strings.Contains(value, "://") {
-		parsed, err := url.Parse(value)
-		if err != nil || parsed.Hostname() == "" {
-			return "", fmt.Errorf("invalid subfinder target %q", raw)
-		}
-		value = parsed.Hostname()
-	} else if host, _, err := net.SplitHostPort(value); err == nil {
-		value = host
-	}
-
-	value = strings.Trim(strings.TrimSuffix(value, "."), "[]")
-	if value == "" || strings.ContainsAny(value, "/?#") {
-		return "", fmt.Errorf("invalid subfinder target %q", raw)
-	}
-	return strings.ToLower(value), nil
 }
 
 func ensureTargetInOutput(path, target string) error {

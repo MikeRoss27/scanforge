@@ -29,13 +29,17 @@ func (m *Module) Produces() []string  { return []string{"historical_urls"} }
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	outputFile := runCtx.Run.Path("05_content", "gau.txt")
 	stderrFile := runCtx.Run.Path("00_meta", "gau.stderr.log")
+	target, err := modules.TargetHost(runCtx.Target)
+	if err != nil {
+		return nil, err
+	}
 	cmd := runner.Command{
 		Name: m.binary,
 		Args: []string{
 			"--subs",
 			"--threads", "5",
 			"--blacklist", "png,jpg,jpeg,gif,svg,woff,woff2,ico",
-			runCtx.Target,
+			target,
 		},
 		Timeout:    20 * time.Minute,
 		StdoutFile: outputFile,
@@ -46,8 +50,12 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, cmd); err != nil {
 		return nil, fmt.Errorf("failed to write commands log: %w", err)
 	}
-	if _, err := executor.Run(ctx, cmd); err != nil {
+	res, err := executor.Run(ctx, cmd)
+	if err != nil {
 		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("command %q exited with code %d (see %s)", cmd.Name, res.ExitCode, stderrFile)
 	}
 	if err := runCtx.AddArtifact("historical_urls", modules.Artifact{
 		Name:   "historical_urls",

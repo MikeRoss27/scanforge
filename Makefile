@@ -11,7 +11,7 @@ LDFLAGS   := -s -w \
 	-X github.com/MikeRoss27/scanforge/internal/version.Date=$(DATE) \
 	-X github.com/MikeRoss27/scanforge/internal/dependencies.PinnedVersions=$(TOOLS_VERSIONS)
 
-.PHONY: all build test race vet lint fmt install docker clean
+.PHONY: all build test race vet lint fmt fmt-check check tidy cover run dev install docker tools clean
 
 all: build
 
@@ -40,4 +40,27 @@ docker:
 	docker build -t scanforge:latest .
 
 clean:
-	rm -f $(BINARY) $(BINARY).exe
+	rm -f $(BINARY) $(BINARY).exe coverage.out
+
+# Usage : make run [ARGS="plan example.com --preset deep"]
+ARGS ?= --help
+
+run:
+	go run $(PKG) $(ARGS)
+
+dev: run
+
+fmt-check:
+	@test -z "$$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+check: fmt-check vet lint test
+
+tidy:
+	go mod tidy
+
+cover:
+	go test -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out
+
+tools:
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2

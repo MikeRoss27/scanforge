@@ -57,7 +57,7 @@ before running a scan.`,
 	cmd.Flags().StringVar(&preset, "preset", "", "User-oriented preset (safe, recon, web, ports, vuln, deep)")
 	cmd.Flags().StringVar(&targetsFile, "targets", "", "File with one target per line (multi-target engagement; exclusive with a positional target)")
 	cmd.Flags().StringVarP(&scopeFile, "scope", "s", "", "Scope file (default from config)")
-	cmd.Flags().StringVar(&scopeMode, "scope-mode", "", "Implicit scope mode: exact or domain (default exact)")
+	cmd.Flags().StringVar(&scopeMode, "scope-mode", "", "Implicit scope mode: exact or domain (default domain for DNS domains, exact for IPs and single-label hosts)")
 	cmd.Flags().StringArrayVar(&scopeAdd, "scope-add", nil, "Add an entry to implicit scope (repeatable)")
 	cmd.Flags().StringArrayVar(&exclusions, "exclude", nil, "Exclude an entry from implicit scope (repeatable)")
 	return cmd
@@ -65,7 +65,7 @@ before running a scan.`,
 
 func printPlanPanel(out io.Writer, plan *app.PlanResult) {
 	kv := func(key, value string) string {
-		return fmt.Sprintf("%-10s %s", ui.DimBold(key), value)
+		return fmt.Sprintf("%s %s", ui.DimBold(fmt.Sprintf("%-10s", key)), value)
 	}
 
 	var info strings.Builder
@@ -95,6 +95,6 @@ func printPlanPanel(out io.Writer, plan *app.PlanResult) {
 	}
 	table := ui.Table([]string{"WAVE", "MODULE", "RISK", "REQUIRES"}, rows)
 
-	_, _ = fmt.Fprintln(out, ui.Section("SCAN PLAN", info.String()+"\n"+table))
+	_, _ = fmt.Fprintln(out, ui.Section("Scan plan", info.String()+"\n"+table))
 	_, _ = fmt.Fprintln(out)
 }

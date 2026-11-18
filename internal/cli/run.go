@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"strings"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/app"
+	"github.com/MikeRoss27/scanforge/internal/console"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func NewRunCommand(application *app.App) *cobra.Command {
@@ -18,7 +21,8 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var targetsFile string
 	var confirmScope bool
 	var dryRun bool
-	var verbose bool
+	var verbosityCount int
+	var quiet bool
 
 	var proxy string
 	var headers []string
@@ -40,25 +44,18 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var ffufFilterCodes string
 
 	cmd := &cobra.Command{
-		Use:     "run <target>",
-		Aliases: []string{"scan"},
-		GroupID: groupCore,
-		Short:   "Run a scan against an authorized target",
+		Use:         "run [target]",
+		Aliases:     []string{"scan"},
+		GroupID:     groupCore,
+		Annotations: map[string]string{annGroupedFlags: "true"},
+		Short:       "Run a scan against an authorized target",
 		Long: `Executes the scan pipeline for a target (or a list of targets) using
 the selected profile or preset. The effective scope is built from scope.txt
 and every artifact is filtered against it before downstream modules consume
 it. Results are written to runs/<target>/<timestamp>/ with a consolidated
 report (report.json / report.md).`,
-		Example: `  # Scan a single target with the default profile
-  scanforge run example.com
-
-  # Deep preset: full subdomain enumeration, port scan and vulnerability scan
-  scanforge run example.com --preset deep
-
-  # Multi-target engagement from a file
+		Example: `  scanforge run example.com
   scanforge run --targets targets.txt --profile web
-
-  # Preview the commands without executing them
   scanforge run example.com --dry-run`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -81,7 +78,7 @@ report (report.json / report.md).`,
 				Exclusions:   exclusions,
 				ConfirmScope: confirmScope,
 				DryRun:       dryRun,
-				Verbose:      verbose,
+				Verbosity:    console.ParseVerbosity(verbosityCount, quiet),
 				Proxy:        proxy,
 				Headers:      headers,
 				Nuclei: modules.NucleiOptions{
@@ -106,15 +103,16 @@ report (report.json / report.md).`,
 	}
 
 	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan profile to run (default from config)")
-	cmd.Flags().StringVar(&preset, "preset", "", "User-oriented preset (safe, recon, web, ports, vuln, deep)")
-	cmd.Flags().StringVar(&targetsFile, "targets", "", "File with one target per line (multi-target engagement; exclusive with a positional target)")
+	cmd.Flags().StringVar(&preset, "preset", "", "Built-in preset (safe, recon, web, ports, vuln, deep)")
+	cmd.Flags().StringVar(&targetsFile, "targets", "", "Read one target per line from a file (replaces [target])")
 	cmd.Flags().StringVarP(&scopeFile, "scope", "s", "", "Scope file (default from config)")
-	cmd.Flags().StringVar(&scopeMode, "scope-mode", "", "Implicit scope mode: exact or domain (default exact)")
+	cmd.Flags().StringVar(&scopeMode, "scope-mode", "", "Implicit scope mode: exact or domain (default domain for DNS domains, exact for IPs and single-label hosts)")
 	cmd.Flags().StringArrayVar(&scopeAdd, "scope-add", nil, "Add an entry to implicit scope (repeatable)")
 	cmd.Flags().StringArrayVar(&exclusions, "exclude", nil, "Exclude an entry from implicit scope (repeatable)")
 	cmd.Flags().BoolVar(&confirmScope, "confirm-scope", false, "Confirm the effective scope non-interactively (required in CI)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print commands without executing them")
-	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	cmd.Flags().CountVarP(&verbosityCount, "verbose", "v", "Increase verbosity: -v detailed modules, -vv commands, -vvv redirections")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Only findings, warnings, errors and the summary")
 
 	cmd.Flags().StringVar(&proxy, "proxy", "", "Route HTTP-capable modules through a proxy, e.g. Caido/Burp at http://127.0.0.1:8080")
 	cmd.Flags().StringArrayVarP(&headers, "header", "H", nil, "Custom HTTP header sent with every request, e.g. 'Authorization: Bearer <token>' (repeatable)")
@@ -132,8 +130,41 @@ report (report.json / report.md).`,
 
 	cmd.Flags().IntVar(&nmapConcurrency, "nmap-concurrency", 0, "Max concurrent nmap processes (default 4; lower to reduce noise)")
 
-	cmd.Flags().StringVar(&ffufWordlist, "ffuf-wordlist", "", "Ffuf: wordlist of paths to fuzz (default: first existing of /usr/share/wordlists/dirb/common.txt, /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt, /usr/share/seclists/Discovery/Web-Content/common.txt)")
+	cmd.Flags().StringVar(&ffufWordlist, "ffuf-wordlist", "", "Path to an ffuf wordlist (default: auto-detect)")
 	cmd.Flags().StringVar(&ffufFilterCodes, "ffuf-filter-codes", "", "Ffuf: comma-separated HTTP status codes to filter out, e.g. 404,500")
 
 	return cmd
+}
+
+// runFlagHelp groups the existing options without changing how Cobra parses them.
+func runFlagHelp(cmd *cobra.Command) string {
+	headings := []string{"Scan options", "Scope options", "HTTP options", "Tool options"}
+	groups := make([]*pflag.FlagSet, len(headings))
+	for i, heading := range headings {
+		groups[i] = pflag.NewFlagSet(heading, pflag.ContinueOnError)
+	}
+	cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
+		switch {
+		case strings.HasPrefix(flag.Name, "scope"), flag.Name == "exclude", flag.Name == "confirm-scope":
+			groups[1].AddFlag(flag)
+		case flag.Name == "proxy", flag.Name == "header":
+			groups[2].AddFlag(flag)
+		case strings.HasPrefix(flag.Name, "nuclei-"), strings.HasPrefix(flag.Name, "nmap-"), strings.HasPrefix(flag.Name, "ffuf-"):
+			groups[3].AddFlag(flag)
+		default:
+			groups[0].AddFlag(flag)
+		}
+	})
+
+	var sections []string
+	for i, group := range groups {
+		if flags := strings.TrimRight(group.FlagUsagesWrapped(80), " \t\n"); flags != "" {
+			sections = append(sections, headings[i]+":\n"+flags)
+		}
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+func init() {
+	cobra.AddTemplateFunc("runFlagHelp", runFlagHelp)
 }

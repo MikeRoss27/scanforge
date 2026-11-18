@@ -10,11 +10,16 @@ import (
 )
 
 type RealExecutor struct {
-	verbose bool
+	verbose     bool
+	commandSink CommandSink
 }
 
-func NewRealExecutor(verbose bool) *RealExecutor {
-	return &RealExecutor{verbose: verbose}
+// NewRealExecutor builds the executor that runs external tools. verbose
+// keeps the historical diagnostic behavior (stdout/stderr file hints on
+// stderr); options add optional hooks such as WithCommandSink.
+func NewRealExecutor(verbose bool, opts ...ExecutorOption) *RealExecutor {
+	cfg := applyOptions(opts)
+	return &RealExecutor{verbose: verbose, commandSink: cfg.commandSink}
 }
 
 func (e *RealExecutor) Run(ctx context.Context, command Command) (*CommandResult, error) {
@@ -63,7 +68,9 @@ func (e *RealExecutor) Run(ctx context.Context, command Command) (*CommandResult
 	// actually went wrong. Translate timeouts (and only timeouts) into a
 	// message operators can act on.
 	if err != nil && cmdCtx.Err() == context.DeadlineExceeded {
-		err = fmt.Errorf("command timed out after %s: %w", timeout, err)
+		err = fmt.Errorf("command timed out after %s: %w", timeout, errors.Join(cmdCtx.Err(), err))
+	} else if err != nil && cmdCtx.Err() == context.Canceled {
+		err = errors.Join(context.Canceled, err)
 	}
 
 	exitCode := 0
@@ -80,8 +87,8 @@ func (e *RealExecutor) Run(ctx context.Context, command Command) (*CommandResult
 	}
 
 	if e.verbose {
-		// Diagnostics go to stderr so they never corrupt a Bubble Tea render
-		// loop that owns stdout.
+		// Diagnostics go to stderr so they never corrupt a console renderer
+		// that owns stdout.
 		if command.StdoutFile != "" {
 			fmt.Fprintln(os.Stderr, "stdout:", command.StdoutFile)
 		}
@@ -90,9 +97,13 @@ func (e *RealExecutor) Run(ctx context.Context, command Command) (*CommandResult
 		}
 	}
 
-	return &CommandResult{
+	result := &CommandResult{
 		Command:  command,
 		ExitCode: exitCode,
 		Duration: time.Since(start),
-	}, err
+	}
+	if e.commandSink != nil {
+		e.commandSink(command, result, err)
+	}
+	return result, err
 }

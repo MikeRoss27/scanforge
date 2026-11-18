@@ -2,6 +2,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/MikeRoss27/scanforge/internal/app"
 	"github.com/spf13/cobra"
 )
@@ -21,20 +23,11 @@ func NewRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scanforge",
 		Short: "Authorized pentest scan orchestrator",
-		Long: `ScanForge orchestrates external security tools (subfinder, dnsx, httpx,
-nuclei, ...) into a single, scope-enforced pipeline for authorized pentest
-and recon engagements.
-
-Every target is validated against scope.txt before any tool runs, and each
-scan produces a consolidated report under runs/<target>/<timestamp>/.
-
-Typical workflow:
-  scanforge init     create scanforge.yaml and scope.txt
-  scanforge doctor   verify that the required tools are installed
-  scanforge plan     preview the validated pipeline without running it
-  scanforge run      execute the scan and produce a report
-  scanforge diff     compare two runs to track changes over time
-  scanforge triage   analyze and prioritize a run's findings`,
+		Long:  "ScanForge runs scope-validated security scans and saves consolidated reports.",
+		Example: `  scanforge run example.com --profile web --confirm-scope
+  scanforge plan example.com --preset deep
+  scanforge diff runs/<target>/<run-a> runs/<target>/<run-b>
+  scanforge doctor --profile web`,
 		// Runtime errors (a failed module, a deadlock, ...) must not dump
 		// the full flag reference: the scan summary already explains what
 		// happened. Errors are printed once by cmd/scanforge/main.go.
@@ -45,10 +38,13 @@ Typical workflow:
 		},
 	}
 
-	// Flag-parsing mistakes are still a usage problem: keep showing help
-	// there so the user sees what flags exist.
+	// Colored, section-aligned help for the whole command tree; child
+	// commands inherit the renderer through Cobra's HelpFunc lookup.
+	cmd.SetHelpFunc(renderColoredHelp)
+
+	// Keep the parse error visible and point to help for the affected command.
 	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
-		c.PrintErrln(c.UsageString())
+		c.PrintErrf("See %q for usage.\n", c.CommandPath()+" --help")
 		return err
 	})
 
@@ -60,9 +56,13 @@ Typical workflow:
 	cmd.AddGroup(&cobra.Group{ID: groupConfig, Title: "Configuration:"})
 	cmd.AddGroup(&cobra.Group{ID: groupMaintenance, Title: "Maintenance:"})
 
-	cmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to scanforge.yaml (overrides SCANFORGE_CONFIG and ./scanforge.yaml)")
+	cmd.PersistentFlags().StringVar(&configPath, "config", "", "Config (default: SCANFORGE_CONFIG or scanforge.yaml)")
 
-	cmd.AddCommand(NewRunCommand(application))
+	run := NewRunCommand(application)
+	run.SetUsageTemplate(strings.Replace(cmd.UsageTemplate(),
+		"Flags:\n{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}",
+		"{{runFlagHelp .}}", 1))
+	cmd.AddCommand(run)
 	cmd.AddCommand(NewPlanCommand(application))
 	cmd.AddCommand(NewDiffCommand(application))
 	cmd.AddCommand(NewExportCommand(application))

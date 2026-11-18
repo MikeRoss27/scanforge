@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
+	"github.com/MikeRoss27/scanforge/internal/console"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/storage"
 )
@@ -34,7 +35,9 @@ type RunOptions struct {
 	Exclusions   []string
 	ConfirmScope bool
 	DryRun       bool
-	Verbose      bool
+	// Verbosity is the structured output level: Quiet, Normal, Verbose
+	// (-v), Debug (-vv) or Trace (-vvv). See console.Verbosity.
+	Verbosity console.Verbosity
 
 	// Proxy routes HTTP-capable modules through an intercepting proxy such
 	// as Caido or Burp Suite (e.g. http://127.0.0.1:8080).
@@ -83,4 +86,8 @@ type runSession struct {
 	scanRun   *storage.Run
 	cfg       *config.Config
 	reportErr error
+	// console owns every terminal write of the run and term describes the
+	// output destination it renders for.
+	console *console.Renderer
+	term    console.Terminal
 }

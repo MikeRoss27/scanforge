@@ -32,6 +32,9 @@ type analyzer struct {
 	target   string
 	findings []finding
 	seen     map[string]struct{}
+	// functions maps simple top-level function bindings to their literal so
+	// named message handlers can be inspected instead of assumed unsafe.
+	functions map[string]ast.Expression
 }
 
 func scanAST(target, source string) []finding {
@@ -42,15 +45,54 @@ func scanAST(target, source string) []finding {
 		return nil
 	}
 	an := &analyzer{
-		program: program,
-		source:  source,
-		target:  target,
-		seen:    make(map[string]struct{}),
+		program:   program,
+		source:    source,
+		target:    target,
+		seen:      make(map[string]struct{}),
+		functions: collectFunctions(program),
 	}
 	for _, stmt := range program.Body {
 		an.walkStmt(stmt)
 	}
 	return an.findings
+}
+
+// collectFunctions indexes top-level declarations and var/let/const bindings
+// initialized with a function literal. It is deliberately shallow: resolving
+// nested closures would turn this scanner into a data-flow engine, while the
+// shallow map already covers the common `function onMessage(e) {...}` and
+// `var onMessage = function (e) {...}` shapes.
+func collectFunctions(program *ast.Program) map[string]ast.Expression {
+	functions := make(map[string]ast.Expression)
+	for _, stmt := range program.Body {
+		switch n := stmt.(type) {
+		case *ast.FunctionDeclaration:
+			if n.Function != nil && n.Function.Name != nil {
+				functions[n.Function.Name.Name.String()] = n.Function
+			}
+		case *ast.VariableStatement:
+			collectBindingFunctions(n.List, functions)
+		case *ast.LexicalDeclaration:
+			collectBindingFunctions(n.List, functions)
+		}
+	}
+	return functions
+}
+
+func collectBindingFunctions(bindings []*ast.Binding, out map[string]ast.Expression) {
+	for _, binding := range bindings {
+		if binding == nil || binding.Initializer == nil {
+			continue
+		}
+		name, ok := binding.Target.(*ast.Identifier)
+		if !ok {
+			continue
+		}
+		switch binding.Initializer.(type) {
+		case *ast.FunctionLiteral, *ast.ArrowFunctionLiteral:
+			out[name.Name.String()] = binding.Initializer
+		}
+	}
 }
 
 // report records a finding unless the exact same pattern+snippet already
@@ -385,16 +427,16 @@ func (an *analyzer) checkCall(n *ast.CallExpression) {
 	last := lastSegment(name)
 	switch {
 	case last == "eval":
-		an.report(kindDOMSink, "eval-call", "high", n, payloadLibrary["eval"])
+		an.report(kindDOMSink, "eval-call", an.sinkSeverity("medium", n.ArgumentList...), n, payloadLibrary["eval"])
 	case last == "Function":
 		if hasDynamicArgument(n.ArgumentList) {
 			// Function("return this") is the standard global-this polyfill
 			// emitted by every bundler; only dynamic code strings matter.
-			an.report(kindDOMSink, "function-sink", "high", n, payloadLibrary["function"])
+			an.report(kindDOMSink, "function-sink", an.sinkSeverity("medium", n.ArgumentList...), n, payloadLibrary["function"])
 		}
 	case last == "write" || last == "writeln":
 		if strings.HasPrefix(name, "document.") {
-			an.report(kindDOMSink, "document-write", "high", n, payloadLibrary["document-write"])
+			an.report(kindDOMSink, "document-write", an.sinkSeverity("medium", n.ArgumentList...), n, payloadLibrary["document-write"])
 		}
 	case last == "insertAdjacentHTML":
 		an.report(kindDOMSink, "insert-adjacent-html", "medium", n, payloadLibrary["html"])
@@ -417,7 +459,11 @@ func (an *analyzer) checkCall(n *ast.CallExpression) {
 	case last == "set" && name == "Reflect.set":
 		if len(n.ArgumentList) >= 2 {
 			if lit, ok := n.ArgumentList[1].(*ast.StringLiteral); ok && lit.Value.String() == "__proto__" {
-				an.report(kindProtoPollution, "proto-pollution-reflect-set", "high", n, payloadLibrary["proto-pollution"])
+				severity := "medium"
+				if len(n.ArgumentList) >= 3 {
+					severity = an.sinkSeverity("medium", n.ArgumentList[2])
+				}
+				an.report(kindProtoPollution, "proto-pollution-reflect-set", severity, n, payloadLibrary["proto-pollution"])
 			}
 		}
 	}
@@ -436,7 +482,7 @@ func hasDynamicArgument(args []ast.Expression) bool {
 
 func (an *analyzer) checkNew(n *ast.NewExpression) {
 	if lastSegment(memberName(n.Callee)) == "Function" && hasDynamicArgument(n.ArgumentList) {
-		an.report(kindDOMSink, "new-function-sink", "high", n, payloadLibrary["function"])
+		an.report(kindDOMSink, "new-function-sink", an.sinkSeverity("medium", n.ArgumentList...), n, payloadLibrary["function"])
 	}
 }
 
@@ -445,36 +491,188 @@ func (an *analyzer) checkAssign(n *ast.AssignExpression) {
 	chain := memberName(n.Left)
 	switch {
 	case hasSuffix(chain, "innerHTML"), hasSuffix(chain, "outerHTML"):
-		an.report(kindDOMSink, "html-assignment", "high", n, payloadLibrary["html"])
+		// A literal never carries attacker data; reporting static markup
+		// (bundled templates, icon strings) as DOM XSS is pure noise.
+		if isStaticValue(n.Right) {
+			return
+		}
+		an.report(kindDOMSink, "html-assignment", an.sinkSeverity("medium", n.Right), n, payloadLibrary["html"])
 	case hasSuffix(chain, "srcdoc"):
-		an.report(kindDOMSink, "srcdoc-assignment", "medium", n, payloadLibrary["html"])
+		if isStaticValue(n.Right) {
+			return
+		}
+		an.report(kindDOMSink, "srcdoc-assignment", an.sinkSeverity("medium", n.Right), n, payloadLibrary["html"])
 	case strings.Contains(chain, ".__proto__"):
-		// Matches both "obj.__proto__ = v" and "obj.__proto__.x = v".
-		an.report(kindProtoPollution, "proto-pollution-assignment", "high", n, payloadLibrary["proto-pollution"])
+		// Matches both "obj.__proto__ = v" and "obj.__proto__.x = v". A bare
+		// `subClass.__proto__ = superClass` is the emit of every TypeScript
+		// __extends helper, so it only becomes high when the assigned value
+		// provably comes from a browser-controlled source.
+		an.report(kindProtoPollution, "proto-pollution-assignment", an.sinkSeverity("low", n.Right), n, payloadLibrary["proto-pollution"])
 	case strings.Contains(chain, ".constructor.prototype"):
-		an.report(kindProtoPollution, "constructor-prototype-assignment", "high", n, payloadLibrary["proto-pollution"])
+		an.report(kindProtoPollution, "constructor-prototype-assignment", an.sinkSeverity("medium", n.Right), n, payloadLibrary["proto-pollution"])
 	case chain == "location" || hasSuffix(chain, "location.href"):
 		// Static navigations (location.href = "/search") are fine; only
 		// dynamically computed destinations are worth testing.
-		if _, literal := n.Right.(*ast.StringLiteral); !literal {
-			an.report(kindDOMSink, "location-assignment", "medium", n, payloadLibrary["location"])
+		if isStaticValue(n.Right) {
+			return
 		}
+		an.report(kindDOMSink, "location-assignment", an.sinkSeverity("medium", n.Right), n, payloadLibrary["location"])
 	}
 }
 
-// checkPostMessage flags postMessage calls with a wildcard or no targetOrigin.
+// isStaticValue reports whether an expression is a literal or a template with
+// no interpolation, i.e. a value that cannot contain attacker-controlled data.
+func isStaticValue(e ast.Expression) bool {
+	switch n := e.(type) {
+	case *ast.StringLiteral, *ast.NumberLiteral, *ast.BooleanLiteral, *ast.NullLiteral:
+		return true
+	case *ast.TemplateLiteral:
+		return len(n.Expressions) == 0
+	}
+	return false
+}
+
+// sinkSeverity raises a sink from its review-level base severity to high only
+// when the value visibly derives from a browser-controlled source (URL,
+// fragment, message payload, storage). A sink fed by an unknown identifier is
+// a code smell for manual review, not a proven vulnerability: minified
+// framework bundles are full of internal sinks that never see user input.
+func (an *analyzer) sinkSeverity(base string, sources ...ast.Expression) string {
+	for _, source := range sources {
+		if referencesUserInput(source) {
+			return "high"
+		}
+	}
+	return base
+}
+
+// userInputRoots are expression prefixes whose content an attacker controls
+// from a browser page. Only these raise a sink to high severity.
+var userInputRoots = []string{
+	"location",
+	"window.location",
+	"document.location",
+	"document.URL",
+	"document.referrer",
+	"document.cookie",
+	"window.name",
+	"localStorage",
+	"sessionStorage",
+	"history.state",
+	"event.data",
+	"URLSearchParams",
+	"postMessage",
+}
+
+// eventDataReceivers are conventional message-event parameter names. Reading
+// `<param>.data` is the canonical way a listener receives attacker input.
+var eventDataReceivers = map[string]struct{}{
+	"e": {}, "ev": {}, "evt": {}, "event": {}, "msg": {},
+}
+
+// referencesUserInput walks an expression looking for a browser-controlled
+// source. It is intentionally conservative: unknown identifiers never count.
+func referencesUserInput(e ast.Expression) bool {
+	if e == nil {
+		return false
+	}
+	if name := memberName(e); name != "" {
+		for _, root := range userInputRoots {
+			if name == root || strings.HasPrefix(name, root+".") {
+				return true
+			}
+		}
+		if idx := strings.LastIndexByte(name, '.'); idx > 0 {
+			receiver, prop := name[:idx], name[idx+1:]
+			if prop == "data" {
+				if _, ok := eventDataReceivers[receiver]; ok {
+					return true
+				}
+			}
+		}
+	}
+	switch n := e.(type) {
+	case *ast.CallExpression:
+		if referencesUserInput(n.Callee) {
+			return true
+		}
+		for _, arg := range n.ArgumentList {
+			if referencesUserInput(arg) {
+				return true
+			}
+		}
+	case *ast.NewExpression:
+		if referencesUserInput(n.Callee) {
+			return true
+		}
+		for _, arg := range n.ArgumentList {
+			if referencesUserInput(arg) {
+				return true
+			}
+		}
+	case *ast.AssignExpression:
+		return referencesUserInput(n.Left) || referencesUserInput(n.Right)
+	case *ast.BinaryExpression:
+		return referencesUserInput(n.Left) || referencesUserInput(n.Right)
+	case *ast.UnaryExpression:
+		return referencesUserInput(n.Operand)
+	case *ast.ConditionalExpression:
+		return referencesUserInput(n.Test) || referencesUserInput(n.Consequent) || referencesUserInput(n.Alternate)
+	case *ast.SequenceExpression:
+		for _, expr := range n.Sequence {
+			if referencesUserInput(expr) {
+				return true
+			}
+		}
+	case *ast.DotExpression:
+		return referencesUserInput(n.Left)
+	case *ast.BracketExpression:
+		return referencesUserInput(n.Left) || referencesUserInput(n.Member)
+	case *ast.OptionalChain:
+		return referencesUserInput(n.Expression)
+	case *ast.Optional:
+		return referencesUserInput(n.Expression)
+	case *ast.TemplateLiteral:
+		for _, expr := range n.Expressions {
+			if referencesUserInput(expr) {
+				return true
+			}
+		}
+	case *ast.ObjectLiteral:
+		for _, prop := range n.Value {
+			if keyed, ok := prop.(*ast.PropertyKeyed); ok && referencesUserInput(keyed.Value) {
+				return true
+			}
+		}
+	case *ast.ArrayLiteral:
+		for _, expr := range n.Value {
+			if referencesUserInput(expr) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// checkPostMessage flags postMessage calls that explicitly target every
+// origin. A missing second argument is not reported: the HTML standard
+// defaults targetOrigin to "/" (same origin), so the historical wildcard risk
+// no longer applies and reporting it flagged MessageChannel/setImmediate
+// polyfills such as core-js's.
 func (an *analyzer) checkPostMessage(n *ast.CallExpression) {
-	switch {
-	case len(n.ArgumentList) < 2:
-		an.report(kindPostMessage, "postmessage-missing-origin", "medium", n, payloadLibrary["postmessage"])
-	case len(n.ArgumentList) >= 2:
-		if lit, ok := n.ArgumentList[1].(*ast.StringLiteral); ok && lit.Value.String() == "*" {
-			an.report(kindPostMessage, "postmessage-wildcard", "medium", n, payloadLibrary["postmessage"])
-		}
+	if len(n.ArgumentList) < 2 {
+		return
+	}
+	if lit, ok := n.ArgumentList[1].(*ast.StringLiteral); ok && lit.Value.String() == "*" {
+		an.report(kindPostMessage, "postmessage-wildcard", "medium", n, payloadLibrary["postmessage"])
 	}
 }
 
-// checkMessageListener flags "message" listeners that never inspect event.origin.
+// checkMessageListener flags "message" listeners that never inspect
+// event.origin. Only inline handlers and resolvable local functions are
+// inspected: a handler passed by name from another module cannot be analyzed
+// here, and assuming it unsafe flagged every library dispatcher (core-js's
+// setImmediate, webpack HMR) that registers a listener by reference.
 func (an *analyzer) checkMessageListener(n *ast.CallExpression) {
 	if len(n.ArgumentList) < 2 {
 		return
@@ -483,7 +681,15 @@ func (an *analyzer) checkMessageListener(n *ast.CallExpression) {
 	if !ok || ev.Value.String() != "message" {
 		return
 	}
-	if !checksOrigin(n.ArgumentList[1]) {
+	handler := n.ArgumentList[1]
+	if id, ok := handler.(*ast.Identifier); ok {
+		resolved, found := an.functions[id.Name.String()]
+		if !found {
+			return
+		}
+		handler = resolved
+	}
+	if !checksOrigin(handler) {
 		an.report(kindPostMessage, "message-listener-no-origin-check", "medium", n, payloadLibrary["postmessage"])
 	}
 }
@@ -511,7 +717,11 @@ func (an *analyzer) checkDefineProperty(n *ast.CallExpression) {
 		return
 	}
 	if lit, ok := n.ArgumentList[1].(*ast.StringLiteral); ok && lit.Value.String() == "__proto__" {
-		an.report(kindProtoPollution, "proto-pollution-define-property", "high", n, payloadLibrary["proto-pollution"])
+		severity := "medium"
+		if len(n.ArgumentList) >= 3 {
+			severity = an.sinkSeverity("medium", n.ArgumentList[2])
+		}
+		an.report(kindProtoPollution, "proto-pollution-define-property", severity, n, payloadLibrary["proto-pollution"])
 	}
 }
 
@@ -536,7 +746,7 @@ func (an *analyzer) checkObjectKey(p *ast.PropertyKeyed) {
 			return
 		}
 	}
-	an.report(kindProtoPollution, "proto-pollution-object-literal", "high", p, payloadLibrary["proto-pollution"])
+	an.report(kindProtoPollution, "proto-pollution-object-literal", an.sinkSeverity("low", p.Value), p, payloadLibrary["proto-pollution"])
 }
 
 // checkEnvAccess flags process.env reads, which leak server-side configuration

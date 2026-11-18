@@ -33,8 +33,24 @@ On Arch, `--full` uses `pacman -S --needed` only for official packages and never
 You can also build the binary locally:
 
 ```bash
-go build -o scanforge ./cmd/scanforge
+make build      # or: go build -o scanforge ./cmd/scanforge
 ```
+
+## Development commands
+
+From a clone of the repository, the `Makefile` wraps the Go toolchain. Most
+useful targets:
+
+| Command | Purpose |
+| --- | --- |
+| `make dev` / `make run` | Run the CLI via `go run` without building; pass arguments with `ARGS="plan example.com --preset deep"` |
+| `make test` / `make race` | Test suite (fast / with the race detector) |
+| `make check` | Pre-push gate: formatting check, `go vet`, golangci-lint and tests |
+| `make cover` | Tests with coverage report and per-function summary |
+| `make fmt` / `make fmt-check` | Format the code / list unformatted files without rewriting them |
+| `make vet` / `make lint` | Static analysis; `make tools` installs the golangci-lint version pinned by CI |
+| `make tidy` | Clean up `go.mod` / `go.sum` |
+| `make clean` | Remove the binary and `coverage.out` |
 
 ## Configuration
 

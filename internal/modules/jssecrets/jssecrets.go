@@ -495,8 +495,10 @@ func scanBody(target, body string) []finding {
 			if value == "" {
 				continue
 			}
-			if rule.Kind == kindEmail && isPlaceholderEmail(value) {
-				continue
+			if rule.Kind == kindEmail {
+				if isPlaceholderEmail(value) || !hasEmailBoundaries(body, start, end) {
+					continue
+				}
 			}
 			if rule.Kind == kindInternalHost && isInternalHostPropertyAccess(body, start, value) {
 				continue
@@ -637,6 +639,25 @@ func isPlaceholderEmail(address string) bool {
 	}
 	_, blocked := placeholderEmailDomains[strings.ToLower(domain)]
 	return blocked
+}
+
+// emailBoundaries are the characters that normally surround an email address
+// in source: string delimiters, prose punctuation, JSON/URL separators and
+// whitespace. Minified bundles also carry long binary/base64-like blobs where
+// an email-shaped substring sits between arbitrary symbols (for example
+// "Pp Rfe@Rm.Rs#T2O}..."): those are not addresses and must not be reported.
+const emailBoundaries = " \t\r\n\"'`<>,;:()[]{}=/?&\\|"
+
+// hasEmailBoundaries verifies that the match is delimited like a real address
+// rather than embedded in a minified token.
+func hasEmailBoundaries(body string, start, end int) bool {
+	if start > 0 && strings.IndexByte(emailBoundaries, body[start-1]) < 0 {
+		return false
+	}
+	if end < len(body) && strings.IndexByte(emailBoundaries, body[end]) < 0 {
+		return false
+	}
+	return true
 }
 
 // scanSourceMaps looks for a "//# sourceMappingURL=..." comment and, if found,
