@@ -12,7 +12,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
-	"golang.org/x/term"
 )
 
 // ScanForge palette — inspired by ProjectDiscovery's tools (nuclei, httpx:
@@ -198,15 +197,6 @@ func lerpHex(from, to [3]int, t float64) string {
 // Layout primitives
 // ---------------------------------------------------------------------------
 
-// terminalWidth returns the current stdout width, falling back to 80 columns
-// when stdout isn't a TTY (redirected output, CI logs, dry-run to a file).
-func terminalWidth() int {
-	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
-		return w
-	}
-	return 80
-}
-
 // Justify pads `left` and `right` on a single line of exactly `width`
 // columns, e.g. a status bar's title on the left and a timer on the right.
 // If both sides don't fit, a single space separates them instead of
@@ -221,12 +211,7 @@ func Justify(left, right string, width int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// Section renders a flat, unboxed block for one-shot command output (doctor,
-// plan, version, run start/summary): a bold title, a dim divider the width
-// of the title, then the body. Deliberately has no border — boxing every
-// single piece of output is the kind of decorative filler that makes a CLI
-// feel templated rather than purpose-built; the box is reserved for the live
-// TUI's panes, where it marks a real functional region.
+// Section renders a heading and body for one-shot command output.
 func Section(title, body string) string {
 	return SectionWith(title, body, colorAccent)
 }
@@ -240,7 +225,6 @@ func SectionWith(title, body string, titleColor lipgloss.Color) string {
 		rendered := lipgloss.NewStyle().Bold(true).Foreground(titleColor).Render(title)
 		b.WriteString(rendered)
 		b.WriteString("\n")
-		b.WriteString(Dim(strings.Repeat("─", lipgloss.Width(rendered))))
 		b.WriteString("\n")
 	}
 	b.WriteString(body)
@@ -301,23 +285,6 @@ func ProgressBar(completed, total, width int) string {
 	return fmt.Sprintf("%s %d/%d", barStyle.Render(bar), completed, total)
 }
 
-// WaveHeader renders a full-width section header for an execution wave, e.g.
-// "────── Wave 1 · subfinder, dnsx ──────".
-func WaveHeader(wave int, modules string) string {
-	label := fmt.Sprintf("Wave %d", wave)
-	if modules != "" {
-		label += " · " + modules
-	}
-	head := lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(label)
-	width := terminalWidth()
-	fill := width - lipgloss.Width(head) - 4
-	if fill < 2 {
-		fill = 2
-	}
-	rule := lipgloss.NewStyle().Foreground(colorBorder).Render(strings.Repeat("─", fill))
-	return rule + " " + head + " " + rule
-}
-
 // CommandLine renders a shell command dimmed with a colored prompt, as used
 // by dry runs and the commands log.
 func CommandLine(command string) string {
@@ -325,11 +292,15 @@ func CommandLine(command string) string {
 	return prompt + " " + lipgloss.NewStyle().Foreground(colorDim).Render(command)
 }
 
-// Table renders a bordered, header-having table, replacing
-// pterm.DefaultTable.WithHasHeader().WithBoxed().
+// Table renders a compact table with a rule below its headings.
 func Table(headers []string, rows [][]string) string {
 	t := table.New().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderColumn(false).
 		BorderStyle(lipgloss.NewStyle().Foreground(colorBorder)).
 		Headers(headers...).
 		Rows(rows...).

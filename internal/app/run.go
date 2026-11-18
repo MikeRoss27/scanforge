@@ -13,7 +13,6 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/runner"
 	"github.com/MikeRoss27/scanforge/internal/storage"
 	"github.com/MikeRoss27/scanforge/internal/ui"
-	"github.com/MikeRoss27/scanforge/internal/version"
 )
 
 // Run resolves the target(s) — one positional target or a --targets file —
@@ -144,11 +143,11 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 	}
 
 	fmt.Println()
-	ascii.PrintBanner()
-	fmt.Println(ui.Dim("  by MikeRoss · v" + version.Version))
-	fmt.Println()
+	if os.Getenv("SCANFORGE_BANNER") != "" {
+		ascii.PrintBanner()
+	}
 
-	printRunInfoPanel(s.opts, s.profile, s.scanRun, *s.effective)
+	printRunIntro(s.opts, s.profile, s.scanRun, *s.effective)
 
 	orch := orchestrator.New(executor, buildRegistry(s.cfg))
 	// Buffered so a module emitting a burst of findings (e.g. nuclei) doesn't

@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,36 +17,17 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/ui"
 )
 
-// consumeEvents renders scan progress either through the Bubble Tea TUI (when
-// the output is a terminal and the run is real) or as plain log lines, and
-// returns once the orchestrator goroutine has finished. A non-nil error means
-// the TUI itself failed and the scan was aborted.
+// consumeEvents renders scan progress and waits for the run to exit.
+// Diagnostic output can write directly to the terminal in verbose mode, so
+// that mode uses plain logs to keep the output readable.
 func (s *runSession) consumeEvents(cancel context.CancelFunc, eventChan <-chan orchestrator.Event, done <-chan struct{}) error {
-	if !s.opts.DryRun && term.IsTerminal(int(os.Stdout.Fd())) {
-		model := tui.NewScanModel(eventChan, s.opts.Target, s.profile)
-		p := tea.NewProgram(model, tea.WithAltScreen())
-		finalModel, err := p.Run()
-		if err != nil {
-			cancel()
-			drainEvents(eventChan)
-			<-done
-			return err
-		}
-		// Replay warnings collected in the scan view; once the TUI is gone
-		// nothing else would surface them. The final model is the one that
-		// actually received events during the run — the original model value
-		// was copied when passed to the program.
-		if scanModel, ok := finalModel.(tui.ScanModel); ok {
-			for _, warning := range scanModel.Warnings() {
-				ui.Warn("%s", warning)
-			}
-		}
-		// The user may have quit the UI before the scan finished: cancel the
-		// run and drain the remaining events so the orchestrator can return.
+	if !s.opts.DryRun && !s.opts.Verbose && os.Getenv("TERM") != "dumb" && term.IsTerminal(int(os.Stdout.Fd())) {
+		model := tui.NewScanModel(eventChan)
+		_, err := tea.NewProgram(model).Run()
 		cancel()
 		drainEvents(eventChan)
 		<-done
-		return nil
+		return err
 	}
 	for event := range eventChan {
 		s.printEvent(event)
@@ -68,83 +47,19 @@ func drainEvents(eventChan <-chan orchestrator.Event) {
 
 func (s *runSession) printEvent(event orchestrator.Event) {
 	switch e := event.(type) {
-	case orchestrator.WaveStartEvent:
-		fmt.Println(ui.WaveHeader(e.Wave, strings.Join(e.Modules, ", ")))
 	case orchestrator.ModuleStartEvent:
 		if s.opts.Verbose {
 			ui.Info("Running module %q...", e.Name)
 		}
 	case orchestrator.ModuleDoneEvent:
 		if s.opts.Verbose || !s.opts.DryRun {
-			printModuleResult(os.Stdout, e)
+			fmt.Println(tui.FormatEvent(e))
 		}
-	case orchestrator.DeadlockEvent:
-		ui.Warn("%s", e.Message)
-	case orchestrator.WarningEvent:
-		ui.Warn("%s", e.Message)
-	case orchestrator.FindingEvent:
-		printFinding(e)
+	default:
+		if line := tui.FormatEvent(event); line != "" {
+			fmt.Println(line)
+		}
 	}
-}
-
-// printFinding renders a finding the moment a module reports it, e.g.
-// "  [nuclei] CRITICAL exposed-git-config · https://example.com/.git/config",
-// so long-running scanners like nuclei don't leave the operator staring at a
-// blank terminal for the module's entire duration.
-func printFinding(e orchestrator.FindingEvent) {
-	severity := e.Severity
-	if severity == "" {
-		severity = "info"
-	}
-	line := ui.Dim("["+e.Module+"]") + " " + ui.Severity(strings.ToUpper(severity)) + " " + ui.Bold(e.Title)
-	if e.Target != "" {
-		line += ui.Secondary(" · " + e.Target)
-	}
-	fmt.Println("  " + line)
-}
-
-// printModuleResult renders a compact, aligned completion line for a module,
-// e.g. "  ✓ subfinder      2.1s · 8 subdomains". Skipped and aborted modules
-// get their own mark and an explicit status: a module that never ran must
-// never render like one that succeeded.
-func printModuleResult(out io.Writer, e orchestrator.ModuleDoneEvent) {
-	mark := "✓"
-	color := ui.Green
-	switch {
-	case e.Failed:
-		mark = "✗"
-		color = ui.Red
-	case e.Status == "skipped":
-		mark = "↓"
-		color = ui.Yellow
-	case e.Status == "aborted":
-		mark = "◌"
-		color = ui.Orange
-	}
-	name := color(ui.Bold(fmt.Sprintf("%-13s", e.Name)))
-
-	var parts []string
-	if e.Dur > 0 {
-		parts = append(parts, ui.Dim(e.Dur.Round(time.Millisecond).String()))
-	}
-	switch {
-	case e.Failed && e.Status != "" && e.Status != "failed":
-		parts = append(parts, ui.Red(e.Status))
-	case e.Failed:
-		parts = append(parts, ui.Red("failed"))
-	case e.Status == "skipped":
-		parts = append(parts, ui.Dim("skipped (dependency missing)"))
-	case e.Status == "aborted":
-		parts = append(parts, ui.Orange("aborted"))
-	case e.Summary != "":
-		parts = append(parts, ui.Secondary(e.Summary))
-	}
-
-	line := fmt.Sprintf("  %s %s", color(mark), name)
-	if len(parts) > 0 {
-		line += " " + strings.Join(parts, " · ")
-	}
-	_, _ = fmt.Fprintln(out, line)
 }
 
 // finalizeManifest records completion time, per-module results and the run

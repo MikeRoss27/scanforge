@@ -65,7 +65,7 @@ before running a scan.`,
 
 func printPlanPanel(out io.Writer, plan *app.PlanResult) {
 	kv := func(key, value string) string {
-		return fmt.Sprintf("%-10s %s", ui.DimBold(key), value)
+		return fmt.Sprintf("%s %s", ui.DimBold(fmt.Sprintf("%-10s", key)), value)
 	}
 
 	var info strings.Builder
@@ -95,6 +95,6 @@ func printPlanPanel(out io.Writer, plan *app.PlanResult) {
 	}
 	table := ui.Table([]string{"WAVE", "MODULE", "RISK", "REQUIRES"}, rows)
 
-	_, _ = fmt.Fprintln(out, ui.Section("SCAN PLAN", info.String()+"\n"+table))
+	_, _ = fmt.Fprintln(out, ui.Section("Scan plan", info.String()+"\n"+table))
 	_, _ = fmt.Fprintln(out)
 }

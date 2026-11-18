@@ -13,6 +13,7 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/report"
 	"github.com/MikeRoss27/scanforge/internal/storage"
 	"github.com/MikeRoss27/scanforge/internal/ui"
+	"github.com/MikeRoss27/scanforge/internal/version"
 )
 
 // generateReports renders report.json and report.md from the raw artifacts
@@ -38,27 +39,16 @@ func (s *runSession) generateReports() *report.Report {
 	return rep
 }
 
-// printRunInfoPanel renders a sleek bordered panel with the run configuration
-// instead of the old full-width cyan block.
-func printRunInfoPanel(opts RunOptions, profile string, scanRun *storage.Run, effective effectiveScope) {
-	kv := func(key, val string) string {
-		return fmt.Sprintf("%-9s %s", ui.DimBold(key), val)
-	}
-
-	dryTag := ui.Green("OFF")
+// printRunIntro displays the effective run configuration.
+func printRunIntro(opts RunOptions, profile string, scanRun *storage.Run, effective effectiveScope) {
+	mode := "scan"
 	if opts.DryRun {
-		dryTag = ui.Yellow("ON")
+		mode = "dry run"
 	}
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", kv("TARGET", ui.Bold(opts.Target)))
-	fmt.Fprintf(&b, "%s\n", kv("PROFILE", ui.Secondary(profile)))
-	fmt.Fprintf(&b, "%s\n", kv("SCOPE", ui.Dim(fmt.Sprintf("%s (%s, mode %s)", scanRun.Manifest.ScopePath, effective.proposal.Source, effective.proposal.Mode))))
-	fmt.Fprintf(&b, "%s\n", kv("DRY RUN", dryTag))
-	fmt.Fprintf(&b, "%s", kv("OUTPUT", ui.Dim(scanRun.RootDir)))
-
-	fmt.Println(ui.Section("RUN STARTED", b.String()))
-	fmt.Println()
+	fmt.Printf("%s  %s\n", ui.Primary(ui.Bold("ScanForge")), ui.Secondary("v"+version.Version))
+	fmt.Printf("  %s  %s\n", ui.Bold(opts.Target), ui.Secondary(profile+" · "+mode))
+	fmt.Printf("  %s  %s\n", ui.Bold("Scope"), fmt.Sprintf("%s (%s, mode %s)", scanRun.Manifest.ScopePath, effective.proposal.Source, effective.proposal.Mode))
+	fmt.Printf("  %s %s\n\n", ui.Bold("Output"), scanRun.RootDir)
 }
 
 // printRunSummaryBox renders a single, hard-to-miss closing panel. Unlike
@@ -89,17 +79,21 @@ func printRunSummaryBox(out io.Writer, scanRun *storage.Run, results []*modules.
 	}
 
 	kv := func(key, val string) string {
-		return fmt.Sprintf("%-9s %s", ui.DimBold(key), val)
+		return fmt.Sprintf("%s %s", ui.DimBold(fmt.Sprintf("%-9s", key)), val)
 	}
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", statusLine(scanRun.Manifest.Status))
 	fmt.Fprintf(&b, "%s\n", kv("DURATION", ui.Dim(duration)))
-	fmt.Fprintf(&b, "%s\n", kv("MODULES", ui.ProgressBar(completedCount, len(results), 20)))
+	fmt.Fprintf(&b, "%s\n", kv("MODULES", fmt.Sprintf("%d of %d completed", completedCount, len(results))))
 	if stats := formatRunStats(rep); stats != "" {
 		fmt.Fprintf(&b, "%s\n", kv("STATS", stats))
 	}
-	fmt.Fprintf(&b, "%s\n", kv("FINDINGS", formatSeverityCounts(countBySeverity(rep))))
+	findings := "unavailable"
+	if rep != nil {
+		findings = formatSeverityCounts(countBySeverity(rep))
+	}
+	fmt.Fprintf(&b, "%s\n", kv("FINDINGS", findings))
 	if len(failedModules) > 0 {
 		fmt.Fprintf(&b, "%s\n", kv("FAILED", ui.Red(wrapModuleList(failedModules))))
 	}
@@ -108,7 +102,7 @@ func printRunSummaryBox(out io.Writer, scanRun *storage.Run, results []*modules.
 	}
 	fmt.Fprintf(&b, "%s", kv("OUTPUT", ui.Dim(scanRun.RootDir)))
 
-	_, _ = fmt.Fprintln(out, ui.Section("SCAN SUMMARY", b.String()))
+	_, _ = fmt.Fprintln(out, ui.Section("Scan summary", b.String()))
 }
 
 // wrapModuleList renders "name (status)" entries on lines of at most
@@ -202,6 +196,8 @@ func statusLine(status string) string {
 		return ui.Green(ui.Bold("✓ COMPLETED"))
 	case "partial":
 		return ui.Yellow(ui.Bold("◐ PARTIAL"))
+	case "aborted":
+		return ui.Orange(ui.Bold("◌ ABORTED"))
 	case "failed":
 		return ui.Red(ui.Bold("✗ FAILED"))
 	default:
@@ -229,7 +225,7 @@ func formatSeverityCounts(counts map[string]int) string {
 	total := 0
 	for _, key := range levels {
 		if n := counts[key]; n > 0 {
-			parts = append(parts, ui.Severity(fmt.Sprintf("%d %s", n, key)))
+			parts = append(parts, fmt.Sprintf("%d %s", n, ui.Severity(key)))
 			total += n
 		}
 	}

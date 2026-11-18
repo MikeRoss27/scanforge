@@ -99,6 +99,23 @@ func TestSubcommandHelp(t *testing.T) {
 	}
 }
 
+func TestRunHelpGroupsOptions(t *testing.T) {
+	output, err := execute(t, "run", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Scan options:", "Scope options:", "HTTP options:", "Tool options:", "Global Flags:"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("run help missing %q", want)
+		}
+	}
+	for _, line := range strings.Split(output, "\n") {
+		if len(line) > 80 {
+			t.Errorf("run help exceeds 80 columns: %s", line)
+		}
+	}
+}
+
 func TestVersionCommandPrintsVersion(t *testing.T) {
 	output, err := execute(t, "version")
 	if err != nil {

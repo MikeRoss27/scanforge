@@ -1,37 +1,58 @@
 package tui
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/orchestrator"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
-// Regression test: the TUI must exit by itself once the orchestrator closes
-// the event channel. This used to hang until the user pressed q - waitForEvent
-// returned nil on channel close, and Bubble Tea drops nil command results.
-func TestProgramAutoQuitsOnChannelClose(t *testing.T) {
-	ch := make(chan orchestrator.Event)
-	go func() {
-		ch <- orchestrator.WaveStartEvent{Wave: 1, Modules: []string{"nuclei"}}
-		ch <- orchestrator.ModuleDoneEvent{Name: "nuclei", Status: "completed"}
-		time.Sleep(50 * time.Millisecond)
-		close(ch)
-	}()
+// Even a burst followed immediately by channel close must remain in scrollback.
+func TestProgramPrintsEventsInOrderAndQuits(t *testing.T) {
+	events := []orchestrator.Event{
+		orchestrator.WaveStartEvent{Wave: 1, Modules: []string{"alpha"}},
+		orchestrator.FindingEvent{Module: "alpha", Severity: "medium", Title: "example finding"},
+		orchestrator.WarningEvent{Message: "example warning"},
+		orchestrator.ModuleDoneEvent{Name: "alpha", Status: "completed", Summary: "module finished"},
+	}
+	ch := make(chan orchestrator.Event, len(events))
+	for _, event := range events {
+		ch <- event
+	}
+	close(ch)
 
-	done := make(chan struct{})
+	var out bytes.Buffer
+	result := make(chan error, 1)
+	program := tea.NewProgram(NewScanModel(ch), tea.WithInput(nil), tea.WithOutput(&out))
 	go func() {
-		_, err := tea.NewProgram(NewScanModel(ch, "", ""), tea.WithInput(nil), tea.WithoutRenderer()).Run()
-		if err != nil {
-			t.Errorf("program error: %v", err)
-		}
-		close(done)
+		_, err := program.Run()
+		result <- err
 	}()
-
 	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("TUI did not quit after the event channel closed (scan completed)")
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		program.Kill()
+		t.Fatal("program did not quit after the event channel closed")
+	}
+
+	log := out.String()
+	t.Log("\n" + strings.TrimRight(strings.ReplaceAll(ansi.Strip(log), "\r", ""), " \n"))
+	if strings.Contains(log, "\x1b[?1049h") {
+		t.Fatal("program entered the alternate screen")
+	}
+	remaining := log
+	for _, text := range []string{"Wave 1", "example finding", "example warning", "module finished"} {
+		_, rest, ok := strings.Cut(remaining, text)
+		if !ok {
+			t.Fatalf("%q missing or out of order in %q", text, log)
+		}
+		remaining = rest
 	}
 }
