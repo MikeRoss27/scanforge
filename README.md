@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/scanforge-banner.png" width="100%" alt="ScanForge — cyber reconnaissance framework">
+  <img src="public/scanforge-banner.png" width="100%" alt="ScanForge — RECON · ENUM · SCAN · EXPLOIT — authorized penetration testing only">
 </p>
 
 # ScanForge
@@ -8,11 +8,8 @@
 
 Thanks to its artifact-driven architecture, ScanForge chains well-known security tools while enforcing extremely strict scope validation rules to prevent any unauthorized scanning.
 
-<p align="center">
-  <img src="public/scanforge-icons.png" width="100%" alt="ScanForge pixel art icon pack">
-</p>
 
-## 📚 Documentation
+## <img src="public/icons/search.png" height="24" alt=""> Documentation
 
 - [Usage guide](docs/USAGE.md): installation, configuration, commands and examples.
 - [Scope management](docs/SCOPE.md): implicit modes, files, exclusions and CI.
@@ -21,7 +18,7 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 
 > **Français** : [Documentation en français](docs/fr/README.md) · **中文**：[中文文档](docs/zh/README.md)
 
-## 🚀 Key Features
+## <img src="public/icons/tree.png" height="24" alt=""> Key Features
 
 - **Artifact-driven pipeline**: Modules communicate through artifacts in an ordered way (e.g. `subfinder` output automatically feeds `dnsx` and `httpx`), and each independent branch advances as soon as its inputs are ready.
 - **Strict scope validation**: Explicit scope via file, or confirmed implicit scope (`domain` by default for DNS domains; `exact` for IPs or on request), then filtering of every artifact.
@@ -43,7 +40,7 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 
 ---
 
-## 🛠️ Supported Tools
+## <img src="public/icons/servers.png" height="24" alt=""> Supported Tools
 
 ScanForge centralizes and orchestrates **14 external security tools** and **6 native modules**:
 
@@ -77,7 +74,7 @@ Native modules (no external binary):
 
 ---
 
-## 📦 Simple Installation (Hassle-Free)
+## <img src="public/icons/hammer.png" height="24" alt=""> Simple Installation (Hassle-Free)
 
 Like mainstream tools (nuclei, subfinder...), ScanForge is distributed as **prebuilt binaries** via GitHub Releases: no compilation, no Go required.
 
@@ -142,7 +139,7 @@ docker run -v $(pwd):/workspace scanforge run target.com --profile web
 
 ---
 
-## 🔧 Build from source (development)
+## <img src="public/icons/anvil.png" height="24" alt=""> Build from source (development)
 
 From a clone of the repository, the `Makefile` wraps the Go toolchain:
 
@@ -166,7 +163,7 @@ Handy development targets:
 
 ---
 
-## 🚦 Quick Start Guide
+## <img src="public/icons/terminal.png" height="24" alt=""> Quick Start Guide
 
 ### 1. Initialize the project
 
@@ -286,7 +283,7 @@ scanforge update --tools    # binary + external tools
 
 ---
 
-## 🕵️ Proxy, authentication and Nuclei settings
+## <img src="public/icons/fingerprint.png" height="24" alt=""> Proxy, authentication and Nuclei settings
 
 For real-world penetration testing, route traffic through Caido (or Burp
 Suite) and inject an authenticated session:
@@ -327,7 +324,7 @@ ports, vulnerabilities by severity, run directory).
 
 ---
 
-## 📊 Built-in Profiles and Presets
+## <img src="public/icons/crosshair.png" height="24" alt=""> Built-in Profiles and Presets
 
 | Name | Modules | Usage |
 | --- | --- | --- |
@@ -345,7 +342,7 @@ profile, always review its DAG with `scanforge plan`.
 
 ---
 
-## 📂 Final Report Structure
+## <img src="public/icons/report.png" height="24" alt=""> Final Report Structure
 
 At the end of each scan, a timestamped folder is created under `./runs/`. In addition to the raw logs of each tool, ScanForge generates:
 
@@ -365,7 +362,7 @@ At the end of each scan, a timestamped folder is created under `./runs/`. In add
 - `06_vulns/http-checks.jsonl`: Missing security headers and cookie flags (module `httpcheck`).
 - `06_vulns/nuclei.jsonl`: Raw nuclei findings (module `nuclei`).
 
-> ScanForge must only be used on assets for which you have explicit
+> <img src="public/icons/shield.png" height="18" alt=""> ScanForge must only be used on assets for which you have explicit
 > authorization.
 
 <p align="center">

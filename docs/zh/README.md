@@ -1,7 +1,7 @@
 # README（简体中文）
 
 <p align="center">
-  <img src="../../public/scanforge-banner.png" width="100%" alt="ScanForge — 网络侦察框架">
+  <img src="../../public/scanforge-banner.png" width="100%" alt="ScanForge — RECON · ENUM · SCAN · EXPLOIT — 仅限授权渗透测试">
 </p>
 
 # ScanForge
@@ -16,14 +16,14 @@
   <img src="../../public/scanforge-icons.png" width="100%" alt="ScanForge 像素风图标包">
 </p>
 
-## 📚 文档
+## <img src="../../public/icons/search.png" height="24" alt=""> 文档
 
 - [使用指南](USAGE.md)：安装、配置、命令与示例。
 - [范围管理](SCOPE.md)：隐式模式、文件、排除项与 CI。
 - [架构](ARCHITECTURE.md)：DAG、产物、集中过滤与输出。
 - [贡献指南](../AGENTS.md)：仓库结构、代码风格与验证。
 
-## 🚀 核心特性
+## <img src="../../public/icons/tree.png" height="24" alt=""> 核心特性
 
 - **产物驱动的流水线**：模块通过产物有序通信（例如 `subfinder` 的输出自动喂给 `dnsx` 和 `httpx`），每个独立分支会在输入就绪后立即继续执行。
 - **严格的扫描范围验证**：通过文件显式指定范围，或确认隐式范围（DNS 域名默认为 `domain`，IP 或显式指定时使用 `exact`），然后对每个产物进行过滤。
@@ -45,7 +45,7 @@
 
 ---
 
-## 🛠️ 支持的工具
+## <img src="../../public/icons/servers.png" height="24" alt=""> 支持的工具
 
 ScanForge 集中编排 **14 个外部安全工具** 和 **6 个内置模块**：
 
@@ -79,7 +79,7 @@ ScanForge 集中编排 **14 个外部安全工具** 和 **6 个内置模块**：
 
 ---
 
-## 📦 简单安装（省心）
+## <img src="../../public/icons/hammer.png" height="24" alt=""> 简单安装（省心）
 
 与主流工具（nuclei、subfinder 等）一样，ScanForge 通过 GitHub Releases 分发**预编译二进制文件**：无需编译，无需 Go。
 
@@ -144,7 +144,7 @@ docker run -v $(pwd):/workspace scanforge run target.com --profile web
 
 ---
 
-## 🔧 从源码构建（开发）
+## <img src="../../public/icons/anvil.png" height="24" alt=""> 从源码构建（开发）
 
 克隆仓库后，`Makefile` 封装了 Go 工具链：
 
@@ -168,7 +168,7 @@ make install    # 同上，安装到 $GOPATH/bin
 
 ---
 
-## 🚦 快速入门指南
+## <img src="../../public/icons/terminal.png" height="24" alt=""> 快速入门指南
 
 ### 1. 初始化项目
 
@@ -274,7 +274,7 @@ scanforge update --tools    # 二进制 + 外部工具
 
 ---
 
-## 🕵️ 代理、认证与 Nuclei 设置
+## <img src="../../public/icons/fingerprint.png" height="24" alt=""> 代理、认证与 Nuclei 设置
 
 在真实渗透测试中，将流量路由到 Caido（或 Burp Suite）并注入已认证的会话：
 
@@ -311,7 +311,7 @@ webhook:
 
 ---
 
-## 📊 内置配置文件与预设
+## <img src="../../public/icons/crosshair.png" height="24" alt=""> 内置配置文件与预设
 
 | 名称 | 模块 | 用途 |
 | --- | --- | --- |
@@ -328,7 +328,7 @@ webhook:
 
 ---
 
-## 📂 最终报告结构
+## <img src="../../public/icons/report.png" height="24" alt=""> 最终报告结构
 
 每次扫描结束后，会在 `./runs/` 下创建带时间戳的文件夹。除每个工具的原始日志外，ScanForge 还会生成：
 
@@ -348,7 +348,7 @@ webhook:
 - `06_vulns/http-checks.jsonl`：缺失的安全请求头和 Cookie 标志（`httpcheck` 模块）。
 - `06_vulns/nuclei.jsonl`：nuclei 原始发现（`nuclei` 模块）。
 
-> ScanForge 只能用于你拥有明确授权的资产。
+> <img src="../../public/icons/shield.png" height="18" alt=""> ScanForge 只能用于你拥有明确授权的资产。
 
 <p align="center">
   <img src="../../public/scanforge-footer.png" width="100%" alt="ScanForge — pentest autorisé uniquement">
