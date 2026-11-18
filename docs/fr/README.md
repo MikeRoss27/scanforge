@@ -1,7 +1,7 @@
 # README (Français)
 
 <p align="center">
-  <img src="../../public/scanforge-banner.png" width="100%" alt="ScanForge — framework de reconnaissance cyber">
+  <img src="../../public/scanforge-banner.png" width="100%" alt="ScanForge — RECON · ENUM · SCAN · EXPLOIT — pentest autorisé uniquement">
 </p>
 
 # ScanForge
@@ -16,14 +16,14 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
   <img src="../../public/scanforge-icons.png" width="100%" alt="Pack d’icônes ScanForge en pixel art">
 </p>
 
-## 📚 Documentation
+## <img src="../../public/icons/search.png" height="24" alt=""> Documentation
 
 - [Guide d'utilisation](USAGE.md) : installation, configuration, commandes et exemples.
 - [Gestion du scope](SCOPE.md) : modes implicites, fichiers, exclusions et CI.
 - [Architecture](ARCHITECTURE.md) : DAG, artefacts, filtrage central et sorties.
 - [Guide de contribution](../AGENTS.md) : structure du dépôt, style et validations.
 
-## 🚀 Fonctionnalités Clés
+## <img src="../../public/icons/tree.png" height="24" alt=""> Fonctionnalités Clés
 
 - **Pipeline orienté Artefacts** : Les modules communiquent via des artefacts de manière ordonnée (ex : la sortie de `subfinder` alimente automatiquement `dnsx` et `httpx`) et chaque branche indépendante avance dès que ses entrées sont prêtes.
 - **Validation de Scope Stricte** : Scope explicite par fichier ou scope implicite confirmé (`domain` par défaut pour les domaines DNS ; `exact` pour les IP ou sur demande), puis filtrage de chaque artefact.
@@ -45,7 +45,7 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
 
 ---
 
-## 🛠️ Outils Supportés
+## <img src="../../public/icons/servers.png" height="24" alt=""> Outils Supportés
 
 ScanForge centralise et orchestre **14 outils de sécurité externes** et **6 modules natifs** :
 
@@ -79,7 +79,7 @@ Modules natifs (aucun binaire externe) :
 
 ---
 
-## 📦 Installation Simple (Sans prise de tête)
+## <img src="../../public/icons/hammer.png" height="24" alt=""> Installation Simple (Sans prise de tête)
 
 Comme les grands outils du marché (nuclei, subfinder...), ScanForge est distribué en **binaires pré-compilés** via GitHub Releases : aucune compilation, aucun Go requis.
 
@@ -144,7 +144,7 @@ docker run -v $(pwd):/workspace scanforge run target.com --profile web
 
 ---
 
-## 🔧 Compiler depuis les sources (développement)
+## <img src="../../public/icons/anvil.png" height="24" alt=""> Compiler depuis les sources (développement)
 
 Depuis un clone du dépôt, le `Makefile` encapsule la toolchain Go :
 
@@ -168,7 +168,7 @@ Cibles de développement pratiques :
 
 ---
 
-## 🚦 Guide de Démarrage Rapide
+## <img src="../../public/icons/terminal.png" height="24" alt=""> Guide de Démarrage Rapide
 
 ### 1. Initialiser le projet
 
@@ -276,7 +276,7 @@ scanforge update --tools    # binaire + outils externes
 
 ---
 
-## 🕵️ Proxy, authentification et réglages Nuclei
+## <img src="../../public/icons/fingerprint.png" height="24" alt=""> Proxy, authentification et réglages Nuclei
 
 Pour un test d'intrusion en conditions réelles, routez le trafic vers Caido (ou Burp Suite) et injectez une session authentifiée :
 
@@ -313,7 +313,7 @@ Le payload est un document JSON générique avec un champ `text`, si bien que ch
 
 ---
 
-## 📊 Profils et presets intégrés
+## <img src="../../public/icons/crosshair.png" height="24" alt=""> Profils et presets intégrés
 
 | Nom | Modules | Usage |
 | --- | --- | --- |
@@ -330,7 +330,7 @@ Utilisez indifféremment `--preset safe` ou `--profile safe`. Avant un profil ac
 
 ---
 
-## 📂 Structure du Rapport Final
+## <img src="../../public/icons/report.png" height="24" alt=""> Structure du Rapport Final
 
 À la fin de chaque scan, un dossier horodaté est créé sous `./runs/`. En plus des fichiers de logs bruts de chaque outil, ScanForge génère :
 
@@ -350,7 +350,7 @@ Utilisez indifféremment `--preset safe` ou `--profile safe`. Avant un profil ac
 - `06_vulns/http-checks.jsonl` : Headers de sécurité et flags de cookies manquants (module `httpcheck`).
 - `06_vulns/nuclei.jsonl` : Findings nuclei bruts (module `nuclei`).
 
-> ScanForge doit uniquement être utilisé sur des actifs pour lesquels vous disposez d'une autorisation explicite.
+> <img src="../../public/icons/shield.png" height="18" alt=""> ScanForge doit uniquement être utilisé sur des actifs pour lesquels vous disposez d'une autorisation explicite.
 
 <p align="center">
   <img src="../../public/scanforge-footer.png" width="100%" alt="ScanForge — pentest autorisé uniquement">
