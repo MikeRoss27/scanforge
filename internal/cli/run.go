@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/app"
+	"github.com/MikeRoss27/scanforge/internal/console"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -20,7 +21,8 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var targetsFile string
 	var confirmScope bool
 	var dryRun bool
-	var verbose bool
+	var verbosityCount int
+	var quiet bool
 
 	var proxy string
 	var headers []string
@@ -42,10 +44,11 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var ffufFilterCodes string
 
 	cmd := &cobra.Command{
-		Use:     "run [target]",
-		Aliases: []string{"scan"},
-		GroupID: groupCore,
-		Short:   "Run a scan against an authorized target",
+		Use:         "run [target]",
+		Aliases:     []string{"scan"},
+		GroupID:     groupCore,
+		Annotations: map[string]string{annGroupedFlags: "true"},
+		Short:       "Run a scan against an authorized target",
 		Long: `Executes the scan pipeline for a target (or a list of targets) using
 the selected profile or preset. The effective scope is built from scope.txt
 and every artifact is filtered against it before downstream modules consume
@@ -75,7 +78,7 @@ report (report.json / report.md).`,
 				Exclusions:   exclusions,
 				ConfirmScope: confirmScope,
 				DryRun:       dryRun,
-				Verbose:      verbose,
+				Verbosity:    console.ParseVerbosity(verbosityCount, quiet),
 				Proxy:        proxy,
 				Headers:      headers,
 				Nuclei: modules.NucleiOptions{
@@ -103,12 +106,13 @@ report (report.json / report.md).`,
 	cmd.Flags().StringVar(&preset, "preset", "", "Built-in preset (safe, recon, web, ports, vuln, deep)")
 	cmd.Flags().StringVar(&targetsFile, "targets", "", "Read one target per line from a file (replaces [target])")
 	cmd.Flags().StringVarP(&scopeFile, "scope", "s", "", "Scope file (default from config)")
-	cmd.Flags().StringVar(&scopeMode, "scope-mode", "", "Implicit scope mode: exact or domain (default exact)")
+	cmd.Flags().StringVar(&scopeMode, "scope-mode", "", "Implicit scope mode: exact or domain (default domain for DNS domains, exact for IPs and single-label hosts)")
 	cmd.Flags().StringArrayVar(&scopeAdd, "scope-add", nil, "Add an entry to implicit scope (repeatable)")
 	cmd.Flags().StringArrayVar(&exclusions, "exclude", nil, "Exclude an entry from implicit scope (repeatable)")
 	cmd.Flags().BoolVar(&confirmScope, "confirm-scope", false, "Confirm the effective scope non-interactively (required in CI)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print commands without executing them")
-	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	cmd.Flags().CountVarP(&verbosityCount, "verbose", "v", "Increase verbosity: -v detailed modules, -vv commands, -vvv redirections")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Only findings, warnings, errors and the summary")
 
 	cmd.Flags().StringVar(&proxy, "proxy", "", "Route HTTP-capable modules through a proxy, e.g. Caido/Burp at http://127.0.0.1:8080")
 	cmd.Flags().StringArrayVarP(&headers, "header", "H", nil, "Custom HTTP header sent with every request, e.g. 'Authorization: Bearer <token>' (repeatable)")

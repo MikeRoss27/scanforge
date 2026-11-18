@@ -44,6 +44,8 @@ func TestRunNormalizesURLAndKeepsRootTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	runCtx := modules.NewRunContext("https://Example.COM:443/path", "passive", false, run, allowed)
+	var warnings []string
+	runCtx.SetWarningSink(func(message string) { warnings = append(warnings, message) })
 	executor := &outputExecutor{output: "api.example.com\n"}
 
 	if _, err := New("subfinder-test").Run(context.Background(), runCtx, executor); err != nil {
@@ -65,6 +67,36 @@ func TestRunNormalizesURLAndKeepsRootTarget(t *testing.T) {
 	}
 	if !strings.Contains(string(rejections), "api.example.com") {
 		t.Fatalf("rejection log = %q, missing rejected subdomain", rejections)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "1 discovered hosts excluded by scope") {
+		t.Fatalf("missing scope filtering explanation: %v", warnings)
+	}
+}
+
+func TestRunDomainScopeRetainsDiscoveredSubdomains(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"00_meta", "01_subdomains"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	allowed, err := scanScope.FromTarget("example.com", scanScope.ModeDomain, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &storage.Run{RootDir: root, MetaDir: filepath.Join(root, "00_meta"), CommandsLog: filepath.Join(root, "00_meta", "commands.log")}
+	runCtx := modules.NewRunContext("https://example.com/", "full", false, run, allowed)
+	runCtx.SetWarningSink(func(message string) { t.Errorf("unexpected warning: %s", message) })
+	executor := &outputExecutor{output: "api.example.com\nwww.example.com\n"}
+	if _, err := New("").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "01_subdomains", "subfinder.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "api.example.com\nwww.example.com\nexample.com\n" {
+		t.Fatalf("unexpected retained hosts: %q", data)
 	}
 }
 

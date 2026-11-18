@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -47,7 +48,20 @@ func TestRealExecutorTimeoutReturnsError(t *testing.T) {
 		Args:    []string{"-c", "sleep 5"},
 		Timeout: 50 * time.Millisecond,
 	})
-	if err == nil {
-		t.Fatal("expected an error when the command times out")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline error when command times out, got %v", err)
+	}
+}
+
+func TestRealExecutorPreservesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	timer := time.AfterFunc(50*time.Millisecond, cancel)
+	defer timer.Stop()
+	_, err := NewRealExecutor(false).Run(ctx, Command{
+		Name: "sh", Args: []string{"-c", "exec sleep 5"},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected recognizable cancellation, got %v", err)
 	}
 }

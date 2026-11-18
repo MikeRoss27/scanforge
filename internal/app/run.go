@@ -5,14 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
-	"github.com/MikeRoss27/scanforge/internal/ascii"
 	"github.com/MikeRoss27/scanforge/internal/config"
+	"github.com/MikeRoss27/scanforge/internal/console"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/orchestrator"
+	"github.com/MikeRoss27/scanforge/internal/report"
 	"github.com/MikeRoss27/scanforge/internal/runner"
 	"github.com/MikeRoss27/scanforge/internal/storage"
-	"github.com/MikeRoss27/scanforge/internal/ui"
 )
 
 // Run resolves the target(s) — one positional target or a --targets file —
@@ -49,12 +50,11 @@ func (a *App) runOne(ctx context.Context, opts RunOptions) error {
 
 	manifestErr := session.finalizeManifest(results, runErr)
 	rep := session.generateReports()
-	printRunSummaryBox(os.Stdout, session.scanRun, results, rep)
-	printFindingsTable(rep)
+	session.printSummary(results, rep, runErr)
 
 	if !opts.DryRun {
 		if err := notifyWebhook(ctx, session.cfg, session.scanRun, rep); err != nil {
-			ui.Warn("Webhook notification failed: %v", err)
+			session.console.Warn("webhook notification failed: %v", err)
 		}
 	}
 
@@ -64,9 +64,19 @@ func (a *App) runOne(ctx context.Context, opts RunOptions) error {
 	return errors.Join(runErr, manifestErr)
 }
 
-// prepareRun loads the config, resolves the profile and effective scope, and
+// printSummary renders the closing SCAN COMPLETE block and the triage hint
+// when AI triage is configured for this workspace.
+func (s *runSession) printSummary(results []*modules.Result, rep *report.Report, runErr error) {
+	summary := buildSummary(s.scanRun, results, rep, s.cfg.AI.BaseURL != "")
+	if errors.Is(runErr, orchestrator.ErrRunAborted) && summary.Status != "aborted" {
+		summary.Status = "aborted"
+	}
+	s.console.PrintSummary(summary)
+}
+
+// prepareRun loads the config, resolves the profile and effective scope,
 // creates the run directory with the effective scope persisted in the
-// manifest.
+// manifest, and builds the console renderer that owns every terminal write.
 func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 	cfg, err := a.loadConfig()
 	if err != nil {
@@ -94,7 +104,8 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 		return nil, err
 	}
 
-	if _, err := cfg.ProfileModules(profile); err != nil {
+	moduleNames, err := cfg.ProfileModules(profile)
+	if err != nil {
 		return nil, err
 	}
 	if effective.proposal.Source == scopeSourceImplicit {
@@ -122,43 +133,51 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 		return nil, fmt.Errorf("failed to record effective scope in manifest: %w", err)
 	}
 
-	return &runSession{
+	out := os.Stdout
+	term := console.DetectTerminal(out)
+	session := &runSession{
 		opts:      opts,
 		profile:   profile,
 		effective: effective,
 		scanRun:   scanRun,
 		cfg:       cfg,
-	}, nil
+		term:      term,
+		console: console.New(console.Options{
+			Out:       out,
+			Terminal:  term,
+			Colors:    console.ColorEnabled(out),
+			Verbosity: opts.Verbosity,
+			Profile:   profile,
+			DryRun:    opts.DryRun,
+			Spinner:   console.ResolveSpinner(),
+		}),
+	}
+	session.printIntro(len(moduleNames))
+	return session, nil
 }
 
 // execute builds the registry and executor, then runs the orchestrator in a
-// goroutine while its events are consumed on the terminal. The returned error
-// is the orchestrator-level failure; a TUI startup error aborts the run early.
+// goroutine while the console renderer streams its events. The returned
+// error is the orchestrator-level failure.
 func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 	var executor runner.Executor
 	if s.opts.DryRun {
-		executor = runner.NewDryRunExecutor(s.opts.Verbose)
+		executor = runner.NewDryRunExecutor(s.executorVerbose(), runner.WithCommandSink(s.dryRunCommandSink()))
 	} else {
-		executor = runner.NewRealExecutor(s.opts.Verbose)
+		executor = runner.NewRealExecutor(s.executorVerbose(), runner.WithCommandSink(s.commandSink()))
 	}
-
-	fmt.Println()
-	if os.Getenv("SCANFORGE_BANNER") != "" {
-		ascii.PrintBanner()
-	}
-
-	printRunIntro(s.opts, s.profile, s.scanRun, *s.effective)
 
 	orch := orchestrator.New(executor, buildRegistry(s.cfg))
 	// Buffered so a module emitting a burst of findings (e.g. nuclei) doesn't
-	// block on the TUI's render loop catching up.
+	// block on the renderer catching up.
 	eventChan := make(chan orchestrator.Event, 64)
 
 	var results []*modules.Result
 	var runErr error
 
-	// runCtx is cancelled when the user quits the TUI early so the scan
-	// actually stops instead of lingering in the background.
+	// runCtx is cancelled when the user interrupts the run (SIGINT via the
+	// root command's signal context) so the scan actually stops instead of
+	// lingering in the background.
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -174,7 +193,6 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 			Profile:         s.profile,
 			Config:          s.cfg,
 			DryRun:          s.opts.DryRun,
-			Verbose:         s.opts.Verbose,
 			Scope:           s.effective.value,
 			Proxy:           s.opts.Proxy,
 			Headers:         s.opts.Headers,
@@ -184,10 +202,55 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 		}, eventChan)
 	}()
 
-	if err := s.consumeEvents(cancel, eventChan, done); err != nil {
-		// The TUI failed, but the orchestrator still ran: keep its results so
-		// the manifest and reports reflect what actually happened.
-		return results, errors.Join(runErr, err)
-	}
+	s.consumeEvents(eventChan, done)
 	return results, runErr
+}
+
+// executorVerbose keeps the executor's historical stderr diagnostics
+// (stdout/stderr file hints) attached to exactly -v; -vv/-vvv replace
+// them with structured console lines instead of duplicating them.
+func (s *runSession) executorVerbose() bool {
+	return s.opts.Verbosity == console.Verbose
+}
+
+// dryRunCommandSink prints the commands a dry run would execute. Unlike the
+// -vv echo, dry-run commands are the point of the run and always show.
+func (s *runSession) dryRunCommandSink() runner.CommandSink {
+	return func(command runner.Command, _ *runner.CommandResult, _ error) {
+		s.console.Command(command.Name + " " + strings.Join(command.Args, " "))
+		if s.opts.Verbosity >= console.Verbose {
+			if command.StdoutFile != "" {
+				s.console.Debug("stdout → %s", command.StdoutFile)
+			}
+			if command.StderrFile != "" {
+				s.console.Debug("stderr → %s", command.StderrFile)
+			}
+		}
+	}
+}
+
+// commandSink returns the runner hook used by -vv/-vvv to echo the commands
+// executed by external tools; nil (no hook) below Debug verbosity.
+func (s *runSession) commandSink() runner.CommandSink {
+	if s.opts.Verbosity < console.Debug {
+		return nil
+	}
+	return func(command runner.Command, result *runner.CommandResult, err error) {
+		echo := "$ " + command.Name + " " + strings.Join(command.Args, " ")
+		s.console.Debug("%s", echo)
+		if command.StdoutFile != "" {
+			s.console.Debug("stdout → %s", command.StdoutFile)
+		}
+		if command.StderrFile != "" {
+			s.console.Debug("stderr → %s", command.StderrFile)
+		}
+		if s.opts.Verbosity >= console.Trace {
+			if result != nil && result.ExitCode != 0 {
+				s.console.Warn("exit code %d", result.ExitCode)
+			}
+			if err != nil {
+				s.console.Error("%v", err)
+			}
+		}
+	}
 }

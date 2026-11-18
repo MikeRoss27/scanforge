@@ -31,7 +31,7 @@ func TestPlanBuildsValidatedReconWaves(t *testing.T) {
 	for _, step := range result.Steps {
 		waves[step.Name] = step.Wave
 	}
-	if waves["subfinder"] != 1 || waves["gau"] != 1 || waves["dnsbrute"] != 2 || waves["dnsx"] != 3 || waves["httpx"] != 4 || waves["tlsx"] != 5 {
+	if waves["subfinder"] != 1 || waves["gau"] != 1 || waves["dnsbrute"] != 2 || waves["dnsx"] != 2 || waves["httpx"] != 3 || waves["tlsx"] != 4 {
 		t.Fatalf("unexpected plan waves: %v", waves)
 	}
 }

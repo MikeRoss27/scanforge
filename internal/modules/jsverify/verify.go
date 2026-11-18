@@ -342,19 +342,17 @@ func replayOne(browserCtx context.Context, item finding, pageURL, payload string
 	return out
 }
 
-// currentURL reads the tab's location; empty on error.
-func currentURL(tabCtx context.Context) string {
-	var url string
-	if err := chromedp.Run(tabCtx, chromedp.Evaluate(`document.URL`, &url)); err != nil {
-		return ""
-	}
-	return url
-}
-
-// isOurVariant reports whether final is exactly one of the attack URLs this
-// replay loaded (same origin/path with our fragment or our param payloads).
-// Paths are compared after stripping the trailing slash: browsers normalize
-// "https://host/#frag" to "https://host#frag" during navigation.
+// isOurVariant reports whether final still carries the payload we injected
+// ourselves, rather than proving the page navigated on its own.
+//
+// The previous implementation required the final path to equal the page path.
+// A server-side redirect inside the same origin (for example "/" to
+// "/index.html") preserves the fragment the browser was given, so the path
+// mismatch made our own injected hash look like a payload-driven navigation:
+// every finding replayed on such a site was reported as "sink-reached" even
+// when the page never read the fragment. Only the origin is stable across
+// redirects, so the payload in the fragment or an injected query parameter is
+// recognized as ours regardless of the final path.
 func isOurVariant(pageURL, payload, final string) bool {
 	base, err := url.Parse(pageURL)
 	if err != nil {
@@ -364,26 +362,35 @@ func isOurVariant(pageURL, payload, final string) bool {
 	if err != nil {
 		return false
 	}
-	if got.Scheme != base.Scheme || got.Host != base.Host ||
-		strings.TrimRight(got.Path, "/") != strings.TrimRight(base.Path, "/") {
+	if got.Scheme != base.Scheme || got.Host != base.Host {
 		return false
 	}
-	// Hash variant: fragment equals the raw payload.
+	// url.Parse already percent-decodes Fragment; the raw comparison covers
+	// values a server or browser re-encoded differently.
 	if payload != "" && got.Fragment != "" {
 		decoded, err := url.QueryUnescape(got.Fragment)
-		if err == nil && (decoded == payload || got.Fragment == payload) {
+		if (err == nil && decoded == payload) || got.Fragment == payload {
 			return true
 		}
 	}
-	// Params variant: query contains all injected names with the payload.
+	// Params variant: a redirect may reorder or drop query parameters, so
+	// any single injected name still carrying the payload is enough.
 	q := got.Query()
-	injected := 0
 	for _, name := range paramNames {
-		if q.Get(name) == payload {
-			injected++
+		if payload != "" && q.Get(name) == payload {
+			return true
 		}
 	}
-	return injected > 0
+	return false
+}
+
+// currentURL reads the tab's location; empty on error.
+func currentURL(tabCtx context.Context) string {
+	var url string
+	if err := chromedp.Run(tabCtx, chromedp.Evaluate(`document.URL`, &url)); err != nil {
+		return ""
+	}
+	return url
 }
 
 // settle polls the hooks and the dialog capture until the marker shows up or

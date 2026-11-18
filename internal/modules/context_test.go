@@ -2,16 +2,69 @@ package modules
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	scanScope "github.com/MikeRoss27/scanforge/internal/scope"
 	"github.com/MikeRoss27/scanforge/internal/storage"
 )
+
+func TestWaitArtifactTracksOptionalProducerLifecycle(t *testing.T) {
+	runCtx := NewRunContext("example.com", "full", false, nil)
+	runCtx.ExpectArtifact("brute_subdomains")
+
+	type waitResult struct {
+		artifact Artifact
+		found    bool
+		err      error
+	}
+	waiting := make(chan struct{})
+	done := make(chan waitResult, 1)
+	go func() {
+		close(waiting)
+		artifact, found, err := runCtx.WaitArtifact(context.Background(), "brute_subdomains")
+		done <- waitResult{artifact: artifact, found: found, err: err}
+	}()
+	<-waiting
+	select {
+	case <-done:
+		t.Fatal("WaitArtifact returned before the selected producer published or completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	want := Artifact{Name: "brute_subdomains", Type: "text", Path: "brute.txt"}
+	if err := runCtx.AddArtifact("brute_subdomains", want); err != nil {
+		t.Fatal(err)
+	}
+	got := <-done
+	if got.err != nil || !got.found || got.artifact != want {
+		t.Fatalf("WaitArtifact() = %+v, want published artifact", got)
+	}
+}
+
+func TestWaitArtifactReturnsWhenOptionalProducerPublishesNothing(t *testing.T) {
+	runCtx := NewRunContext("example.com", "full", false, nil)
+	runCtx.ExpectArtifact("brute_subdomains")
+	runCtx.CompleteArtifact("brute_subdomains")
+	_, found, err := runCtx.WaitArtifact(context.Background(), "brute_subdomains")
+	if err != nil || found {
+		t.Fatalf("WaitArtifact() found=%v error=%v, want unavailable without error", found, err)
+	}
+}
+
+func TestWaitArtifactDoesNotWaitForUnselectedProducer(t *testing.T) {
+	runCtx := NewRunContext("example.com", "safe", false, nil)
+	_, found, err := runCtx.WaitArtifact(context.Background(), "brute_subdomains")
+	if err != nil || found {
+		t.Fatalf("WaitArtifact() found=%v error=%v, want immediate unavailable result", found, err)
+	}
+}
 
 func TestRunContextArtifacts(t *testing.T) {
 	ctx := NewRunContext("example.com", "passive", false, nil)

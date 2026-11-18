@@ -367,3 +367,51 @@ func TestAbortMarksModulesAborted(t *testing.T) {
 		}
 	}
 }
+
+// TestOrchestratorWarnsWhenModuleStalls covers the stall watchdog: a module
+// that runs longer than the configured stall window without progress must emit
+// a warning through the event channel so the console surfaces the stall
+// instead of waiting silently.
+func TestOrchestratorWarnsWhenModuleStalls(t *testing.T) {
+	reg := modules.NewRegistry()
+	reg.Register(&mockModule{name: "silent", delay: 200 * time.Millisecond})
+	cfg := config.Default()
+	cfg.Profiles["test"] = []string{"silent"}
+
+	eventChan := make(chan Event, 16)
+	warningsDone := make(chan []string, 1)
+	go func() {
+		var warnings []string
+		for ev := range eventChan {
+			if w, ok := ev.(WarningEvent); ok {
+				warnings = append(warnings, w.Message)
+			}
+		}
+		warningsDone <- warnings
+	}()
+	results, err := New(runner.NewDryRunExecutor(false), reg).Run(
+		context.Background(), nil,
+		Options{
+			Target:                   "example.com",
+			Profile:                  "test",
+			Config:                   cfg,
+			ModuleStallTimeout:       50 * time.Millisecond,
+			ModuleStallCheckInterval: 10 * time.Millisecond,
+		},
+		eventChan,
+	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].Status != "completed" {
+		t.Fatalf("results = %+v, want a single completed module", results)
+	}
+
+	warnings := <-warningsDone
+	if len(warnings) == 0 || !strings.Contains(warnings[0], "stalled") {
+		t.Fatalf("warnings = %v, want a stall warning", warnings)
+	}
+	if !strings.Contains(warnings[0], `"silent"`) {
+		t.Fatalf("stall warning must name the stalled module, got %q", warnings[0])
+	}
+}

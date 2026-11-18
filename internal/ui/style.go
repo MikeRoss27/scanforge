@@ -15,9 +15,9 @@ import (
 )
 
 // ScanForge palette — inspired by ProjectDiscovery's tools (nuclei, httpx:
-// mostly neutral text with a cyan "[INF]" tag and severity-only color) for
+// mostly neutral text with a amber "[INF]" tag and severity-only color) for
 // one-shot command output, and lazygit/k9s (bordered, purposeful panes, one
-// accent for focus) for the live TUI. Color is reserved for meaning: cyan is
+// accent for focus) for the live TUI. Color is reserved for meaning: ember amber is
 // the one brand/focus accent, not a wash applied to everything. Every color
 // carries an ANSI 256 fallback so output stays readable without truecolor.
 var (
@@ -25,7 +25,7 @@ var (
 	colorDim    = color("#6b7280", "243") // secondary/meta text (durations, paths)
 	colorSubtle = color("#9ca3af", "248") // slightly lighter than dim — descriptions
 	colorText   = color("#e5e7eb", "254") // primary body text — off-white, not accent-colored
-	colorAccent = color("#38bdf8", "38")  // brand / focus / "[INF]": the one recurring accent
+	colorAccent = color("#e8b059", "179") // brand / focus / "[INF]": the one recurring accent
 	colorGreen  = color("#4ade80", "78")  // success
 	colorYellow = color("#facc15", "220") // warning
 	colorOrange = color("#fb923c", "215") // medium severity / user-initiated abort
@@ -84,6 +84,12 @@ func Gray(s string) string      { return Dim(s) }
 func Dim(s string) string       { return lipgloss.NewStyle().Foreground(colorDim).Render(s) }
 func Bold(s string) string      { return lipgloss.NewStyle().Bold(true).Render(s) }
 func DimBold(s string) string   { return lipgloss.NewStyle().Bold(true).Foreground(colorDim).Render(s) }
+
+// Title renders a bold accent-colored section heading (help sections,
+// grouped listings).
+func Title(s string) string {
+	return lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(s)
+}
 
 // Severity colors a finding severity label: critical/high → red, medium →
 // orange, low → subtle, info → dim. Mirrors nuclei's own severity colors so

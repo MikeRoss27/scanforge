@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -20,7 +19,6 @@ type Options struct {
 	Profile string
 	Config  *config.Config
 	DryRun  bool
-	Verbose bool
 	Scope   *scanScope.Scope
 
 	// Proxy routes HTTP-capable modules through an intercepting proxy such
@@ -35,11 +33,41 @@ type Options struct {
 	Ffuf modules.FfufOptions
 	// NmapConcurrency bounds how many nmap processes run at once.
 	NmapConcurrency int
+	// ModuleStallTimeout overrides the default module stall detection
+	// window (how long a module may run without output before the console is
+	// warned that it appears stalled). Zero means the orchestrator default.
+	ModuleStallTimeout time.Duration
+	// ModuleStallCheckInterval overrides the stall watchdog cadence; zero
+	// means the orchestrator default.
+	ModuleStallCheckInterval time.Duration
 }
 
 // ErrRunAborted is returned when the run was intentionally aborted by the
 // user (TUI quit or signal) rather than failing due to module errors.
 var ErrRunAborted = errors.New("run aborted")
+
+const (
+	// defaultModuleStallTimeout is how long a module may run without any
+	// progress, finding or module-level output before the orchestrator warns
+	// that it appears stalled, so the operator is never left waiting blindly.
+	defaultModuleStallTimeout = 15 * time.Minute
+	// defaultModuleStallCheckInterval is how often running modules are
+	// inspected for stall warnings.
+	defaultModuleStallCheckInterval = 30 * time.Second
+)
+
+// moduleActivity tracks the runtime window of a module: when it started and
+// when it last emitted progress, a finding or a module-level output.
+type moduleActivity struct {
+	startedAt  time.Time
+	lastActive time.Time
+}
+
+// moduleStall is a running module that exceeded the stall window.
+type moduleStall struct {
+	name string
+	idle time.Duration
+}
 
 type Orchestrator struct {
 	executor runner.Executor
@@ -79,10 +107,21 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	runCtx.Ffuf = opts.Ffuf
 	runCtx.NmapConcurrency = opts.NmapConcurrency
 
+	// moduleActivity tracks, per module name, when it started and when it
+	// last emitted progress or a finding. The stall watchdog watches this
+	// map while modules run.
+	var runningMu sync.Mutex
+	running := make(map[string]*moduleActivity)
+
 	if outChan != nil {
-		// Modules may call this concurrently (multiple modules run per wave);
+		// Modules may call this concurrently;
 		// channel sends are inherently safe for concurrent use.
 		runCtx.SetFindingSink(func(f modules.Finding) {
+			runningMu.Lock()
+			if act, ok := running[f.Module]; ok {
+				act.lastActive = time.Now()
+			}
+			runningMu.Unlock()
 			outChan <- FindingEvent{
 				Module:   f.Module,
 				Severity: f.Severity,
@@ -94,200 +133,280 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 		runCtx.SetWarningSink(func(message string) {
 			outChan <- WarningEvent{Message: message}
 		})
+		runCtx.SetProgressSink(func(e modules.ModuleProgressEvent) {
+			runningMu.Lock()
+			if act, ok := running[e.Name]; ok {
+				act.lastActive = time.Now()
+			}
+			runningMu.Unlock()
+			outChan <- ModuleProgressEvent{
+				Name:    e.Name,
+				Current: e.Current,
+				Total:   e.Total,
+				Unit:    e.Unit,
+				Message: e.Message,
+			}
+		})
 	}
+
+	// StallWatchdog emits a warning through the event channel when a module
+	// has run longer than the stall window without any progress or finding,
+	// so a silent module surfaces as an error instead of hanging unseen.
+	watchdogDone := make(chan struct{})
+	watchdogStopped := make(chan struct{})
+	defer func() {
+		close(watchdogDone)
+		<-watchdogStopped
+	}()
+	go func() {
+		defer close(watchdogStopped)
+		interval := defaultModuleStallCheckInterval
+		if opts.ModuleStallCheckInterval > 0 {
+			interval = opts.ModuleStallCheckInterval
+		}
+		timeout := defaultModuleStallTimeout
+		if opts.ModuleStallTimeout > 0 {
+			timeout = opts.ModuleStallTimeout
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-watchdogDone:
+				return
+			case <-ticker.C:
+				now := time.Now()
+				var stalled []moduleStall
+				runningMu.Lock()
+				for name, act := range running {
+					if now.Sub(act.lastActive) < timeout {
+						continue
+					}
+					stalled = append(stalled, moduleStall{name: name, idle: now.Sub(act.lastActive)})
+				}
+				runningMu.Unlock()
+				for _, s := range stalled {
+					if outChan != nil {
+						outChan <- WarningEvent{Message: fmt.Sprintf("module %q stalled: no output for %s", s.name, s.idle)}
+					}
+				}
+			}
+		}
+	}()
 
 	dag, err := BuildDAG(selectedModules)
 	if err != nil {
 		return nil, err
 	}
+	for _, module := range selectedModules {
+		for _, produced := range module.Produces() {
+			runCtx.ExpectArtifact(produced)
+		}
+	}
+	plan, err := BuildPlan(selectedModules)
+	if err != nil {
+		return nil, err
+	}
+	waveByModule := make(map[string]int, len(plan))
+	for _, step := range plan {
+		waveByModule[step.Name] = step.Wave
+	}
 
 	completed := make(map[string]bool)
+	started := make(map[string]bool)
 	availableArtifacts := make(map[string]bool)
-	var results []*modules.Result
+	resultsByName := make(map[string]*modules.Result, len(selectedModules))
 	var runErrors []error
-
 	totalModules := len(selectedModules)
-	wave := 0
+	runningCount := 0
+	type moduleOutcome struct {
+		module modules.Module
+		result *modules.Result
+		err    error
+	}
+	outcomes := make(chan moduleOutcome, totalModules)
 
-	// Loop until all modules are completed
-	for len(completed) < totalModules {
-		wave++
-		readyModules := dag.NextReady(completed, availableArtifacts)
+	launch := func(m modules.Module) {
+		go func() {
+			start := time.Now()
+			runningMu.Lock()
+			running[m.Name()] = &moduleActivity{startedAt: start, lastActive: start}
+			runningMu.Unlock()
 
-		if len(readyModules) == 0 {
-			// This means we have a deadlock or unreachable modules due to failed
-			// dependencies (or the run was aborted). Instead of returning an
-			// error, we mark the remaining modules as "skipped" (or "aborted"
-			// when the context was cancelled) and gracefully finish the
-			// orchestration.
-			status := "skipped"
-			if ctx.Err() != nil {
+			if outChan != nil {
+				outChan <- ModuleStartEvent{Name: m.Name()}
+			}
+
+			// A per-module timeout (config module_timeouts) bounds the
+			// whole module invocation, not just a single command: modules
+			// run several commands (e.g. nuclei template update + scan)
+			// and may stall between them. Zero means the module's own
+			// default applies.
+			moduleCtx := ctx
+			timeout := moduleTimeout(opts.Config, m.Name())
+			if timeout > 0 {
+				var cancel context.CancelFunc
+				moduleCtx, cancel = context.WithTimeout(ctx, timeout)
+				defer cancel()
+			}
+
+			// A panicking module (third-party library bug, unexpected
+			// input shape) must surface as a failure, not crash the whole
+			// scan: without the recovery, the goroutine would never send
+			// its result and resultsByName below would see a nil entry.
+			var result *modules.Result
+			var err error
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						result, err = nil, fmt.Errorf("module %q panicked: %v", m.Name(), r)
+					}
+				}()
+				result, err = m.Run(moduleCtx, runCtx, o.executor)
+			}()
+
+			// A deadline kill surfaces as context.DeadlineExceeded, which
+			// hides what actually went wrong; translate it into a message
+			// operators can act on.
+			if err != nil && timeout > 0 && errors.Is(err, context.DeadlineExceeded) {
+				err = fmt.Errorf("module %q timed out after %s: %w", m.Name(), timeout, err)
+			}
+
+			// A module returning (nil, nil) violates the contract; treat it
+			// as a failure instead of letting a nil result panic downstream.
+			if result == nil && err == nil {
+				err = fmt.Errorf("module %q returned no result", m.Name())
+			}
+
+			status := "failed"
+			if err == nil {
+				status = result.Status
+			} else if errors.Is(err, context.Canceled) {
+				// User-initiated abort: not a module failure.
 				status = "aborted"
 			}
 			if outChan != nil {
-				outChan <- DeadlockEvent{Message: "No more modules can be run (dependencies missing). Marking remaining as " + status + "."}
+				done := ModuleDoneEvent{Name: m.Name(), Status: status, Dur: time.Since(start), Failed: status != "completed", Summary: moduleSummary(runCtx, m, result)}
+				if err != nil {
+					done.Error = err.Error()
+				}
+				outChan <- done
 			}
-			// A partially failed pipeline is the documented "skipped" behavior:
-			// only surface an error when nothing at all completed.
-			if ctx.Err() == nil && len(completed) == 0 {
-				runErrors = append(runErrors, fmt.Errorf("orchestration stopped: required artifacts are unavailable"))
+			runningMu.Lock()
+			delete(running, m.Name())
+			runningMu.Unlock()
+
+			if err != nil {
+				// Even if it failed, we want to record the result in a way
+				// that reflects what happened. A failed module may still
+				// have produced partial output (e.g. nuclei killed by a
+				// timeout halfway through its scan): keep its OutputFiles
+				// so the report engine can parse whatever was written.
+				failedResult := &modules.Result{
+					Name:   m.Name(),
+					Status: status,
+				}
+				if result != nil {
+					failedResult.OutputFiles = result.OutputFiles
+				}
+				outcomeErr := error(nil)
+				if status != "aborted" {
+					outcomeErr = fmt.Errorf("module %q failed: %w", m.Name(), err)
+				}
+				outcomes <- moduleOutcome{module: m, result: failedResult, err: outcomeErr}
+				return
+			}
+			outcomes <- moduleOutcome{module: m, result: result}
+		}()
+	}
+
+	consumeOutcome := func(outcome moduleOutcome) {
+		name := outcome.module.Name()
+		runningCount--
+		completed[name] = true
+		resultsByName[name] = outcome.result
+		if outcome.err != nil {
+			runErrors = append(runErrors, outcome.err)
+		}
+		// Artifacts become schedulable as soon as their producer finishes;
+		// unrelated modules may still be running at this point.
+		for _, produced := range outcome.module.Produces() {
+			runCtx.CompleteArtifact(produced)
+			if _, ok := runCtx.GetArtifact(produced); ok {
+				availableArtifacts[produced] = true
+			}
+		}
+	}
+
+	for len(completed) < totalModules {
+		if ctx.Err() != nil {
+			if runningCount > 0 {
+				consumeOutcome(<-outcomes)
+				continue
 			}
 			for _, m := range selectedModules {
 				if completed[m.Name()] {
 					continue
 				}
-				results = append(results, &modules.Result{
-					Name:   m.Name(),
-					Status: status,
-				})
+				result := &modules.Result{Name: m.Name(), Status: "aborted"}
+				resultsByName[m.Name()] = result
 				completed[m.Name()] = true
 				if outChan != nil {
-					outChan <- ModuleDoneEvent{Name: m.Name(), Status: status}
+					outChan <- ModuleDoneEvent{Name: m.Name(), Status: "aborted"}
 				}
 			}
 			break
 		}
 
-		names := make([]string, 0, len(readyModules))
-		for _, m := range readyModules {
-			names = append(names, m.Name())
+		readyModules := dag.NextReadyUnstarted(completed, started, availableArtifacts)
+		if len(readyModules) > 0 {
+			names := make([]string, 0, len(readyModules))
+			for _, m := range readyModules {
+				started[m.Name()] = true
+				runningCount++
+				names = append(names, m.Name())
+			}
+			if outChan != nil {
+				outChan <- WaveStartEvent{Wave: waveByModule[readyModules[0].Name()], Modules: names}
+			}
+			for _, m := range readyModules {
+				launch(m)
+			}
+			continue
 		}
+
+		if runningCount > 0 {
+			consumeOutcome(<-outcomes)
+			continue
+		}
+
+		// No runnable or running module remains: required artifacts were not
+		// published by failed producers, so the remaining modules are skipped.
 		if outChan != nil {
-			outChan <- WaveStartEvent{Wave: wave, Modules: names}
+			outChan <- DeadlockEvent{Message: "No more modules can be run (dependencies missing). Marking remaining as skipped."}
 		}
-
-		var wg sync.WaitGroup
-		waveResults := make(chan *modules.Result, len(readyModules))
-		waveErrors := make(chan error, len(readyModules))
-
-		for _, module := range readyModules {
-			wg.Add(1)
-			go func(m modules.Module) {
-				defer wg.Done()
-				start := time.Now()
-
-				if outChan != nil {
-					outChan <- ModuleStartEvent{Name: m.Name()}
-				}
-
-				// A per-module timeout (config module_timeouts) bounds the
-				// whole module invocation, not just a single command: modules
-				// run several commands (e.g. nuclei template update + scan)
-				// and may stall between them. Zero means the module's own
-				// default applies.
-				moduleCtx := ctx
-				timeout := moduleTimeout(opts.Config, m.Name())
-				if timeout > 0 {
-					var cancel context.CancelFunc
-					moduleCtx, cancel = context.WithTimeout(ctx, timeout)
-					defer cancel()
-				}
-
-				// A panicking module (third-party library bug, unexpected
-				// input shape) must surface as a failure, not crash the whole
-				// scan: without the recovery, the goroutine would never send
-				// its result and resultsByName below would see a nil entry.
-				var result *modules.Result
-				var err error
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							result, err = nil, fmt.Errorf("module %q panicked: %v", m.Name(), r)
-						}
-					}()
-					result, err = m.Run(moduleCtx, runCtx, o.executor)
-				}()
-
-				// A deadline kill surfaces as context.DeadlineExceeded, which
-				// hides what actually went wrong; translate it into a message
-				// operators can act on.
-				if err != nil && timeout > 0 && errors.Is(err, context.DeadlineExceeded) {
-					err = fmt.Errorf("module %q timed out after %s: %w", m.Name(), timeout, err)
-				}
-
-				// A module returning (nil, nil) violates the contract; treat it
-				// as a failure instead of letting a nil result panic downstream.
-				if result == nil && err == nil {
-					err = fmt.Errorf("module %q returned no result", m.Name())
-				}
-
-				status := "failed"
-				if err == nil {
-					status = result.Status
-				} else if errors.Is(err, context.Canceled) {
-					// User-initiated abort: not a module failure.
-					status = "aborted"
-				}
-				if outChan != nil {
-					outChan <- ModuleDoneEvent{Name: m.Name(), Status: status, Dur: time.Since(start), Failed: status != "completed", Summary: moduleSummary(runCtx, m, result)}
-				}
-
-				if err != nil {
-					// Even if it failed, we want to record the result in a way
-					// that reflects what happened. A failed module may still
-					// have produced partial output (e.g. nuclei killed by a
-					// timeout halfway through its scan): keep its OutputFiles
-					// so the report engine can parse whatever was written.
-					failedResult := &modules.Result{
-						Name:   m.Name(),
-						Status: status,
-					}
-					if result != nil {
-						failedResult.OutputFiles = result.OutputFiles
-					}
-					waveResults <- failedResult
-					if status != "aborted" {
-						waveErrors <- fmt.Errorf("module %q failed: %w", m.Name(), err)
-					}
-					return
-				}
-				waveResults <- result
-			}(module)
+		if len(completed) == 0 {
+			runErrors = append(runErrors, fmt.Errorf("orchestration stopped: required artifacts are unavailable"))
 		}
-
-		// Wait for all modules in this wave to finish
-		wg.Wait()
-		close(waveResults)
-		close(waveErrors)
-
-		// Check for errors in the wave but do not abort immediately
-		var waveErrs []error
-		for err := range waveErrors {
-			waveErrs = append(waveErrs, err)
-		}
-
-		if len(waveErrs) > 0 {
-			runErrors = append(runErrors, waveErrs...)
-			if opts.Verbose {
-				// Diagnostics go to stderr so they never corrupt a Bubble Tea
-				// render loop that owns stdout.
-				for _, e := range waveErrs {
-					fmt.Fprintf(os.Stderr, "ERROR: %v\n", e)
-				}
+		for _, m := range selectedModules {
+			if completed[m.Name()] {
+				continue
+			}
+			result := &modules.Result{Name: m.Name(), Status: "skipped"}
+			resultsByName[m.Name()] = result
+			completed[m.Name()] = true
+			if outChan != nil {
+				outChan <- ModuleDoneEvent{Name: m.Name(), Status: "skipped"}
 			}
 		}
+	}
 
-		// Process a parallel wave in profile order so results and artifact
-		// publication remain deterministic regardless of goroutine completion.
-		resultsByName := make(map[string]*modules.Result, len(readyModules))
-		for res := range waveResults {
-			resultsByName[res.Name] = res
-		}
-		for _, module := range readyModules {
-			res := resultsByName[module.Name()]
-			results = append(results, res)
-			completed[res.Name] = true
-
-			// Register artifacts by what was actually published, not by the
-			// human-readable status: tools routinely exit non-zero (nmap on
-			// down hosts, dnsx on failed query batches) while still producing
-			// valid, scope-filtered output that dependents must consume.
-			for _, prod := range module.Produces() {
-				if _, ok := runCtx.GetArtifact(prod); ok {
-					availableArtifacts[prod] = true
-				}
-			}
-		}
+	// Completion order is intentionally decoupled from report order.
+	results := make([]*modules.Result, 0, totalModules)
+	for _, m := range selectedModules {
+		results = append(results, resultsByName[m.Name()])
 	}
 
 	// An explicit abort (user quit, signal) is reported distinctly from a

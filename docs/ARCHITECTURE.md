@@ -3,18 +3,26 @@
 ## Artifact-driven pipeline
 
 Each module declares the artifacts it requires and produces. ScanForge builds
-a DAG, rejects duplicate producers, missing dependencies and cycles, then runs
-the ready modules in waves.
+a DAG, rejects duplicate producers, missing dependencies and cycles, then
+starts each module as soon as its required artifacts are available. A slow
+independent module therefore does not hold back another ready branch.
 
 Main chains:
 
 ```text
-subfinder → subdomains → dnsx → resolved_hosts
+                         ┌→ dnsx (passive input) ───────────┐
+subfinder → subdomains ──┤                                  ├→ resolved_hosts
+                         └→ dnsbrute → dnsx (late results) ─┘
 resolved_hosts → httpx → alive_urls
 resolved_hosts → naabu → open_ports → nmap
 alive_urls → tlsx / whatweb / wafw00f / katana / ffuf / nuclei
 target → gau → historical_urls
 ```
+
+DNSX resolves passive discoveries while DNS bruteforce runs. Once the optional
+producer finishes, DNSX resolves only its additional hosts, merges both JSONL
+streams and publishes the final scoped artifact. A failed optional producer
+wakes the waiter so the passive branch can still continue.
 
 `scanforge plan TARGET --preset deep` displays the validated waves without
 running any tool or creating a run.
@@ -30,6 +38,58 @@ The `exact` mode always keeps the root target in the Subfinder output so that
 DNSX and HTTPX can continue without implicitly widening the perimeter. Nmap
 receives the validated host/port pairs produced by Naabu and runs scans
 restricted to those ports.
+
+## Console output
+
+Scans render as a chronological, tagged event stream, not a fullscreen
+interface: the terminal keeps its scrollback, everything stays copy/paste
+and grep/tee friendly, and CI loses nothing. Modules never print styled
+output — they emit semantic events (`ModuleStart`, `ModuleDone`,
+`Finding`, `Warning`, `ModuleProgress`) onto the orchestrator's channel,
+and `internal/console` decides how those look:
+
+- phases are derived from each batch the scheduler dispatches
+  (`DISCOVERY`, `RESOLUTION`, `PORTS`, `WEB SURFACE`, `VULNERABILITY ANALYSIS`)
+  and printed as one-line separators; a batch that mixes independent phases
+  lists them (`PORTS · WEB SURFACE`), and no phase is shown when the batch
+  only contains unknown modules. Verbose wave numbers refer to the static DAG
+  plan and do not act as runtime barriers
+- module lifecycle lines carry `[RUN]` / `[OK]` / `[ERR]` / `[SKP]` / `[WRN]`
+  tags, dim timestamps (`HH:MM:SS`) and adaptive columns
+- medium/low/info findings render compactly with their actual evidence
+  (exposed email, secret, internal host, version); identical values are
+  counted but printed once, and a per-type cap stops a leaky page from
+  flooding the scrollback
+- critical/high findings expand into a structured block
+  (Target / Module / Severity / Evidence) once per finding type; suppressed
+  occurrences are counted and listed in the closing summary's
+  `Finding types` recap (e.g. `INFO Email address exposed (jssecrets) ×9`)
+- a compact volatile loading block is drawn only on interactive terminals
+  (never on pipes, CI runners or in quiet mode). A canonical hammer and anvil come from an
+  embedded imagegen sprite sheet. Forty poses are sampled once along a rigid
+  pivot rotation into a 16-column, 6-row terminal image. The 25 Hz cycle uses
+  anticipation, an accelerated downswing, recoil and an eased return; it lasts
+  1.6 seconds. Each redraw uses one terminal write to reduce flicker. Steel, wood and embers have truecolor / ANSI-256 palettes;
+  monochrome terminals retain the silhouette. Status and real module counters
+  appear alongside the sprite; below 50 columns a single-line spinner is used.
+  The stationary anvil is shared across poses to avoid wobble. Before each
+  event the entire block is cleared, preserving scrollback. The large smith
+  stays in the startup banner (`SCANFORGE_SPINNER=forge|dots|off`).
+- verbosity is structured: `-v` adds wave numbers, `-vv` echoes the commands
+  executed by external tools, `-vvv` adds their stdout/stderr redirection
+  details; `-q` keeps findings, warnings, errors and the final summary only
+- the terminal width rules everything: rules, separators and event lines
+  wrap or shorten accordingly (verified from 40 to 160 columns)
+
+Dry-run commands are printed through the renderer as an unframed,
+unwrapped transcript (so they stay copy/pasteable) and phase separators wait
+for the first visible line of their wave — a wave with no output never leaves
+a dangling header. Module failures are rendered only by the console: the
+orchestrator no longer writes raw `ERROR:` lines to stderr alongside the
+structured `[ERR]` block.
+
+The interactive prompts (scope confirmation, setup wizard) write to stderr
+instead of stdout; everything else goes through the renderer.
 
 ## Output organization
 

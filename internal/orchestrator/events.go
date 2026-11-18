@@ -8,6 +8,10 @@ type Event interface {
 	isEvent()
 }
 
+// WaveStartEvent describes a batch dispatched from one static DAG level. The
+// level remains useful in verbose output and plans, but it is not an execution
+// barrier: later-level modules may start while an unrelated earlier module is
+// still running.
 type WaveStartEvent struct {
 	Wave    int
 	Modules []string
@@ -23,8 +27,15 @@ type ModuleDoneEvent struct {
 	Dur     time.Duration
 	Failed  bool
 	Summary string
+	// Error carries the underlying failure message when the module failed,
+	// so the console can render an actionable error block instead of a bare
+	// status word.
+	Error string
 }
 
+// DeadlockEvent is emitted when no module can run anymore because its
+// dependencies failed (or the run was aborted): remaining modules are
+// marked skipped and the scan ends gracefully.
 type DeadlockEvent struct {
 	Message string
 }
@@ -47,9 +58,22 @@ type FindingEvent struct {
 	Detail   string
 }
 
-func (WaveStartEvent) isEvent()   {}
-func (ModuleStartEvent) isEvent() {}
-func (ModuleDoneEvent) isEvent()  {}
-func (DeadlockEvent) isEvent()    {}
-func (WarningEvent) isEvent()     {}
-func (FindingEvent) isEvent()     {}
+// ModuleProgressEvent carries live progress published by a module while it
+// runs. It only exists for modules that expose reliable metrics — the
+// console renders it as a volatile progress line and never invents numbers
+// for modules that stay silent.
+type ModuleProgressEvent struct {
+	Name    string
+	Current int
+	Total   int
+	Unit    string
+	Message string
+}
+
+func (WaveStartEvent) isEvent()      {}
+func (ModuleStartEvent) isEvent()    {}
+func (ModuleDoneEvent) isEvent()     {}
+func (ModuleProgressEvent) isEvent() {}
+func (DeadlockEvent) isEvent()       {}
+func (WarningEvent) isEvent()        {}
+func (FindingEvent) isEvent()        {}

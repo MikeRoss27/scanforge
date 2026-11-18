@@ -33,8 +33,23 @@ curl -fsSL https://raw.githubusercontent.com/MikeRoss27/scanforge/main/install.s
 你也可以在本地构建二进制文件：
 
 ```bash
-go build -o scanforge ./cmd/scanforge
+make build      # 或：go build -o scanforge ./cmd/scanforge
 ```
+
+## 开发命令
+
+克隆仓库后，`Makefile` 封装了 Go 工具链。最常用的目标：
+
+| 命令 | 作用 |
+| --- | --- |
+| `make dev` / `make run` | 通过 `go run` 运行 CLI，无需构建；用 `ARGS="plan example.com --preset deep"` 传参 |
+| `make test` / `make race` | 测试套件（快速 / 带竞态检测） |
+| `make check` | 推送前检查：格式检查、`go vet`、golangci-lint 和测试 |
+| `make cover` | 带覆盖率报告的测试及按函数汇总 |
+| `make fmt` / `make fmt-check` | 格式化代码 / 仅列出未格式化的文件而不改写 |
+| `make vet` / `make lint` | 静态分析；`make tools` 安装 CI 固定版本的 golangci-lint |
+| `make tidy` | 清理 `go.mod` / `go.sum` |
+| `make clean` | 删除二进制文件和 `coverage.out` |
 
 ## 配置
 

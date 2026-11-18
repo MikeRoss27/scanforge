@@ -1,6 +1,6 @@
 // Package orchestrator executes scan modules in dependency order using an
-// artifact-driven DAG, running independent modules in parallel waves while
-// enforcing scope filtering on produced artifacts.
+// artifact-driven DAG, starting each module as soon as its inputs are ready
+// while enforcing scope filtering on produced artifacts.
 package orchestrator
 
 import (
@@ -119,14 +119,21 @@ func visit(dag *DAG, name string, state map[string]uint8) error {
 	return nil
 }
 
-// NextReady returns all modules whose dependencies are satisfied and haven't run yet.
+// NextReady returns all modules whose dependencies are satisfied and have not
+// completed. It is kept for static planning, where no module is running yet.
 func (d *DAG) NextReady(completed map[string]bool, availableArtifacts map[string]bool) []modules.Module {
+	return d.NextReadyUnstarted(completed, nil, availableArtifacts)
+}
+
+// NextReadyUnstarted returns runnable modules while excluding modules that
+// have already been dispatched. completed and started stay separate because a
+// soft dependency waits for its producer to finish, not merely to start.
+func (d *DAG) NextReadyUnstarted(completed, started, availableArtifacts map[string]bool) []modules.Module {
 	var ready []modules.Module
 
 	for _, name := range d.order {
 		node := d.nodes[name]
-		// Skip if already completed
-		if completed[name] {
+		if completed[name] || started[name] {
 			continue
 		}
 

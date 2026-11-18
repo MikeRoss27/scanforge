@@ -116,6 +116,41 @@ func TestRunHelpGroupsOptions(t *testing.T) {
 	}
 }
 
+func TestRootHelpListsExamples(t *testing.T) {
+	output, err := execute(t, "--help")
+	if err != nil {
+		t.Fatalf("--help error = %v", err)
+	}
+	for _, want := range []string{
+		"Examples:",
+		"scanforge run example.com --profile web --confirm-scope",
+		"scanforge plan example.com --preset deep",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("root help missing %q", want)
+		}
+	}
+}
+
+func TestHelpOutputHasNoTrailingWhitespace(t *testing.T) {
+	for _, args := range [][]string{
+		{"--help"},
+		{"help", "run"},
+		{"run", "--help"},
+		{"plan", "--help"},
+	} {
+		output, err := execute(t, args...)
+		if err != nil {
+			t.Fatalf("%v error = %v", args, err)
+		}
+		for i, line := range strings.Split(output, "\n") {
+			if strings.TrimRight(line, " \t") != line {
+				t.Errorf("%v help line %d has trailing whitespace: %q", args, i, line)
+			}
+		}
+	}
+}
+
 func TestVersionCommandPrintsVersion(t *testing.T) {
 	output, err := execute(t, "version")
 	if err != nil {

@@ -6,7 +6,13 @@ puis filtre les artefacts transmis entre modules.
 
 ## Scope implicite
 
-Sans fichier applicable, le mode `exact` autorise uniquement la cible :
+Sans fichier applicable, les domaines DNS utilisent `domain` par défaut : le
+domaine fourni et ses sous-domaines découverts alimentent automatiquement la
+suite du pipeline. Une cible sous-domaine reste limitée à ce sous-domaine et
+ses descendants, sans inclure son domaine parent ni les sous-domaines voisins.
+Les IP et noms mono-label utilisent `exact` par défaut.
+
+Demandez explicitement `exact` pour autoriser uniquement l’hôte fourni :
 
 ```bash
 scanforge plan example.com --scope-mode exact

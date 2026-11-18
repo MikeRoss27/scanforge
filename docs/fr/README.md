@@ -1,7 +1,7 @@
 # README (Français)
 
 <p align="center">
-  <img src="../../public/SCANFORGE.gif" width="100%" alt="ScanForge">
+  <img src="../../public/scanforge-banner.png" width="100%" alt="ScanForge — framework de reconnaissance cyber">
 </p>
 
 # ScanForge
@@ -12,6 +12,10 @@
 
 Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intelligemment les outils de sécurité reconnus du marché tout en appliquant des règles de validation de scope extrêmement strictes pour éviter tout scan non autorisé.
 
+<p align="center">
+  <img src="../../public/scanforge-icons.png" width="100%" alt="Pack d’icônes ScanForge en pixel art">
+</p>
+
 ## 📚 Documentation
 
 - [Guide d'utilisation](USAGE.md) : installation, configuration, commandes et exemples.
@@ -21,8 +25,8 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
 
 ## 🚀 Fonctionnalités Clés
 
-- **Pipeline orienté Artefacts** : Les modules communiquent via des artefacts de manière ordonnée (ex : la sortie de `subfinder` alimente automatiquement `dnsx` et `httpx`), avec exécution parallèle par vagues du DAG.
-- **Validation de Scope Stricte** : Scope explicite par fichier ou scope implicite confirmé (`exact` par défaut, `domain` sur demande), puis filtrage de chaque artefact.
+- **Pipeline orienté Artefacts** : Les modules communiquent via des artefacts de manière ordonnée (ex : la sortie de `subfinder` alimente automatiquement `dnsx` et `httpx`) et chaque branche indépendante avance dès que ses entrées sont prêtes.
+- **Validation de Scope Stricte** : Scope explicite par fichier ou scope implicite confirmé (`domain` par défaut pour les domaines DNS ; `exact` pour les IP ou sur demande), puis filtrage de chaque artefact.
 - **Engagements multi-cibles** : `--targets fichier` exécute un profil contre de nombreuses cibles (une par ligne, commentaires et lignes vides ignorés) ; chaque cible obtient sa propre validation de scope, son répertoire de run et son rapport, et une cible en échec n'interrompt pas les autres.
 - **Assistant interactif** : un simple `scanforge run` sur un terminal demande la cible et le profil manquants au lieu d'échouer.
 - **Intégration proxy (Caido / Burp Suite)** : `--proxy` route le trafic HTTP des modules concernés à travers votre proxy d'interception pour triage/replay manuel.
@@ -32,7 +36,7 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
 - **Corrélation tech-to-CVE** : `techcve` croise les technologies et versions détectées avec un dataset embarqué aux scores CVSS réels issus de la NVD.
 - **Nuclei entièrement paramétrable** : sévérité, tags, rate-limit, timeout global, templates personnalisés et mise à jour des templates via des flags dédiés.
 - **Nmap parallélisé** : pool de workers borné (`--nmap-concurrency`) au lieu d'un scan séquentiel hôte par hôte.
-- **Progression en temps réel** : spinner par module actif pendant le scan (visible par défaut, pas seulement en `--verbose`), findings affichés en direct au fur et à mesure de leur découverte, avertissements des modules rejoués après la TUI, tableaux colorés pour `plan`/`doctor`, et panneau récapitulatif en fin de run.
+- **Console de scan** : le scan diffuse un journal d'événements chronologique et tagué (pas d'interface plein écran) — phases du pipeline, cycle de vie des modules, findings affichés dès leur découverte (avec l'email, le secret ou l'hôte exposé), ligne de progression volatile sur les terminaux interactifs (une boucle marteau/enclume générée en pixel art, 16 colonnes sur 6 lignes avec la progression à côté ; un indicateur sur une ligne sous 50 colonnes par défaut ; `SCANFORGE_SPINNER=forge|dots|off` pour changer), blocs de sévérité étendus pour les findings high/critical, doublons comptés dans un récapitulatif `Finding types` et un récapitulatif final `── SCAN COMPLETE ──`. La sortie reste lisible avec grep/tee/CI ; `-v/-vv/-vvv` augmentent la verbosité, `-q` ne garde que findings, erreurs et résumé.
 - **Notifications webhook** : à la fin de chaque run, un résumé est posté vers un webhook Slack/Discord/Teams configuré dans `scanforge.yaml`.
 - **Comparaison et export de runs** : `scanforge diff` liste ce qui a changé entre deux runs de la même cible (actifs, ports, vulnérabilités) ; `scanforge export` sérialise un run en SARIF 2.1.0 (code scanning GitHub/GitLab) ou en findings génériques DefectDojo.
 - **Mode Dry-Run** : Visualisez les commandes qui vont être lancées et les fichiers générés avant de faire la moindre requête réseau.
@@ -140,6 +144,30 @@ docker run -v $(pwd):/workspace scanforge run target.com --profile web
 
 ---
 
+## 🔧 Compiler depuis les sources (développement)
+
+Depuis un clone du dépôt, le `Makefile` encapsule la toolchain Go :
+
+```bash
+make build      # construit ./scanforge avec les ldflags de version
+make install    # idem, installé dans $GOPATH/bin
+```
+
+Cibles de développement pratiques :
+
+| Commande | Rôle |
+| --- | --- |
+| `make dev` / `make run` | Lance le CLI via `go run` sans build ; arguments via `ARGS="plan example.com --preset deep"` |
+| `make test` / `make race` | Suite de tests (rapide / avec le détecteur de race) |
+| `make check` | Porte avant push : vérification du format, `go vet`, golangci-lint et tests |
+| `make cover` | Tests avec rapport de couverture et résumé par fonction |
+| `make fmt` / `make fmt-check` | Formater le code / lister les fichiers non formatés sans les réécrire |
+| `make vet` / `make lint` | Analyse statique ; `make tools` installe la version de golangci-lint épinglée par le CI |
+| `make tidy` | Nettoyer `go.mod` / `go.sum` |
+| `make clean` | Supprimer le binaire et `coverage.out` |
+
+---
+
 ## 🚦 Guide de Démarrage Rapide
 
 ### 1. Initialiser le projet
@@ -165,15 +193,15 @@ scanforge doctor --profile web
 
 ### 3. Lancer un Scan
 
-Sans fichier de scope applicable, ScanForge déduit un scope minimal depuis la cible, l'affiche et demande une confirmation explicite avant de créer le run :
+Sans fichier de scope applicable, ScanForge inclut le domaine DNS fourni et ses sous-domaines, affiche le scope et demande confirmation avant de créer le run. Les sous-domaines découverts alimentent automatiquement DNSX, HTTPX et les modules suivants. Les IP et noms mono-label conservent un scope exact :
 
 ```bash
 scanforge run example.com --profile web
 ```
 
 Sur un terminal, un simple `scanforge run` (sans cible ni profil) ouvre un
-assistant interactif qui demande les deux. Pour inclure le domaine et ses
-sous-domaines, ajouter des règles ou en exclure :
+assistant interactif qui demande les deux. Utilisez `--scope-mode exact` pour
+limiter le run au seul hôte fourni. Pour ajouter des règles ou exclure des hôtes :
 
 ```bash
 scanforge run example.com --scope-mode domain \
@@ -323,3 +351,7 @@ Utilisez indifféremment `--preset safe` ou `--profile safe`. Avant un profil ac
 - `06_vulns/nuclei.jsonl` : Findings nuclei bruts (module `nuclei`).
 
 > ScanForge doit uniquement être utilisé sur des actifs pour lesquels vous disposez d'une autorisation explicite.
+
+<p align="center">
+  <img src="../../public/scanforge-footer.png" width="100%" alt="ScanForge — pentest autorisé uniquement">
+</p>

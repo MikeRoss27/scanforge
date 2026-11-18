@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -294,7 +295,11 @@ document.getElementById("b").innerHTML = new URLSearchParams(location.search).ge
 window.addEventListener("message", function (e) { document.getElementById("b").innerHTML = e.data; });
 </script>
 </body></html>`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/index.html?"+r.URL.RawQuery, http.StatusFound)
+			return
+		}
 		_, _ = w.Write([]byte(page))
 	}))
 	defer server.Close()
@@ -319,6 +324,42 @@ window.addEventListener("message", function (e) { document.getElementById("b").i
 	}
 }
 
+// TestIsOurVariantRecognizesInjectedPayloadAfterRedirect guards the case that
+// made every replay on a redirecting site report "sink-reached": a server
+// redirect ("/" to "/index.html") preserves the fragment we injected, so the
+// final URL carries the marker even though the page never consumed it. The
+// payload is still ours and must not be treated as a page-driven navigation.
+func TestIsOurVariantRecognizesInjectedPayloadAfterRedirect(t *testing.T) {
+	payload := `alert("__SF__2")`
+	final := (&url.URL{
+		Scheme: "https", Host: "a.example", Path: "/index.html", Fragment: payload,
+	}).String()
+	if !isOurVariant("https://a.example/", payload, final) {
+		t.Fatalf("isOurVariant(%q) = false, want true after a same-origin redirect", final)
+	}
+}
+
+func TestIsOurVariantRecognizesInjectedQueryAfterRedirect(t *testing.T) {
+	payload := `<img src=x onerror=alert("__SF__3")>`
+	final := (&url.URL{
+		Scheme: "https", Host: "a.example", Path: "/home",
+		RawQuery: url.Values{"q": {payload}}.Encode(),
+	}).String()
+	if !isOurVariant("https://a.example/", payload, final) {
+		t.Fatalf("isOurVariant(%q) = false, want true for an injected query parameter", final)
+	}
+}
+
+func TestIsOurVariantDoesNotHidePayloadNavigation(t *testing.T) {
+	payload := `javascript:alert("__SF__4")`
+	// A real location sink can turn the payload into a path we never
+	// requested. The marker there is page-driven evidence, not our variant.
+	final := "https://a.example/js/" + url.PathEscape(payload)
+	if isOurVariant("https://a.example/", payload, final) {
+		t.Fatalf("isOurVariant(%q) = true, want false for a payload-driven navigation", final)
+	}
+}
+
 // TestReplaySafePageNotObserved guards the URL-check regression: a page that
 // ignores fragment, params and postMessage must yield not-observed, never a
 // sink-reached verdict derived from our own injected hash/params. It needs a
@@ -336,7 +377,11 @@ func TestReplaySafePageNotObserved(t *testing.T) {
 	}
 
 	page := `<html><body><script>document.title = "safe";</script></body></html>`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/index.html?"+r.URL.RawQuery, http.StatusFound)
+			return
+		}
 		_, _ = w.Write([]byte(page))
 	}))
 	defer server.Close()

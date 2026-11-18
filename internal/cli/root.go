@@ -24,6 +24,10 @@ func NewRootCommand() *cobra.Command {
 		Use:   "scanforge",
 		Short: "Authorized pentest scan orchestrator",
 		Long:  "ScanForge runs scope-validated security scans and saves consolidated reports.",
+		Example: `  scanforge run example.com --profile web --confirm-scope
+  scanforge plan example.com --preset deep
+  scanforge diff runs/<target>/<run-a> runs/<target>/<run-b>
+  scanforge doctor --profile web`,
 		// Runtime errors (a failed module, a deadlock, ...) must not dump
 		// the full flag reference: the scan summary already explains what
 		// happened. Errors are printed once by cmd/scanforge/main.go.
@@ -33,6 +37,10 @@ func NewRootCommand() *cobra.Command {
 			application.ConfigPath = configPath
 		},
 	}
+
+	// Colored, section-aligned help for the whole command tree; child
+	// commands inherit the renderer through Cobra's HelpFunc lookup.
+	cmd.SetHelpFunc(renderColoredHelp)
 
 	// Keep the parse error visible and point to help for the affected command.
 	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {

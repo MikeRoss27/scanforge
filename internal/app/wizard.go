@@ -37,16 +37,14 @@ func (p *terminalWizardPrompter) IsTTY() bool {
 	return p != nil && p.input != nil && term.IsTerminal(int(p.input.Fd()))
 }
 
-// intro prints the setup panel once, before the first question.
+// intro prints a short hint once, before the first question. A heavy box
+// would be decoration: one dim line is enough.
 func (p *terminalWizardPrompter) intro() {
 	if p.introed {
 		return
 	}
 	p.introed = true
-	_, _ = fmt.Fprintln(p.output)
-	_, _ = fmt.Fprintln(p.output, ui.Section("INTERACTIVE SETUP",
-		"Press Enter to accept the suggested value."))
-	_, _ = fmt.Fprintln(p.output)
+	_, _ = fmt.Fprintln(p.output, ui.Secondary("Press Enter to accept the suggested value."))
 }
 
 func (p *terminalWizardPrompter) AskTarget() (string, error) {
@@ -56,7 +54,7 @@ func (p *terminalWizardPrompter) AskTarget() (string, error) {
 	p.intro()
 	reader := bufio.NewReader(p.input)
 	for {
-		_, _ = fmt.Fprintf(p.output, "  %s %s ", ui.DimBold("TARGET"), ui.Primary(">"))
+		_, _ = fmt.Fprintf(p.output, "%s %s ", ui.DimBold("TARGET"), ui.Primary("›"))
 		answer, err := reader.ReadString('\n')
 		if err != nil {
 			return "", fmt.Errorf("read target: %w", err)
@@ -78,21 +76,21 @@ func (p *terminalWizardPrompter) AskProfile(available []string, current string) 
 	}
 	reader := bufio.NewReader(p.input)
 	for {
-		_, _ = fmt.Fprintln(p.output, ui.DimBold("  PROFILE"))
+		_, _ = fmt.Fprintln(p.output, ui.DimBold("PROFILE"))
 		defaultIdx := 0
 		for i, name := range available {
-			label := fmt.Sprintf("    %2d) %s", i+1, name)
+			label := fmt.Sprintf("  %2d) %s", i+1, name)
 			if name == current {
 				label += ui.Dim("   (default)")
 				defaultIdx = i + 1
 			}
 			_, _ = fmt.Fprintln(p.output, label)
 		}
-		prompt := fmt.Sprintf("  CHOOSE [%d]: ", defaultIdx)
+		prompt := fmt.Sprintf("CHOOSE [%d] › ", defaultIdx)
 		if defaultIdx == 0 {
-			prompt = fmt.Sprintf("  CHOOSE [1-%d]: ", len(available))
+			prompt = fmt.Sprintf("CHOOSE [1-%d] › ", len(available))
 		}
-		_, _ = fmt.Fprint(p.output, ui.DimBold(prompt))
+		_, _ = fmt.Fprint(p.output, ui.DimBold("  "+prompt))
 
 		answer, err := reader.ReadString('\n')
 		if err != nil {
