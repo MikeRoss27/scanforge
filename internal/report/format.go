@@ -94,8 +94,15 @@ func (r *Report) WriteMarkdown(path string) error {
 
 		if len(asset.Paths) > 0 {
 			b.WriteString("### Discovered Paths\n\n")
+			b.WriteString("| URL | Status | Size |\n")
+			b.WriteString("|-----|--------|------|\n")
 			for _, p := range asset.Paths {
-				_, _ = fmt.Fprintf(&b, "- %s\n", mdInline(p))
+				status, size := "-", "-"
+				if p.StatusCode != 0 {
+					status = fmt.Sprint(p.StatusCode)
+					size = fmt.Sprint(p.ContentLength)
+				}
+				_, _ = fmt.Fprintf(&b, "| %s | %s | %s |\n", markdownCell(p.URL), status, size)
 			}
 			b.WriteString("\n")
 		}

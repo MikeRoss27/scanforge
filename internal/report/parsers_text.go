@@ -100,7 +100,7 @@ func ParseKatana(path string, report *Report) error {
 
 		if u, err := url.Parse(line); err == nil && u.Hostname() != "" {
 			asset := report.GetOrCreateAsset(u.Hostname())
-			asset.Paths = appendUnique(asset.Paths, line)
+			asset.Paths = appendUniquePath(asset.Paths, PathEntry{URL: line})
 		}
 	}
 	return scanner.Err()

@@ -74,7 +74,10 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 	rateLimit := opts.RateLimit
 	if rateLimit <= 0 {
-		rateLimit = 10
+		// nuclei's own default; ours used to be 10, which throttles a single
+		// generic host's ~17000-request template sweep to ~20 minutes all by
+		// itself, before a second host is even started.
+		rateLimit = 150
 	}
 	timeout := opts.Timeout
 	if timeout <= 0 {
@@ -89,6 +92,15 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		"-jsonl",
 		"-matcher-status",
 		"-no-mhe",
+	}
+	// Automatic scan (-as) picks templates by the host's detected tech
+	// instead of firing the full ~7000+ template catalog at every host: on a
+	// plain site with nothing recognizable, that's the difference between
+	// ~30 requests and ~17000. Skipped when the operator already narrowed
+	// the run with explicit tags or a template path (their choice already
+	// scopes the run) or explicitly asked for FullScan.
+	if !opts.FullScan && opts.Tags == "" && opts.TemplatesDir == "" {
+		args = append(args, "-as")
 	}
 	if opts.Headless {
 		args = append(args, "-headless")

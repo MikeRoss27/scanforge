@@ -232,7 +232,7 @@ func contains(haystack []string, needle string) bool {
 }
 
 func TestParseFfuf(t *testing.T) {
-	content := `{"results":[{"url":"https://example.com/admin","host":"example.com"}]}`
+	content := `{"results":[{"url":"https://example.com/admin","host":"example.com","status":200,"length":1337}]}`
 	path := writeTempFile(t, content)
 
 	rep := NewReport("example.com", "test")
@@ -242,8 +242,11 @@ func TestParseFfuf(t *testing.T) {
 	}
 
 	asset := rep.GetOrCreateAsset("example.com")
-	if len(asset.Paths) != 1 || asset.Paths[0] != "https://example.com/admin" {
-		t.Error("failed to parse ffuf paths")
+	if len(asset.Paths) != 1 || asset.Paths[0].URL != "https://example.com/admin" {
+		t.Fatalf("failed to parse ffuf paths: %+v", asset.Paths)
+	}
+	if asset.Paths[0].StatusCode != 200 || asset.Paths[0].ContentLength != 1337 {
+		t.Errorf("ffuf path lost its status/size: %+v", asset.Paths[0])
 	}
 }
 
@@ -338,7 +341,7 @@ func TestParseJSSecrets(t *testing.T) {
 	if len(asset.Vulnerabilities) != 2 {
 		t.Fatalf("expected 2 vulnerabilities (secret + cloud-storage), got %d: %+v", len(asset.Vulnerabilities), asset.Vulnerabilities)
 	}
-	if len(asset.Paths) != 1 || asset.Paths[0] != "/api/v1/admin/export" {
+	if len(asset.Paths) != 1 || asset.Paths[0].URL != "/api/v1/admin/export" {
 		t.Fatalf("expected endpoint routed to Paths, got %+v", asset.Paths)
 	}
 

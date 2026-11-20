@@ -93,7 +93,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 				defer wg.Done()
 				defer func() { <-sem }()
 
-				result := probeHost(ctx, client, runCtx, host)
+				result := ProbeHost(ctx, client, runCtx, host)
 				mu.Lock()
 				findings = append(findings, result)
 				mu.Unlock()
@@ -143,7 +143,12 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	}, nil
 }
 
-func probeHost(ctx context.Context, client *http.Client, runCtx *modules.RunContext, host string) Finding {
+// ProbeHost runs the module's passive detection signals (homepage generator
+// meta, RSS feed, readme.html, REST index) against a single host. Exported
+// so callers outside the module — the app layer's pre-scan WordPress
+// suggestion, in particular — can reuse the exact same detection logic
+// without needing the full Run() artifact pipeline.
+func ProbeHost(ctx context.Context, client *http.Client, runCtx *modules.RunContext, host string) Finding {
 	result := Finding{Target: host, FetchedAt: time.Now().UTC().Format(time.RFC3339)}
 
 	_, homepageBody, _, _ := modules.WPBody(ctx, client, host+"/", runCtx.Headers, maxBodyBytes)

@@ -397,6 +397,11 @@ func (r *Renderer) redrawVolatileLocked() {
 		return
 	}
 	var update strings.Builder
+	// Begin Synchronized Update: terminals that support it (iTerm2, Kitty,
+	// WezTerm, Alacritty, Windows Terminal, tmux >=3.4) buffer every clear
+	// and redraw below and flip the screen once, so a multi-row frame never
+	// paints half-erased. Unsupported terminals ignore the unknown CSI.
+	update.WriteString("\x1b[?2026h")
 	update.WriteString(r.eraseVolatileLocked())
 	if r.progress.spinner == SpinnerForge && r.term.Width >= 50 {
 		rows := forgeLoadingRows(now, r.th)
@@ -413,6 +418,7 @@ func (r *Renderer) redrawVolatileLocked() {
 	} else {
 		update.WriteString("\r\x1b[2K" + line)
 	}
+	update.WriteString("\x1b[?2026l")
 	// Send one terminal write per frame instead of clearing and drawing each
 	// row separately; the user never sees a half-erased animation block.
 	_, _ = fmt.Fprint(r.out, update.String())

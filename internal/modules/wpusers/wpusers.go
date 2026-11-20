@@ -171,10 +171,13 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 				}
 				key := host.Target + "|" + login
 				if existing, ok := found[key]; ok {
+					// found holds values, not pointers: the merge must be
+					// written back explicitly or it's silently discarded.
 					if existing.DisplayName == "" {
 						existing.DisplayName = u.Name
 					}
 					existing.Confidence = "high"
+					found[key] = existing
 					continue
 				}
 				found[key] = Finding{

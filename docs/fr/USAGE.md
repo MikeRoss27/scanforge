@@ -117,6 +117,20 @@ dossier `templates/` de ce dépôt (`spring-actuator-exposed`,
 localisés via `SCANFORGE_TEMPLATES_DIR`, puis le répertoire de travail
 (`./templates`) et enfin le répertoire de l'exécutable.
 
+Par défaut nuclei tourne avec `-as` (scan automatique) : les templates sont
+choisis selon la techno détectée sur chaque hôte au lieu de lancer tout le
+catalogue sur chaque hôte, avec la limite de débit par défaut de nuclei
+(150 req/s). Passez `--nuclei-tags`, `--nuclei-templates`, ou
+`--nuclei-full-scan` pour lancer tous les templates sur tous les hôtes
+(plus lent ; augmentez `--nuclei-timeout` en conséquence).
+`--nuclei-rate-limit` surcharge la limite de débit dans tous les cas.
+
+`ffuf` lance un processus séparé par hôte vivant (borné par une limite de
+concurrence interne, même compromis que `nmap`) au lieu de fuzzer tous les
+hôtes depuis une seule invocation : l'auto-calibration (`-ac`/`-ach`)
+n'apprend fiablement la signature wildcard/soft-404 propre à un hôte que
+lorsqu'elle tourne seule sur cet hôte.
+
 ## WordPress (wp)
 
 `scanforge run example.com --preset wp` lance la chaîne d'engagement WordPress :
@@ -128,6 +142,7 @@ localisés via `SCANFORGE_TEMPLATES_DIR`, puis le répertoire de travail
 - `wpcve` corrèle les versions core/plugins/thèmes avec le dataset embarqué (hors ligne ; vérifié contre la NVD, voir `internal/modules/wpcve/cves_wp.yaml`). Aucune clé API nécessaire.
 - `wpbrute` (sonde de credentials contre les utilisateurs énumérés) est **désactivé partout par défaut** et ne s'exécute qu'avec les trois : `--wp-bruteforce` + `--confirm-scope` (scopes implicites) + `--wp-passwords <wordlist>`. Il se limite à `--wp-bruteforce-max` tentatives par utilisateur (défaut 100), s'arrête au premier succès ou à tout signal de lockout, et refuse de tourner si `wpusers` n'a énuméré aucun identifiant. Aucune liste de mots de passe n'est embarquée.
 - `scanforge doctor --profile wp` remonte l'état des wordlists/dataset embarqués et des outils externes.
+- Sans `--wp`, `scanforge run` lance tout de même une sonde WordPress passive rapide contre la cible confirmée (mêmes signaux que `wpdetect`, plafonnée à 8s) juste après la confirmation de scope. Si ça ressemble à WordPress et que la session est un terminal interactif, elle propose d'ajouter la chaîne à ce run ; en contexte non interactif (CI, scripts, `--dry-run`), elle se contente de logguer la détection sans modifier le run.
 
 ## Flux recommandé
 

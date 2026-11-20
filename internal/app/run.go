@@ -118,6 +118,11 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 		}
 	}
 
+	// Only after scope is confirmed: the suggestion probe is itself live
+	// network traffic against the target, so it must never run ahead of
+	// that boundary.
+	moduleNames = a.maybeSuggestWordPress(opts, moduleNames)
+
 	store := storage.NewRunStore(config.WorkspaceDir(cfg))
 
 	scanRun, err := store.Create(opts.Target)
@@ -140,12 +145,13 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 	out := os.Stdout
 	term := console.DetectTerminal(out)
 	session := &runSession{
-		opts:      opts,
-		profile:   profile,
-		effective: effective,
-		scanRun:   scanRun,
-		cfg:       cfg,
-		term:      term,
+		opts:        opts,
+		profile:     profile,
+		effective:   effective,
+		moduleNames: moduleNames,
+		scanRun:     scanRun,
+		cfg:         cfg,
+		term:        term,
 		console: console.New(console.Options{
 			Out:       out,
 			Terminal:  term,
@@ -195,6 +201,7 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 		results, runErr = orch.Run(runCtx, s.scanRun, orchestrator.Options{
 			Target:          s.opts.Target,
 			Profile:         s.profile,
+			Modules:         s.moduleNames,
 			Config:          s.cfg,
 			DryRun:          s.opts.DryRun,
 			Scope:           s.effective.value,

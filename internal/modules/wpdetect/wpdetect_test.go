@@ -45,7 +45,7 @@ func TestProbeHostDetectsWordPress(t *testing.T) {
 	defer server.Close()
 
 	runCtx := testRunContext(t, server.URL)
-	result := probeHost(context.Background(), server.Client(), runCtx, server.URL)
+	result := ProbeHost(context.Background(), server.Client(), runCtx, server.URL)
 	if !result.IsWordPress {
 		t.Fatalf("expected WordPress detection on %s", server.URL)
 	}
@@ -67,7 +67,7 @@ func TestProbeHostIgnoresNonWordPress(t *testing.T) {
 	defer server.Close()
 
 	runCtx := testRunContext(t, server.URL)
-	result := probeHost(context.Background(), server.Client(), runCtx, server.URL)
+	result := ProbeHost(context.Background(), server.Client(), runCtx, server.URL)
 	if result.IsWordPress {
 		t.Fatalf("unexpected WordPress detection on %s", server.URL)
 	}

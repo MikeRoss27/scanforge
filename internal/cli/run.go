@@ -37,6 +37,7 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var nucleiUpdateTemplates bool
 	var nucleiHeadless bool
 	var nucleiIncludeCustom bool
+	var nucleiFullScan bool
 
 	var nmapConcurrency int
 
@@ -100,6 +101,7 @@ report (report.json / report.md).`,
 					UpdateTemplates:        nucleiUpdateTemplates,
 					Headless:               nucleiHeadless,
 					IncludeCustomTemplates: nucleiIncludeCustom,
+					FullScan:               nucleiFullScan,
 				},
 				NmapConcurrency: nmapConcurrency,
 				Ffuf: modules.FfufOptions{
@@ -138,12 +140,13 @@ report (report.json / report.md).`,
 	cmd.Flags().StringVar(&nucleiExcludeSeverity, "nuclei-exclude-severity", "", "Nuclei: comma-separated severities to skip")
 	cmd.Flags().StringVar(&nucleiTags, "nuclei-tags", "", "Nuclei: comma-separated template tags to run")
 	cmd.Flags().StringVar(&nucleiExcludeTags, "nuclei-exclude-tags", "", "Nuclei: comma-separated template tags to skip")
-	cmd.Flags().IntVar(&nucleiRateLimit, "nuclei-rate-limit", 0, "Nuclei: max requests per second (default 10)")
-	cmd.Flags().DurationVar(&nucleiTimeout, "nuclei-timeout", 0, "Nuclei: overall time limit, e.g. 45m (default 30m; raise it for slow proxies or large target lists)")
+	cmd.Flags().IntVar(&nucleiRateLimit, "nuclei-rate-limit", 0, "Nuclei: max requests per second (default 150, nuclei's own default)")
+	cmd.Flags().DurationVar(&nucleiTimeout, "nuclei-timeout", 0, "Nuclei: overall time limit, e.g. 45m (default 30m; raise it for slow proxies, --nuclei-full-scan, or large target lists)")
 	cmd.Flags().StringVar(&nucleiTemplates, "nuclei-templates", "", "Nuclei: custom template file or directory to run instead of the default set")
 	cmd.Flags().BoolVar(&nucleiUpdateTemplates, "nuclei-update-templates", false, "Nuclei: update the local template cache before scanning")
 	cmd.Flags().BoolVar(&nucleiHeadless, "nuclei-headless", false, "Nuclei: enable headless-mode templates (requires nuclei headless support)")
 	cmd.Flags().BoolVar(&nucleiIncludeCustom, "nuclei-include-custom", false, "Nuclei: also run the bundled ScanForge custom templates")
+	cmd.Flags().BoolVar(&nucleiFullScan, "nuclei-full-scan", false, "Nuclei: run every template against every host instead of nuclei's technology-aware automatic scan (-as); much slower, raise --nuclei-timeout to match")
 
 	cmd.Flags().IntVar(&nmapConcurrency, "nmap-concurrency", 0, "Max concurrent nmap processes (default 4; lower to reduce noise)")
 

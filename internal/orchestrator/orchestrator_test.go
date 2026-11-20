@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,41 @@ func TestOrchestratorReturnsModuleFailuresAfterFinishingWave(t *testing.T) {
 	}
 	if results[0].Status != "failed" || results[1].Status != "completed" {
 		t.Fatalf("unexpected results: %+v", results)
+	}
+}
+
+// TestModuleDoneEventClassifiesFailureKind locks that a module's error is
+// classified (runner.ClassifyFailure) before it reaches the console: a
+// missing binary and a generic failure must produce different Kind values
+// on the emitted ModuleDoneEvent, not just the same opaque error string.
+func TestModuleDoneEventClassifiesFailureKind(t *testing.T) {
+	reg := modules.NewRegistry()
+	reg.Register(&mockModule{name: "missing-binary", runErr: &exec.Error{Name: "ffuf", Err: exec.ErrNotFound}})
+	reg.Register(&mockModule{name: "generic-failure", runErr: errors.New("exit code 2")})
+	cfg := config.Default()
+	cfg.Profiles["test"] = []string{"missing-binary", "generic-failure"}
+	events := make(chan Event, 16)
+
+	_, err := New(runner.NewDryRunExecutor(false), reg).Run(
+		context.Background(), nil,
+		Options{Target: "example.com", Profile: "test", Config: cfg},
+		events,
+	)
+	if err == nil {
+		t.Fatal("expected an aggregate error")
+	}
+
+	kinds := map[string]runner.FailureKind{}
+	for event := range events {
+		if e, ok := event.(ModuleDoneEvent); ok && e.Error != "" {
+			kinds[e.Name] = e.Kind
+		}
+	}
+	if kinds["missing-binary"] != runner.FailureNotFound {
+		t.Errorf("missing-binary Kind = %q, want %q", kinds["missing-binary"], runner.FailureNotFound)
+	}
+	if kinds["generic-failure"] != runner.FailureUnknown {
+		t.Errorf("generic-failure Kind = %q, want %q", kinds["generic-failure"], runner.FailureUnknown)
 	}
 }
 

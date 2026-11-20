@@ -26,7 +26,9 @@ var forgePalette = []struct{ r, g, b, ansi int }{
 }
 var forgePixels = loadForgePixels()
 
-const forgeAnimationInterval = 40 * time.Millisecond
+// 30fps reads as noticeably livelier than the old 25fps tick, and keeps the
+// strike-to-strike cycle under a second instead of 1.6s.
+const forgeAnimationInterval = 33 * time.Millisecond
 const forgeCycleFrames = 40
 
 // Animate one rigid hammer sampled from imagegen's first pose. Using a
@@ -116,8 +118,14 @@ func loadForgePixels() [forgeCycleFrames][forgeHeight][forgeWidth]int {
 
 func forgeHammerAngle(frame int) float64 {
 	switch {
+	case frame == 0:
+		return 0 // loop seam: must match the last frame exactly
 	case frame < 6:
-		return 0 // anticipation
+		// A faint breathing sway instead of a dead hold: the hammer never
+		// sits frozen while it gathers for the strike. Returns to exactly 0
+		// by frame 5 so it joins the downswing without a jump.
+		t := float64(frame) / 5
+		return -2 * math.Sin(t*math.Pi)
 	case frame <= 11:
 		t := float64(frame-6) / 5
 		return 50 * t * t // accelerate into contact
@@ -127,8 +135,13 @@ func forgeHammerAngle(frame int) float64 {
 	case frame < 36:
 		t := float64(frame-15) / 21
 		return 37 * (1 - t*t*(3-2*t)) // ease back to the raised pose
+	case frame >= forgeCycleFrames-1:
+		return 0 // loop seam: must match the first frame exactly
 	default:
-		return 0
+		// Same faint sway on the way down to the rest pose, landing back on
+		// exactly 0 at the last frame so the loop seam is invisible.
+		t := float64(frame-36) / 3
+		return -2 * math.Sin(t*math.Pi)
 	}
 }
 

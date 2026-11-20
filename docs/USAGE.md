@@ -115,6 +115,18 @@ directory of this repository to the nuclei run (`spring-actuator-exposed`,
 via `SCANFORGE_TEMPLATES_DIR`, then the working directory (`./templates`) and
 finally the executable directory.
 
+By default nuclei runs with `-as` (automatic scan): it picks templates from
+each host's detected technology instead of firing the full template catalog
+at every host, and uses nuclei's own default rate limit (150 req/s). Pass
+`--nuclei-tags`, `--nuclei-templates`, or `--nuclei-full-scan` to run every
+template against every host instead (slower; raise `--nuclei-timeout` to
+match). `--nuclei-rate-limit` overrides the rate limit either way.
+
+`ffuf` fans a separate process out per alive host (bounded by an internal
+concurrency cap, same tradeoff as `nmap`) instead of fuzzing every host from
+one invocation — each host's auto-calibration (`-ac`/`-ach`) only learns
+that host's own wildcard/soft-404 signature reliably when it runs alone.
+
 ## WordPress (wp)
 
 `scanforge run example.com --preset wp` runs the WordPress engagement chain:
@@ -126,6 +138,7 @@ finally the executable directory.
 - `wpcve` correlates core/plugin/theme versions with the bundled advisory dataset (offline; verified against NVD, see `internal/modules/wpcve/cves_wp.yaml`). No API key required.
 - `wpbrute` (credential probe against enumerated users) is **OFF everywhere by default** and only runs with all of: `--wp-bruteforce` + `--confirm-scope` (implicit scopes) + `--wp-passwords <wordlist>`. It caps at `--wp-bruteforce-max` attempts per user (default 100), stops on the first success or on any lockout signal, and refuses to run when `wpusers` produced no usernames. No password list is bundled.
 - `scanforge doctor --profile wp` reports the bundled wordlists/dataset and the external tooling availability.
+- Without `--wp`, `scanforge run` still runs a quick passive WordPress probe against the confirmed target (same signals as `wpdetect`, capped at 8s) right after scope confirmation. If it looks like WordPress and the session is an interactive terminal, it asks whether to add the chain to this run; in a non-interactive context (CI, scripts, `--dry-run`) it only logs the detection and leaves the run unchanged.
 
 ## Recommended flow
 

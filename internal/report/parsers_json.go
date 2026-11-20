@@ -106,8 +106,10 @@ func ParseFfuf(path string, report *Report) error {
 
 	var result struct {
 		Results []struct {
-			URL  string `json:"url"`
-			Host string `json:"host"`
+			URL    string `json:"url"`
+			Host   string `json:"host"`
+			Status int    `json:"status"`
+			Length int64  `json:"length"`
 		} `json:"results"`
 	}
 
@@ -124,7 +126,9 @@ func ParseFfuf(path string, report *Report) error {
 		}
 		if host != "" {
 			asset := report.GetOrCreateAsset(host)
-			asset.Paths = appendUnique(asset.Paths, res.URL)
+			asset.Paths = appendUniquePath(asset.Paths, PathEntry{
+				URL: res.URL, StatusCode: res.Status, ContentLength: res.Length,
+			})
 		}
 	}
 	return nil
@@ -409,7 +413,7 @@ func ParseJSSecrets(path string, report *Report) error {
 		asset := report.GetOrCreateAsset(host)
 
 		if record.Kind == "endpoint" {
-			asset.Paths = appendUnique(asset.Paths, record.Match)
+			asset.Paths = appendUniquePath(asset.Paths, PathEntry{URL: record.Match})
 			return
 		}
 

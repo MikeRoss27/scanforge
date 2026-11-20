@@ -70,13 +70,51 @@ func TestRunBuildsNucleiCommandWithDefaults(t *testing.T) {
 		t.Fatalf("command name = %q", cmd.Name)
 	}
 	args := strings.Join(cmd.Args, " ")
-	for _, want := range []string{"-l", "04_surface/attack-surface.txt", "-severity", "low,medium,high,critical", "-rate-limit", "10", "-jsonl", "-silent"} {
+	for _, want := range []string{"-l", "04_surface/attack-surface.txt", "-severity", "low,medium,high,critical", "-rate-limit", "150", "-jsonl", "-silent", "-as"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("args %q missing %q", args, want)
 		}
 	}
 	if _, ok := runCtx.GetArtifact("nuclei_raw"); !ok {
 		t.Fatal("nuclei_raw artifact was not published")
+	}
+}
+
+// TestRunSkipsAutomaticScanWhenScopedExplicitly locks that -as (which picks
+// templates by detected tech) backs off the moment the operator already
+// narrowed the run themselves — forcing -as on top of an explicit -tags or
+// -t would second-guess a choice they already made.
+func TestRunSkipsAutomaticScanWhenScopedExplicitly(t *testing.T) {
+	cases := []struct {
+		name string
+		opts modules.NucleiOptions
+	}{
+		{"explicit tags", modules.NucleiOptions{Tags: "cve"}},
+		{"explicit template dir", modules.NucleiOptions{TemplatesDir: "/tmp/templates"}},
+		{"full scan requested", modules.NucleiOptions{FullScan: true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			run := testRun(t, t.TempDir())
+			if err := os.WriteFile(run.Path("04_surface", "attack-surface.txt"), []byte("http://example.com\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			runCtx := modules.NewRunContext("example.com", "web", false, run)
+			if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
+				t.Fatal(err)
+			}
+			runCtx.Nuclei = tc.opts
+			executor := &recordingExecutor{}
+			if _, err := New("nuclei").Run(context.Background(), runCtx, executor); err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			args := executor.commands[0].Args
+			for _, arg := range args {
+				if arg == "-as" {
+					t.Fatalf("args %v should not include -as when the run is already scoped", args)
+				}
+			}
+		})
 	}
 }
 

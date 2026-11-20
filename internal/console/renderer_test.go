@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/orchestrator"
+	"github.com/MikeRoss27/scanforge/internal/runner"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -72,6 +73,74 @@ func TestModuleFailureRendersErrLine(t *testing.T) {
 		if !strings.Contains(line, want) {
 			t.Errorf("error block missing %q: %q", want, line)
 		}
+	}
+}
+
+// ptr returns a pointer to v, for table-driven test fields that need to
+// distinguish "assert exact value" from "don't care" (a nil field).
+func ptr[T any](v T) *T { return &v }
+
+// TestModuleFailureAdviceMatchesFailureKind locks that the [ERR] block's
+// action/hint actually change with *why* a module failed (runner.Kind),
+// instead of showing the same "run scanforge doctor" for a missing binary,
+// a timeout and a cancelled scan alike.
+func TestModuleFailureAdviceMatchesFailureKind(t *testing.T) {
+	cases := []struct {
+		name       string
+		kind       runner.FailureKind
+		moduleName string
+		wantAction string
+		wantHint   *string // non-nil to assert hint equals an exact value (e.g. "")
+		want       []string
+		mustNot    []string
+	}{
+		{
+			name: "not found", kind: runner.FailureNotFound, moduleName: "ffuf",
+			wantAction: "scan continues",
+			want:       []string{"ffuf", "missing or not executable", "scanforge doctor"},
+		},
+		{
+			name: "timeout on nuclei", kind: runner.FailureTimeout, moduleName: "nuclei",
+			wantAction: "scan continues",
+			want:       []string{"--nuclei-timeout"},
+		},
+		{
+			name: "timeout on another module", kind: runner.FailureTimeout, moduleName: "ffuf",
+			wantAction: "scan continues",
+			want:       []string{"time budget"},
+			mustNot:    []string{"--ffuf-timeout"}, // that flag doesn't exist; never invent one
+		},
+		{
+			name: "cancelled", kind: runner.FailureCanceled, moduleName: "nuclei",
+			wantAction: "scan aborted",
+			wantHint:   ptr(""), // nothing useful to suggest for a user-initiated abort
+		},
+		{
+			name: "unknown", kind: runner.FailureUnknown, moduleName: "naabu",
+			wantAction: "scan continues",
+			want:       []string{"scanforge doctor"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			action, hint := failureAdvice(tc.moduleName, tc.kind, "web")
+			if action != tc.wantAction {
+				t.Errorf("action = %q, want %q", action, tc.wantAction)
+			}
+			if tc.wantHint != nil && hint != *tc.wantHint {
+				t.Errorf("hint = %q, want %q", hint, *tc.wantHint)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(hint, want) {
+					t.Errorf("hint %q missing %q", hint, want)
+				}
+			}
+			for _, bad := range tc.mustNot {
+				if strings.Contains(hint, bad) {
+					t.Errorf("hint %q should not contain %q", hint, bad)
+				}
+			}
+		})
 	}
 }
 

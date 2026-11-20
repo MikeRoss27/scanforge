@@ -235,6 +235,14 @@ type NucleiOptions struct {
 	IncludeCustomTemplates bool
 	// CustomTemplatesDir overrides the bundled custom template directory path.
 	CustomTemplatesDir string
+	// FullScan disables nuclei's technology-aware automatic scan (-as) and
+	// runs every loaded template against every host regardless of detected
+	// tech. Default is -as on: a single generic host already loads ~7000
+	// templates / ~17000 planned requests, so blindly firing the whole
+	// catalog at more than one or two hosts reliably exceeds the default
+	// 30-minute Timeout before anything useful is produced. FullScan trades
+	// that speed for exhaustive coverage; raise Timeout accordingly.
+	FullScan bool
 }
 
 func NewRunContext(target, profile string, dryRun bool, run *storage.Run, scopes ...*scanScope.Scope) *RunContext {
