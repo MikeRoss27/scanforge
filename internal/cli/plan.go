@@ -18,6 +18,7 @@ func NewPlanCommand(application *app.App) *cobra.Command {
 	var scopeAdd []string
 	var exclusions []string
 	var targetsFile string
+	var wp bool
 	cmd := &cobra.Command{
 		Use:     "plan <target>",
 		GroupID: groupCore,
@@ -41,7 +42,7 @@ before running a scan.`,
 			}
 			plans, err := application.Plan(app.PlanOptions{
 				Target: target, TargetsFile: targetsFile, Profile: profile, Scope: scopeFile,
-				ScopeMode: scopeMode, ScopeAdd: scopeAdd, Exclusions: exclusions,
+				ScopeMode: scopeMode, ScopeAdd: scopeAdd, Exclusions: exclusions, WP: wp,
 			})
 			if err != nil {
 				return err
@@ -54,7 +55,8 @@ before running a scan.`,
 		},
 	}
 	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan profile to inspect (default from config)")
-	cmd.Flags().StringVar(&preset, "preset", "", "User-oriented preset (safe, recon, web, ports, vuln, deep)")
+	cmd.Flags().StringVar(&preset, "preset", "", "User-oriented preset (safe, recon, web, ports, vuln, deep, wp)")
+	cmd.Flags().BoolVar(&wp, "wp", false, "Add the WordPress engagement chain to the resolved profile")
 	cmd.Flags().StringVar(&targetsFile, "targets", "", "File with one target per line (multi-target engagement; exclusive with a positional target)")
 	cmd.Flags().StringVarP(&scopeFile, "scope", "s", "", "Scope file (default from config)")
 	cmd.Flags().StringVar(&scopeMode, "scope-mode", "", "Implicit scope mode: exact or domain (default domain for DNS domains, exact for IPs and single-label hosts)")

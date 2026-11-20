@@ -20,6 +20,14 @@ type Options struct {
 	Config  *config.Config
 	DryRun  bool
 	Scope   *scanScope.Scope
+	// Modules, when non-empty, is the exact module list to run instead of
+	// resolving Profile through Config.ProfileModules. The caller
+	// (app.prepareRun) has already applied --wp/--wp-bruteforce on top of
+	// the profile's base list by the time it gets here; re-resolving from
+	// Profile alone would silently drop that. Empty falls back to the old
+	// behavior (profile-only resolution), which existing direct callers of
+	// the orchestrator (tests) rely on.
+	Modules []string
 
 	// Proxy routes HTTP-capable modules through an intercepting proxy such
 	// as Caido or Burp Suite (e.g. http://127.0.0.1:8080).
@@ -33,6 +41,8 @@ type Options struct {
 	Ffuf modules.FfufOptions
 	// NmapConcurrency bounds how many nmap processes run at once.
 	NmapConcurrency int
+	// WordPress carries WordPress-engagement tuning.
+	WordPress modules.WordPressOptions
 	// ModuleStallTimeout overrides the default module stall detection
 	// window (how long a module may run without output before the console is
 	// warned that it appears stalled). Zero means the orchestrator default.
@@ -90,9 +100,13 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 		return nil, fmt.Errorf("module registry not configured")
 	}
 
-	moduleNames, err := opts.Config.ProfileModules(opts.Profile)
-	if err != nil {
-		return nil, err
+	moduleNames := opts.Modules
+	if len(moduleNames) == 0 {
+		var err error
+		moduleNames, err = opts.Config.ProfileModules(opts.Profile)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	selectedModules, err := o.registry.Resolve(moduleNames)
@@ -106,6 +120,7 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	runCtx.Nuclei = opts.Nuclei
 	runCtx.Ffuf = opts.Ffuf
 	runCtx.NmapConcurrency = opts.NmapConcurrency
+	runCtx.WordPress = opts.WordPress
 
 	// moduleActivity tracks, per module name, when it started and when it
 	// last emitted progress or a finding. The stall watchdog watches this
@@ -291,6 +306,7 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 				done := ModuleDoneEvent{Name: m.Name(), Status: status, Dur: time.Since(start), Failed: status != "completed", Summary: moduleSummary(runCtx, m, result)}
 				if err != nil {
 					done.Error = err.Error()
+					done.Kind = runner.ClassifyFailure(err)
 				}
 				outChan <- done
 			}

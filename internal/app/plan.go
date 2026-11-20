@@ -13,6 +13,8 @@ type PlanOptions struct {
 	ScopeMode   string
 	ScopeAdd    []string
 	Exclusions  []string
+	// WP adds the WordPress engagement chain to the resolved profile.
+	WP bool
 }
 
 type PlanStep struct {
@@ -80,6 +82,7 @@ func (a *App) planOne(cfg *config.Config, target, profileName string, opts PlanO
 	if err != nil {
 		return nil, err
 	}
+	names = applyWordPress(names, opts.WP, false)
 	selected, err := buildRegistry(cfg).Resolve(names)
 	if err != nil {
 		return nil, err
@@ -109,12 +112,20 @@ func (a *App) planOne(cfg *config.Config, target, profileName string, opts PlanO
 
 func moduleRisk(name string) string {
 	switch name {
-	case "subfinder", "gau":
+	case "subfinder", "gau", "techcve", "attacksurface":
 		return "passive"
+	case "dnsbrute":
+		return "active-low"
 	case "dnsx", "httpx", "tlsx", "whatweb", "wafw00f", "jssecrets", "jsverify":
+		return "active-low"
+	case "screenshot", "httpcheck":
 		return "active-low"
 	case "katana", "naabu":
 		return "active"
+	case "wpdetect", "wpplugins", "wpthemes", "wpusers", "wpexposure", "wpxmlrpc", "wpcve":
+		return "active-low"
+	case "wpbrute":
+		return "active-high"
 	case "nmap", "ffuf", "nuclei":
 		return "active-high"
 	default:

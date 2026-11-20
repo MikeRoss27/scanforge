@@ -105,6 +105,48 @@ var builtins = map[string][]string{
 		"nuclei",
 		"tlsx",
 	},
+	// wp is the WordPress engagement chain: recon + core/plugin/theme
+	// fingerprinting, CVE correlation, exposure checks and report.
+	// wpbrute (opt-in only) is deliberately NOT part of the preset.
+	// "wordpress" is accepted as an alias of "wp".
+	"wp": {
+		"subfinder",
+		"dnsbrute",
+		"dnsx",
+		"httpx",
+		"whatweb",
+		"wpdetect",
+		"wpplugins",
+		"wpthemes",
+		"wpusers",
+		"wpexposure",
+		"wpxmlrpc",
+		"wpcve",
+		"techcve",
+		"httpcheck",
+		"nuclei",
+		"screenshot",
+		"attacksurface",
+	},
+	"wordpress": {
+		"subfinder",
+		"dnsbrute",
+		"dnsx",
+		"httpx",
+		"whatweb",
+		"wpdetect",
+		"wpplugins",
+		"wpthemes",
+		"wpusers",
+		"wpexposure",
+		"wpxmlrpc",
+		"wpcve",
+		"techcve",
+		"httpcheck",
+		"nuclei",
+		"screenshot",
+		"attacksurface",
+	},
 }
 
 func Resolve(name string, overrides map[string][]string) ([]string, error) {

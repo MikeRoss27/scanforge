@@ -15,6 +15,7 @@ type App struct {
 	ConfigPath    string
 	ScopePrompter ScopePrompter
 	Wizard        WizardPrompter
+	WPPrompter    WPPrompter
 }
 
 func New(configPath string) *App {
@@ -22,6 +23,7 @@ func New(configPath string) *App {
 		ConfigPath:    configPath,
 		ScopePrompter: newTerminalScopePrompter(),
 		Wizard:        newTerminalWizardPrompter(),
+		WPPrompter:    newTerminalWPPrompter(),
 	}
 }
 
@@ -51,6 +53,12 @@ type RunOptions struct {
 	Ffuf modules.FfufOptions
 	// NmapConcurrency bounds how many nmap processes run at once.
 	NmapConcurrency int
+	// WP adds the WordPress engagement chain to the selected profile
+	// (--wp). The chain modules are no-ops on non-WordPress hosts.
+	WP bool
+	// WordPress carries WordPress-engagement tuning (enumeration mode,
+	// aggressive wordlist, opt-in brute force).
+	WordPress modules.WordPressOptions
 }
 
 type DoctorOptions struct {
@@ -83,9 +91,15 @@ type runSession struct {
 	opts      RunOptions
 	profile   string
 	effective *effectiveScope
-	scanRun   *storage.Run
-	cfg       *config.Config
-	reportErr error
+	// moduleNames is the final, already-adjusted module list (profile base
+	// + --wp/--wp-bruteforce + the pre-scan WordPress suggestion, if
+	// accepted) that execute() hands to the orchestrator. Resolving it here
+	// instead of letting the orchestrator re-derive it from opts.Profile
+	// alone is what makes any of those adjustments actually take effect.
+	moduleNames []string
+	scanRun     *storage.Run
+	cfg         *config.Config
+	reportErr   error
 	// console owns every terminal write of the run and term describes the
 	// output destination it renders for.
 	console *console.Renderer

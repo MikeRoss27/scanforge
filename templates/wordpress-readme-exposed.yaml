@@ -1,0 +1,32 @@
+id: scanforge-wordpress-readme-exposed
+
+info:
+  name: WordPress readme.html Exposed
+  author: ScanForge
+  severity: low
+  description: /readme.html is publicly reachable and discloses the WordPress version, easing version-based exploit targeting.
+  tags: exposure,wordpress,version-disclosure
+  reference:
+    - https://developer.wordpress.org/
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/readme.html"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "ABOUT WORDPRESS"
+          - "About WordPress"
+          - "<title>WordPress</title>"
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "Version\\s*([0-9]+\\.[0-9]+(\\.[0-9]+)?)"

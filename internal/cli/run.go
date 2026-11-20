@@ -37,11 +37,20 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var nucleiUpdateTemplates bool
 	var nucleiHeadless bool
 	var nucleiIncludeCustom bool
+	var nucleiFullScan bool
 
 	var nmapConcurrency int
 
 	var ffufWordlist string
 	var ffufFilterCodes string
+
+	var wp bool
+	var wpDetectionMode string
+	var wpWordlist string
+	var wpBruteforce bool
+	var wpPasswords string
+	var wpBruteMethod string
+	var wpBruteforceMax int
 
 	cmd := &cobra.Command{
 		Use:         "run [target]",
@@ -92,18 +101,28 @@ report (report.json / report.md).`,
 					UpdateTemplates:        nucleiUpdateTemplates,
 					Headless:               nucleiHeadless,
 					IncludeCustomTemplates: nucleiIncludeCustom,
+					FullScan:               nucleiFullScan,
 				},
 				NmapConcurrency: nmapConcurrency,
 				Ffuf: modules.FfufOptions{
 					Wordlist:    ffufWordlist,
 					FilterCodes: ffufFilterCodes,
 				},
+				WP: wp,
+				WordPress: modules.WordPressOptions{
+					DetectionMode: wpDetectionMode,
+					Wordlist:      wpWordlist,
+					Bruteforce:    wpBruteforce,
+					PasswordsFile: wpPasswords,
+					BruteMax:      wpBruteforceMax,
+					BruteMethod:   wpBruteMethod,
+				},
 			})
 		},
 	}
 
 	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan profile to run (default from config)")
-	cmd.Flags().StringVar(&preset, "preset", "", "Built-in preset (safe, recon, web, ports, vuln, deep)")
+	cmd.Flags().StringVar(&preset, "preset", "", "Built-in preset (safe, recon, web, ports, vuln, deep, wp)")
 	cmd.Flags().StringVar(&targetsFile, "targets", "", "Read one target per line from a file (replaces [target])")
 	cmd.Flags().StringVarP(&scopeFile, "scope", "s", "", "Scope file (default from config)")
 	cmd.Flags().StringVar(&scopeMode, "scope-mode", "", "Implicit scope mode: exact or domain (default domain for DNS domains, exact for IPs and single-label hosts)")
@@ -121,17 +140,26 @@ report (report.json / report.md).`,
 	cmd.Flags().StringVar(&nucleiExcludeSeverity, "nuclei-exclude-severity", "", "Nuclei: comma-separated severities to skip")
 	cmd.Flags().StringVar(&nucleiTags, "nuclei-tags", "", "Nuclei: comma-separated template tags to run")
 	cmd.Flags().StringVar(&nucleiExcludeTags, "nuclei-exclude-tags", "", "Nuclei: comma-separated template tags to skip")
-	cmd.Flags().IntVar(&nucleiRateLimit, "nuclei-rate-limit", 0, "Nuclei: max requests per second (default 10)")
-	cmd.Flags().DurationVar(&nucleiTimeout, "nuclei-timeout", 0, "Nuclei: overall time limit, e.g. 45m (default 30m; raise it for slow proxies or large target lists)")
+	cmd.Flags().IntVar(&nucleiRateLimit, "nuclei-rate-limit", 0, "Nuclei: max requests per second (default 150, nuclei's own default)")
+	cmd.Flags().DurationVar(&nucleiTimeout, "nuclei-timeout", 0, "Nuclei: overall time limit, e.g. 45m (default 30m; raise it for slow proxies, --nuclei-full-scan, or large target lists)")
 	cmd.Flags().StringVar(&nucleiTemplates, "nuclei-templates", "", "Nuclei: custom template file or directory to run instead of the default set")
 	cmd.Flags().BoolVar(&nucleiUpdateTemplates, "nuclei-update-templates", false, "Nuclei: update the local template cache before scanning")
 	cmd.Flags().BoolVar(&nucleiHeadless, "nuclei-headless", false, "Nuclei: enable headless-mode templates (requires nuclei headless support)")
 	cmd.Flags().BoolVar(&nucleiIncludeCustom, "nuclei-include-custom", false, "Nuclei: also run the bundled ScanForge custom templates")
+	cmd.Flags().BoolVar(&nucleiFullScan, "nuclei-full-scan", false, "Nuclei: run every template against every host instead of nuclei's technology-aware automatic scan (-as); much slower, raise --nuclei-timeout to match")
 
 	cmd.Flags().IntVar(&nmapConcurrency, "nmap-concurrency", 0, "Max concurrent nmap processes (default 4; lower to reduce noise)")
 
 	cmd.Flags().StringVar(&ffufWordlist, "ffuf-wordlist", "", "Path to an ffuf wordlist (default: auto-detect)")
 	cmd.Flags().StringVar(&ffufFilterCodes, "ffuf-filter-codes", "", "Ffuf: comma-separated HTTP status codes to filter out, e.g. 404,500")
+
+	cmd.Flags().BoolVar(&wp, "wp", false, "Add the WordPress engagement chain (wpdetect, plugins/themes, users, exposure, XML-RPC, CVE) to the selected profile")
+	cmd.Flags().StringVar(&wpDetectionMode, "wp-detection-mode", "passive", "WordPress plugin/theme probing: passive (default, crawl artifacts only), mixed, or aggressive (probe readme.txt for each slug)")
+	cmd.Flags().StringVar(&wpWordlist, "wp-wordlist", "", "WordPress slug wordlist for aggressive mode (one slug per line); defaults to the bundled top list")
+	cmd.Flags().BoolVar(&wpBruteforce, "wp-bruteforce", false, "Enable the wpbrute module (OFF by default; also requires --confirm-scope and --wp-passwords)")
+	cmd.Flags().StringVar(&wpPasswords, "wp-passwords", "", "Password wordlist for wpbrute (required with --wp-bruteforce; none is bundled)")
+	cmd.Flags().StringVar(&wpBruteMethod, "wp-brute-method", "login", "Auth probe for wpbrute: login (wp-login.php form, default) or xmlrpc (wp.getUsersBlogs)")
+	cmd.Flags().IntVar(&wpBruteforceMax, "wp-bruteforce-max", 100, "Max passwords tried per user with wpbrute (default 100)")
 
 	return cmd
 }
@@ -149,7 +177,7 @@ func runFlagHelp(cmd *cobra.Command) string {
 			groups[1].AddFlag(flag)
 		case flag.Name == "proxy", flag.Name == "header":
 			groups[2].AddFlag(flag)
-		case strings.HasPrefix(flag.Name, "nuclei-"), strings.HasPrefix(flag.Name, "nmap-"), strings.HasPrefix(flag.Name, "ffuf-"):
+		case strings.HasPrefix(flag.Name, "nuclei-"), strings.HasPrefix(flag.Name, "nmap-"), strings.HasPrefix(flag.Name, "ffuf-"), strings.HasPrefix(flag.Name, "wp-"), flag.Name == "wp":
 			groups[3].AddFlag(flag)
 		default:
 			groups[0].AddFlag(flag)

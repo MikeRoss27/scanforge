@@ -2,6 +2,8 @@ package orchestrator
 
 import (
 	"time"
+
+	"github.com/MikeRoss27/scanforge/internal/runner"
 )
 
 type Event interface {
@@ -31,6 +33,11 @@ type ModuleDoneEvent struct {
 	// so the console can render an actionable error block instead of a bare
 	// status word.
 	Error string
+	// Kind classifies why Error is non-empty (missing binary, timeout,
+	// cancellation, or unknown), so the console can give advice tailored to
+	// the actual cause instead of the same generic hint for every failure.
+	// Zero value (FailureUnknown) when Error is empty.
+	Kind runner.FailureKind
 }
 
 // DeadlockEvent is emitted when no module can run anymore because its

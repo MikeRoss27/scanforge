@@ -204,7 +204,7 @@ tools:
   shuffledns: shuffledns
   chromium: chromium
 
-# overrides for built-in profiles (safe, recon, web, ports, vuln, deep, full)
+# overrides for built-in profiles (safe, recon, passive, ports, web, vuln, deep, full, wp)
 # profiles:
 #   passive:
 #     - subfinder

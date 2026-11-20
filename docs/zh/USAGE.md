@@ -100,6 +100,18 @@ ai:
   temperature: 0.1   # 低值可保持 triage 输出稳定
 ```
 
+## WordPress（wp）
+
+`scanforge run example.com --preset wp` 运行 WordPress 渗透链：
+`subfinder → dnsbrute → dnsx → httpx → whatweb → wpdetect → wpplugins → wpthemes → wpusers → wpexposure → wpxmlrpc → wpcve → techcve → httpcheck → attacksurface → nuclei → screenshot`。
+
+- 默认**被动检测**：插件/主题版本从爬取到的资源（`?ver=`）、暴露的 `readme.html`、REST 索引和 RSS 订阅中读取。没有你的许可不会发出模糊测试流量。
+- `--wp-detection-mode mixed` 会为被动检测到的 slug 读取 `readme.txt`（版本确认）。`--wp-detection-mode aggressive --wp-wordlist slugs.txt` 对内置热门 slug 列表（或你自定义文件，每行一个）进行探测，达到与 wpscan 最接近的覆盖度。侵略模式噪声大，请按项目强度谨慎使用。
+- `--wp` 可以把 WordPress 链叠加到任意其他预设（`scanforge run example.com --profile web --wp`）。
+- `wpcve` 将 core/插件/主题版本与内置漏洞数据集匹配（离线；已对照 NVD 验证，见 `internal/modules/wpcve/cves_wp.yaml`），无需 API 密钥。
+- `wpbrute`（针对已枚举用户的凭据探测）**默认关闭**，仅在三者齐备时运行：`--wp-bruteforce` + `--confirm-scope`（隐式范围）+ `--wp-passwords <wordlist>`。每个用户最多 `--wp-bruteforce-max` 次尝试（默认 100），首个成功或出现锁定信号即停止；若 `wpusers` 未枚举到任何用户名则拒绝运行。内置不含任何密码字典。
+- `scanforge doctor --profile wp` 检查内置字典/数据集和外部工具的可用性。
+
 ## 推荐流程
 
 首先检查依赖和计划：

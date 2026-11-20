@@ -46,7 +46,18 @@ type Asset struct {
 	Technologies    []string         `json:"technologies,omitempty"`
 	WAFs            []string         `json:"wafs,omitempty"`
 	Vulnerabilities []*Vulnerability `json:"vulnerabilities,omitempty"`
-	Paths           []string         `json:"paths,omitempty"`
+	Paths           []PathEntry      `json:"paths,omitempty"`
+}
+
+// PathEntry is one path discovered under an asset. StatusCode and
+// ContentLength are only populated when the producer actually requested the
+// URL (ffuf); paths lifted from a crawl (katana) or extracted from JS source
+// (jssecrets) without a follow-up request leave both at zero. The report
+// renderer treats a zero StatusCode as "unconfirmed" rather than "HTTP 0".
+type PathEntry struct {
+	URL           string `json:"url"`
+	StatusCode    int    `json:"status_code,omitempty"`
+	ContentLength int64  `json:"content_length,omitempty"`
 }
 
 type Port struct {

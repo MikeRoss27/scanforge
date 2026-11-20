@@ -33,6 +33,7 @@
 - **认证扫描**：`-H/--header`（可重复）向发出的每个 HTTP 请求注入请求头/ Cookie（会话、Bearer 令牌）。
 - **JavaScript 密钥扫描器**：`jssecrets` 模块抓取爬取到的 `.js` 文件，检测泄露的 API 密钥/令牌/凭据、公共云存储桶、内网主机、邮箱、敏感 API 端点以及可访问的 source map；随后 `jsverify` 模块在无头浏览器中重放生成的 PoC 载荷，并报告已执行 / 到达 sink / 未观察到的判定结果。
 - **可视化截图**：`screenshot` 模块通过 `httpx` 捕获存活 URL 的截图，并列入报告中。
+- **WordPress 对等模式**：`--preset wp`（或在任意预设上加 `--wp`）依次运行 wpdetect（多信号 core 版本）、wpplugins/wpthemes（被动或侵略性枚举）、wpusers（author + REST API）、wpexposure（wp-config 备份、debug.log、目录列表）、wpxmlrpc（方法/multicall/pingback）和 wpcve（漏洞匹配）——覆盖与 wpscan 相同的面，无需新增外部工具。`wpbrute` 仅限可选严格开启（默认关闭）。
 - **技术到 CVE 关联**：`techcve` 将检测到的技术与版本与内置数据集匹配，该数据集包含来自 NVD 的真实 CVSS 基础评分。
 - **完全可配置的 Nuclei**：通过专用参数控制严重级别、标签、速率限制、整体超时、自定义模板和模板更新。
 - **Nmap 并行化**：有界工作线程池（`--nmap-concurrency`），替代逐主机顺序扫描。
@@ -47,7 +48,7 @@
 
 ## <img src="../../public/icons/servers.png" height="24" alt=""> 支持的工具
 
-ScanForge 集中编排 **14 个外部安全工具** 和 **6 个内置模块**：
+ScanForge 集中编排 **14 个外部安全工具** 和 **14 个内置模块**：
 
 外部工具：
 
@@ -74,6 +75,13 @@ ScanForge 集中编排 **14 个外部安全工具** 和 **6 个内置模块**：
 - **techcve** —— 将检测到的技术与版本与内置数据集中的已知 CVE 关联（来自 NVD 的真实 CVSS 基础评分）
 - **httpcheck** —— 在发现的攻击面上检查 HTTP 安全请求头（CSP、HSTS、点击劫持、Cookie）
 - **payloadgen** —— 根据扫描发现生成上下文相关词表（API 路径、参数、按技术划分的端点）
+- **wpdetect** —— 多信号 WordPress 检测与 core 版本指纹识别（generator、RSS、readme.html、REST 索引）
+- **wpplugins** / **wpthemes** —— 被动（爬取资源、`?ver=`）或主动（`readme.txt`/`style.css`、内置热门列表、`--wp-detection-mode`/`--wp-wordlist`）枚举插件/主题
+- **wpusers** —— 通过 `?author=N` 重定向和 REST `/wp/v2/users` 端点枚举 WordPress 用户
+- **wpexposure** —— 检查 wp-config 备份、debug.log、默认安装页面、目录列表、`.git`/`.env` 暴露
+- **wpxmlrpc** —— 探测 XML-RPC：启用状态、方法列表、multicall 和 pingback 可用性
+- **wpcve** —— 将 core/插件/主题版本与内置漏洞数据集匹配（离线）
+- **wpbrute** —— 针对已枚举用户的可选凭据探测（`--wp-bruteforce` + `--confirm-scope` + `--wp-passwords`；默认关闭）
 
 `httpx`、`nuclei`、`katana`、`ffuf`、`whatweb`、`wafw00f`、`subfinder`、`gau`、`jssecrets`、`jsverify`、`httpcheck` 和 `screenshot` 支持 `--proxy` 和 `-H/--header`，可将流量路由到 Caido/Burp 并以认证模式扫描。
 
@@ -323,6 +331,7 @@ webhook:
 | `vuln` | subfinder, dnsbrute, dnsx, httpx, tlsx, katana, jssecrets, attacksurface, techcve, nuclei | 针对性漏洞检测（技术到 CVE + 模板）。 |
 | `deep` | 所有模块 | 完整且高噪音的流水线。 |
 | `full` | 所有模块 | 完整配置文件，兼容历史版本。 |
+| `wp` | subfinder, dnsbrute, dnsx, httpx, whatweb, wpdetect, wpplugins, wpthemes, wpusers, wpexposure, wpxmlrpc, wpcve, techcve, httpcheck, attacksurface, nuclei, screenshot | WordPress 渗透链：检测、插件/主题枚举、用户映射、暴露面检查、XML-RPC 与漏洞匹配。别名 `wordpress`。`--wp` 可叠加到任意预设。`wpbrute` 仅限可选开启（`--wp-bruteforce` + `--confirm-scope` + `--wp-passwords`）。 |
 
 `--preset safe` 和 `--profile safe` 可互换使用。在任何活动配置文件之前，请始终用 `scanforge plan` 检查其 DAG。
 

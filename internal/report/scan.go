@@ -87,3 +87,18 @@ func appendUnique(slice []string, val string) []string {
 	}
 	return append(slice, val)
 }
+
+// appendUniquePath dedupes by URL. A later entry for the same URL that
+// carries a status code replaces an earlier one that didn't (e.g. a katana
+// crawl hit followed by an ffuf probe of the same path).
+func appendUniquePath(slice []PathEntry, entry PathEntry) []PathEntry {
+	for i, item := range slice {
+		if item.URL == entry.URL {
+			if item.StatusCode == 0 && entry.StatusCode != 0 {
+				slice[i] = entry
+			}
+			return slice
+		}
+	}
+	return append(slice, entry)
+}

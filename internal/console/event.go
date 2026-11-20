@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/MikeRoss27/scanforge/internal/orchestrator"
+	"github.com/MikeRoss27/scanforge/internal/runner"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -167,16 +168,45 @@ func (r *Renderer) errorBlock(e orchestrator.ModuleDoneEvent) []string {
 		return indent + r.th.Dim(fmt.Sprintf("%-10s", label)) + "  " + value
 	}
 
+	action, hint := failureAdvice(e.Name, e.Kind, r.profile)
+
 	lines := []string{head, ""}
 	lines = append(lines, indent+r.th.Subtle(message))
 	lines = append(lines, "")
-	lines = append(lines, row("action", "scan continues"))
-	lines = append(lines, row("hint", "run `scanforge doctor --profile "+r.profile+"`"))
+	lines = append(lines, row("action", action))
+	if hint != "" {
+		lines = append(lines, row("hint", hint))
+	}
 	if d := formatDuration(e.Dur); d != "" {
 		lines = append(lines, row("took", r.th.Dim(d)))
 	}
 	lines = append(lines, "")
 	return lines
+}
+
+// failureAdvice tailors the action/hint shown for a module failure to why
+// it actually failed, instead of the same generic "run scanforge doctor"
+// regardless of cause. hint is "" when there is nothing useful to suggest
+// (e.g. the operator cancelled the scan themselves).
+func failureAdvice(moduleName string, kind runner.FailureKind, profile string) (action, hint string) {
+	switch kind {
+	case runner.FailureNotFound:
+		return "scan continues", fmt.Sprintf(
+			"%s is missing or not executable; run `scanforge doctor --profile %s` to confirm, then install it", moduleName, profile)
+	case runner.FailureTimeout:
+		if moduleName == "nuclei" {
+			// The only module with a dedicated CLI timeout flag today; every
+			// other module's Command.Timeout is an internal constant, so
+			// naming a flag that doesn't exist would be a worse hint than
+			// none at all.
+			return "scan continues", "raise --nuclei-timeout for slow proxies or large target lists"
+		}
+		return "scan continues", "the target or wordlist is larger/slower than this module's time budget; narrow the scope or profile and re-run"
+	case runner.FailureCanceled:
+		return "scan aborted", ""
+	default:
+		return "scan continues", "run `scanforge doctor --profile " + profile + "`"
+	}
 }
 
 // tagIndent is the column where the message starts on a tagged line:

@@ -113,9 +113,36 @@ ai:
 `--nuclei-include-custom` ajoute au run nuclei les templates livrés dans le
 dossier `templates/` de ce dépôt (`spring-actuator-exposed`,
 `swagger-openapi-exposed`, `cors-wildcard-credentials`,
-`go-debug-endpoints-exposed`, `wordpress-debug-log-exposed`). Ils sont
+`go-debug-endpoints-exposed`, `wordpress-debug-log-exposed`, `wordpress-config-backup-exposed`, `wordpress-install-exposed`, `wordpress-readme-exposed`). Ils sont
 localisés via `SCANFORGE_TEMPLATES_DIR`, puis le répertoire de travail
 (`./templates`) et enfin le répertoire de l'exécutable.
+
+Par défaut nuclei tourne avec `-as` (scan automatique) : les templates sont
+choisis selon la techno détectée sur chaque hôte au lieu de lancer tout le
+catalogue sur chaque hôte, avec la limite de débit par défaut de nuclei
+(150 req/s). Passez `--nuclei-tags`, `--nuclei-templates`, ou
+`--nuclei-full-scan` pour lancer tous les templates sur tous les hôtes
+(plus lent ; augmentez `--nuclei-timeout` en conséquence).
+`--nuclei-rate-limit` surcharge la limite de débit dans tous les cas.
+
+`ffuf` lance un processus séparé par hôte vivant (borné par une limite de
+concurrence interne, même compromis que `nmap`) au lieu de fuzzer tous les
+hôtes depuis une seule invocation : l'auto-calibration (`-ac`/`-ach`)
+n'apprend fiablement la signature wildcard/soft-404 propre à un hôte que
+lorsqu'elle tourne seule sur cet hôte.
+
+## WordPress (wp)
+
+`scanforge run example.com --preset wp` lance la chaîne d'engagement WordPress :
+`subfinder → dnsbrute → dnsx → httpx → whatweb → wpdetect → wpplugins → wpthemes → wpusers → wpexposure → wpxmlrpc → wpcve → techcve → httpcheck → attacksurface → nuclei → screenshot`.
+
+- La détection est **passive par défaut** : les versions des plugins/thèmes sont lues dans les assets crawlés (`?ver=`), le `readme.html` exposé, l'index REST et le flux RSS. Rien de fuyable sans votre accord.
+- `--wp-detection-mode mixed` ajoute la lecture de `readme.txt` pour les slugs détectés passivement (versions + confirmation). `--wp-detection-mode aggressive --wp-wordlist slugs.txt` sonde les slugs plugins/thèmes d'une liste top embarquée (ou votre propre fichier, un slug par ligne) pour une parité maximale avec wpscan. En mode agressif le scan devient bruyant ; à doser selon l'engagement.
+- `--wp` ajoute la chaîne WordPress à n'importe quel autre profil (`scanforge run example.com --profile web --wp`).
+- `wpcve` corrèle les versions core/plugins/thèmes avec le dataset embarqué (hors ligne ; vérifié contre la NVD, voir `internal/modules/wpcve/cves_wp.yaml`). Aucune clé API nécessaire.
+- `wpbrute` (sonde de credentials contre les utilisateurs énumérés) est **désactivé partout par défaut** et ne s'exécute qu'avec les trois : `--wp-bruteforce` + `--confirm-scope` (scopes implicites) + `--wp-passwords <wordlist>`. Il se limite à `--wp-bruteforce-max` tentatives par utilisateur (défaut 100), s'arrête au premier succès ou à tout signal de lockout, et refuse de tourner si `wpusers` n'a énuméré aucun identifiant. Aucune liste de mots de passe n'est embarquée.
+- `scanforge doctor --profile wp` remonte l'état des wordlists/dataset embarqués et des outils externes.
+- Sans `--wp`, `scanforge run` lance tout de même une sonde WordPress passive rapide contre la cible confirmée (mêmes signaux que `wpdetect`, plafonnée à 8s) juste après la confirmation de scope. Si ça ressemble à WordPress et que la session est un terminal interactif, elle propose d'ajouter la chaîne à ce run ; en contexte non interactif (CI, scripts, `--dry-run`), elle se contente de logguer la détection sans modifier le run.
 
 ## Flux recommandé
 
