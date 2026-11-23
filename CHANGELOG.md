@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-23
+
 ### Added
 
 - WAF-aware scanning: `ffuf`, `nuclei` and `katana` soft-depend on `wafw00f` and automatically back off (lower concurrency/rate-limit, randomized request delay, User-Agent rotation) when a WAF is detected, unless an explicit rate limit or `User-Agent` header was already set
