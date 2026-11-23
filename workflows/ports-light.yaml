@@ -1,0 +1,28 @@
+# Scan de ports leger : hotes resolus -> naabu -> nmap (concurrence reduite).
+name: ports-light
+version: 1
+description: Decouverte de ports avec nmap limite a 2 processus.
+steps:
+  - id: subdomains
+    module: subfinder
+    on_error: continue
+
+  - id: resolve
+    module: dnsx
+    needs: [subdomains]
+
+  - id: ports
+    module: naabu
+    needs: [resolve]
+    timeout: 20m
+    retries: 1
+
+  - id: services
+    module: nmap
+    needs: [ports]
+    timeout: 40m
+    on_error: continue
+    when:
+      artifact_nonempty: open_ports
+    params:
+      concurrency: 2

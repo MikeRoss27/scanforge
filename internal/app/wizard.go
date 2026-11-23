@@ -121,7 +121,7 @@ func (a *App) applyWizard(opts RunOptions) (RunOptions, error) {
 		}
 		opts.Target = target
 	}
-	if opts.Profile == "" {
+	if opts.Profile == "" && opts.Workflow == "" {
 		current := ""
 		if cfg, err := a.loadConfig(); err == nil {
 			current = cfg.DefaultProfile

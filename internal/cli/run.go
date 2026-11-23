@@ -15,6 +15,7 @@ import (
 func NewRunCommand(application *app.App) *cobra.Command {
 	var profile string
 	var preset string
+	var workflowFile string
 	var scopeFile string
 	var scopeMode string
 	var scopeAdd []string
@@ -88,6 +89,7 @@ report (report.json / report.md).`,
 				Target:       target,
 				TargetsFile:  targetsFile,
 				Profile:      profile,
+				Workflow:     workflowFile,
 				Scope:        scopeFile,
 				ScopeMode:    scopeMode,
 				ScopeAdd:     scopeAdd,
@@ -136,6 +138,7 @@ report (report.json / report.md).`,
 	}
 
 	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan profile to run (default from config)")
+	cmd.Flags().StringVar(&workflowFile, "workflow", "", "YAML workflow file replacing the profile (see docs/WORKFLOWS.md)")
 	cmd.Flags().StringVar(&preset, "preset", "", "Built-in preset (safe, recon, web, ports, vuln, deep, wp)")
 	cmd.Flags().StringVar(&targetsFile, "targets", "", "Read one target per line from a file (replaces [target])")
 	cmd.Flags().StringVarP(&scopeFile, "scope", "s", "", "Scope file (default from config)")

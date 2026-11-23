@@ -67,6 +67,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(NewResumeCommand(application))
 	cmd.AddCommand(NewStatusCommand(application))
 	cmd.AddCommand(NewRunsCommand(application))
+	cmd.AddCommand(NewWorkflowCommand(application))
 	cmd.AddCommand(NewDiffCommand(application))
 	cmd.AddCommand(NewExportCommand(application))
 	cmd.AddCommand(NewTriageCommand(application))

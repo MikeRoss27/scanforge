@@ -1,0 +1,50 @@
+# Reconnaissance web : sous-domaines -> hotes -> HTTP -> crawl -> nuclei.
+# Valider : scanforge workflow validate workflows/web-recon.yaml
+# Lancer  : scanforge run example.com --workflow workflows/web-recon.yaml
+name: web-recon
+version: 1
+description: Recon web passif/actif-faible avec crawl et scan de vulnerabilites.
+steps:
+  - id: subdomains
+    module: subfinder
+    timeout: 10m
+    retries: 1
+    on_error: continue
+
+  - id: resolve
+    module: dnsx
+    needs: [subdomains]
+    timeout: 10m
+
+  - id: probe
+    module: httpx
+    needs: [resolve]
+    timeout: 15m
+    retries: 1
+
+  - id: waf
+    module: wafw00f
+    needs: [probe]
+    timeout: 10m
+    on_error: skip
+
+  - id: crawl
+    module: katana
+    needs: [probe, waf]
+    timeout: 20m
+    on_error: continue
+    when:
+      artifact_nonempty: alive_urls
+
+  - id: surface
+    module: attacksurface
+    needs: [probe]
+
+  - id: scan
+    module: nuclei
+    needs: [surface, waf]
+    timeout: 45m
+    on_error: continue
+    params:
+      severity: medium,high,critical
+      rate_limit: 100
