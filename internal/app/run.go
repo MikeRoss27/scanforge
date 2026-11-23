@@ -13,6 +13,7 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/orchestrator"
 	"github.com/MikeRoss27/scanforge/internal/report"
 	"github.com/MikeRoss27/scanforge/internal/runner"
+	"github.com/MikeRoss27/scanforge/internal/scheduler"
 	"github.com/MikeRoss27/scanforge/internal/storage"
 )
 
@@ -85,6 +86,10 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 
 	if opts.Target == "" {
 		return nil, fmt.Errorf("target is required")
+	}
+	if err := effectiveLimits(cfg, opts).Validate(); err != nil {
+		// Reject before anything touches the network or the run directory.
+		return nil, err
 	}
 
 	profile := opts.Profile
@@ -176,6 +181,16 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 	} else {
 		executor = runner.NewRealExecutor(s.executorVerbose(), runner.WithCommandSink(s.commandSink()))
 	}
+
+	// Global resource limits wrap whichever executor was chosen, so dry-run
+	// and real runs share the same scheduling and modules stay unaware.
+	limits := effectiveLimits(s.cfg, s.opts)
+	executor = scheduler.WrapExecutor(executor, scheduler.Config{
+		Concurrency:    limits.Concurrency,
+		RPS:            limits.RPS,
+		MaxRequests:    limits.MaxRequests,
+		CommandTimeout: limits.CommandTimeout,
+	})
 
 	orch := orchestrator.New(executor, buildRegistry(s.cfg))
 	// Buffered so a module emitting a burst of findings (e.g. nuclei) doesn't

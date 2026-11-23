@@ -26,6 +26,29 @@ type Config struct {
 	// AI configures the LLM backend used by `scanforge triage`. When empty,
 	// triage runs in deterministic-only mode.
 	AI AI `yaml:"ai"`
+	// Limits holds the global resource limits applied to every command of a
+	// run. Zero values mean unlimited.
+	Limits Limits `yaml:"limits"`
+}
+
+// Limits configures the global resource scheduler.
+type Limits struct {
+	// Concurrency caps commands running at once.
+	Concurrency int `yaml:"concurrency"`
+	// RPS caps command launches per second and the rate flags of tools.
+	RPS float64 `yaml:"rps"`
+	// MaxRequests is the per-run budget of commands.
+	MaxRequests int `yaml:"max_requests"`
+	// CommandTimeout caps every command's timeout (Go duration).
+	CommandTimeout time.Duration `yaml:"command_timeout"`
+}
+
+// Validate rejects negative limits.
+func (l Limits) Validate() error {
+	if l.Concurrency < 0 || l.RPS < 0 || l.MaxRequests < 0 || l.CommandTimeout < 0 {
+		return fmt.Errorf("limits must not be negative")
+	}
+	return nil
 }
 
 // AI holds the OpenAI-compatible endpoint used by the triage analyzer. Any
@@ -215,6 +238,13 @@ tools:
 # module_timeouts:
 #   nuclei: 45m
 #   katana: 20m
+
+# global resource limits for a run (0 or omitted = unlimited)
+# limits:
+#   concurrency: 4        # max commands running at once
+#   rps: 20               # command launches/sec; also caps tools' own rate flags
+#   max_requests: 500     # max commands per run
+#   command_timeout: 20m  # upper bound for every command
 
 # LLM backend for the scanforge triage command (OpenAI-compatible API:
 # llama.cpp, vLLM, Ollama, LM Studio, ...). When omitted, triage runs in
