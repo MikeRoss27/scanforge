@@ -21,6 +21,9 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
 - [Guide d'utilisation](USAGE.md) : installation, configuration, commandes et exemples.
 - [Gestion du scope](SCOPE.md) : modes implicites, fichiers, exclusions et CI.
 - [Architecture](ARCHITECTURE.md) : DAG, artefacts, filtrage central et sorties.
+- [Reprise et checkpoints](../RESUME.md) : interrompre et reprendre un run.
+- [Workflows](../WORKFLOWS.md) : workflows YAML.
+- [Serveur MCP](../MCP.md) et [API locale](../API.md) : piloter ScanForge depuis des agents.
 - [Guide de contribution](../AGENTS.md) : structure du dépôt, style et validations.
 
 ## <img src="../../public/icons/tree.png" height="24" alt=""> Fonctionnalités Clés
@@ -38,6 +41,12 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
 - **Suite de benchmark** : `scanforge benchmark` exécute le pipeline réel contre des cibles de lab intentionnellement vulnérables embarquées (Firing Range, testphp.vulnweb.com, démo Juice Shop, DVWA local) et score la détection par rapport à des attentes documentées — un outil de mainteneur/CI, pas un engagement client.
 - **Mode parité WordPress** : `--preset wp` (ou `--wp` sur tout profil) enchaîne wpdetect (version core multi-signal), wpplugins/wpthemes (énumération passive ou agressive), wpusers (author + API REST), wpexposure (sauvegardes wp-config, debug.log, listings), wpxmlrpc (méthodes/multicall/pingback) et wpcve (corrélation d’advisories) — la même surface que wpscan, sans aucun nouvel outil externe. `wpbrute` en opt-in strict (désactivé par défaut partout).
 - **Corrélation tech-to-CVE** : `techcve` croise les technologies et versions détectées avec un dataset embarqué aux scores CVSS réels issus de la NVD.
+- **Corrélation tech-to-CVE enrichie** : après `scanforge intel update`, `techcve` s'appuie aussi sur un cache local NVD/CISA KEV/EPSS ; une correspondance n'est confirmée que si la version est dans une plage CPE affectée, une simple similarité de nom reste une piste non confirmée.
+- **Reprise et checkpoints** : `scanforge resume <run-id>` poursuit un run interrompu en ignorant les modules déjà terminés avec des entrées identiques ; `status` et `runs list` inspectent les runs. Fichiers uniquement, sans base de données.
+- **Workflows YAML** : `--workflow fichier.yaml` définit étapes, dépendances, timeouts, retries et politique d'erreur ; validé avant exécution (`scanforge workflow validate`), sans shell arbitraire, même filtrage de scope.
+- **Limites de ressources** : `--concurrency`, `--rps`, `--max-requests` et `--command-timeout` (ou `limits:` dans la config) bornent l'agressivité d'un run.
+- **Événements de découverte (expérimental)** : `--events` écrit des événements de découverte filtrés par le scope (ex. sous-domaines en `DNS_NAME`) dans `00_meta/events.jsonl`.
+- **Accès agents (MCP + API)** : `scanforge mcp` et `scanforge api` exposent runs, actifs, findings et preuves. Les scans actifs sont désactivés par défaut et exigent `--allow-active` plus un fichier de scope strict ; chaque appel actif est audité. Les secrets divulgués par la cible restent intégraux dans les findings ; seuls les identifiants de l'opérateur sont masqués dans les logs et sorties API/MCP.
 - **Nuclei entièrement paramétrable** : sévérité, tags, rate-limit, timeout global, templates personnalisés et mise à jour des templates via des flags dédiés.
 - **Nmap parallélisé** : pool de workers borné (`--nmap-concurrency`) au lieu d'un scan séquentiel hôte par hôte.
 - **Console de scan** : le scan diffuse un journal d'événements chronologique et tagué (pas d'interface plein écran) — phases du pipeline, cycle de vie des modules, findings affichés dès leur découverte (avec l'email, le secret ou l'hôte exposé), ligne de progression volatile sur les terminaux interactifs (une boucle marteau/enclume générée en pixel art, 16 colonnes sur 6 lignes avec la progression à côté ; un indicateur sur une ligne sous 50 colonnes par défaut ; `SCANFORGE_SPINNER=forge|dots|off` pour changer), blocs de sévérité étendus pour les findings high/critical, doublons comptés dans un récapitulatif `Finding types` et un récapitulatif final `── SCAN COMPLETE ──`. La sortie reste lisible avec grep/tee/CI ; `-v/-vv/-vvv` augmentent la verbosité, `-q` ne garde que findings, erreurs et résumé.

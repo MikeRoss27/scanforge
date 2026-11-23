@@ -38,6 +38,8 @@ make build      # ou : go build -o scanforge ./cmd/scanforge
 
 ## Commandes de développement
 
+Go 1.27.x est requis pour compiler depuis les sources (voir `go.mod`).
+
 Depuis un clone du dépôt, le `Makefile` encapsule la toolchain Go. Cibles les
 plus utiles :
 
@@ -91,6 +93,20 @@ défaut :
 module_timeouts:
   nuclei: 45m
   katana: 20m
+```
+
+Les limites de ressources globales se règlent sous `limits` (toutes
+facultatives, `0`/absent = illimité). Elles sont appliquées par un ordonnanceur
+partagé par tous les modules, comptent les commandes lancées (pas les requêtes
+HTTP) et sont surchargées par les flags `run` correspondants `--concurrency`,
+`--rps`, `--max-requests` et `--command-timeout` :
+
+```yaml
+limits:
+  concurrency: 4          # commandes simultanées
+  rps: 10                 # lancements de commandes par seconde (abaisse aussi les flags de débit des outils)
+  max_requests: 500       # budget de commandes par run ; les suivantes échouent une fois épuisé
+  command_timeout: 20m    # borne supérieure du timeout de chaque commande
 ```
 
 La section `ai` configure le backend LLM utilisé par `scanforge triage`. Tout
@@ -183,12 +199,74 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge plan TARGET` | Affiche le scope et les vagues du DAG. |
 | `scanforge run TARGET` | Exécute un profil autorisé. |
 | `scanforge scan TARGET` | Alias de `run`. |
+| `scanforge resume RUN-ID` | Reprend un run interrompu en ne relançant que ce qui n'est pas terminé ou dont les entrées ont changé (voir `../RESUME.md`). |
+| `scanforge status RUN-ID [--json]` | Affiche l'état de checkpoint de chaque module et la provenance du scope. |
+| `scanforge runs list [--target T] [--json]` | Liste les runs du workspace, du plus récent au plus ancien. |
+| `scanforge workflow validate FICHIER.yaml` | Valide un workflow YAML sans rien exécuter (voir `../WORKFLOWS.md`). |
+| `scanforge intel update\|status` | Télécharge / inspecte le cache local NVD, CISA KEV et EPSS utilisé par `techcve`. |
+| `scanforge mcp` | Expose ScanForge aux agents IA via MCP sur stdio (voir `../MCP.md`). |
+| `scanforge api` | Expose le magasin de runs via une API JSON HTTP locale (voir `../API.md`). |
 | `scanforge triage RUN` | Regroupe et (avec un backend `ai:`) analyse les findings d'un run. |
 | `scanforge auth` | Gère les clés requises par certains outils. |
 | `scanforge benchmark run LAB\|--all` | Outil mainteneur : exécute le pipeline réel contre des labs vulnérables embarqués et score la détection par rapport aux attentes. |
 | `scanforge version` | Affiche la version du binaire. |
 
 Consultez `scanforge <commande> --help` pour la liste exacte des options.
+
+## Reprise, workflows, intel et accès agents
+
+Guides détaillés : [RESUME](../RESUME.md), [WORKFLOWS](../WORKFLOWS.md),
+[MCP](../MCP.md), [API](../API.md).
+
+```bash
+scanforge runs list --target example.com
+scanforge status example.com/2026-08-18_10-00-00
+scanforge resume example.com/2026-08-18_10-00-00
+```
+
+Les runs sont checkpointés dans `00_meta/manifest.json` ; `resume` ignore les
+modules terminés avec des entrées identiques, réutilise le scope effectif
+stocké et ne peut jamais l'élargir. `--proxy` et `--header` ne sont pas
+stockés : repassez-les.
+
+```bash
+scanforge workflow validate workflows/web-recon.yaml
+scanforge plan example.com --workflow workflows/web-recon.yaml
+scanforge run example.com --scope scope.txt --workflow workflows/web-recon.yaml --rps 20
+```
+
+Un workflow remplace le profil (`--workflow` est exclusif avec `--profile`,
+`--preset` et `--wp`) ; il est compilé vers le même DAG, ne peut pas exécuter de
+commande shell et conserve le même filtrage de scope.
+
+`scanforge run --events` (expérimental, désactivé par défaut) émet aussi des
+événements de découverte (les sous-domaines deviennent `DNS_NAME`) vers
+`00_meta/events.jsonl` ; chaque événement passe par le filtre de scope avant
+d'être enregistré.
+
+`scanforge intel update` est la seule commande qui télécharge du renseignement
+de vulnérabilités (NVD, CISA KEV, EPSS ; `--source nvd|kev|epss` pour limiter) ;
+`scanforge intel status` inspecte le cache hors ligne. Les scans n'accèdent
+jamais au réseau pour l'intel. `techcve` utilise le cache s'il existe et étiquette
+les correspondances `exact-cpe-range`, `version-range` ou `name-only` (name-only
+n'est jamais confirmé). `SCANFORGE_NVD_API_KEY` relève la limite de débit NVD ;
+le cache est dans `SCANFORGE_INTEL_DIR` ou `~/.cache/scanforge/vulnintel`.
+
+```bash
+scanforge mcp                                    # MCP en lecture seule sur stdio
+scanforge mcp --allow-active --scope scope.txt   # autorise aussi les scans actifs bornés par le scope
+scanforge api --listen 127.0.0.1:8787 --token-file ./token
+```
+
+Les scans actifs via MCP/API sont désactivés par défaut et exigent
+`--allow-active` avec un fichier `--scope` strict ; chaque appel actif est
+journalisé. L'API n'écoute que sur loopback sauf `--unsafe-bind`.
+
+**Règle sur les secrets :** les valeurs de secrets divulguées par la cible
+(clés AWS, tokens trouvés dans le JS...) restent intégrales dans les findings,
+car ce sont les preuves du rapport. Seuls les identifiants de l'opérateur (clés
+d'`auth`, clé `ai:`, proxy/en-têtes passés à un scan) sont masqués dans les
+logs et les sorties API/MCP.
 
 ## Triage des findings
 
