@@ -66,8 +66,18 @@ type patternRule struct {
 
 var rules = []patternRule{
 	// --- credentials & API keys ---
-	{"aws-access-key-id", kindSecret, "critical", regexp.MustCompile(`AKIA[0-9A-Z]{16}`), 0},
+	// AKIA = long-term IAM user key, ASIA = temporary STS credentials,
+	// ABIA = AWS Backup service key, ACCA = AWS CodeCommit key. Most
+	// scanners only check AKIA and miss the other three, which are just as
+	// usable by an attacker.
+	{"aws-access-key-id", kindSecret, "critical", regexp.MustCompile(`(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}`), 0},
 	{"aws-secret-access-key", kindSecret, "critical", regexp.MustCompile(`(?i)aws(.{0,20})?(secret|access)?(.{0,20})?['"][0-9a-zA-Z/+]{40}['"]`), 0},
+	// STS session tokens are long enough (~270-380 chars, base64-ish) that
+	// the length threshold alone keeps false positives out.
+	{"aws-session-token", kindSecret, "critical", regexp.MustCompile(`(?i)(?:x-amz-security-token|sessiontoken|session_token)["']?\s*[:=]\s*["'][A-Za-z0-9/+=]{200,}["']`), 0},
+	{"cloudinary-url", kindSecret, "critical", regexp.MustCompile(`cloudinary://[0-9]+:[A-Za-z0-9_\-]+@[a-z0-9\-]+`), 0},
+	{"postman-api-key", kindSecret, "high", regexp.MustCompile(`PMAK-[0-9a-f]{24}-[0-9a-f]{34}`), 0},
+	{"basic-auth-header", kindSecret, "high", regexp.MustCompile(`(?i)authorization["']?\s*:\s*["']Basic\s+[A-Za-z0-9+/]{10,}={0,2}["']`), 0},
 	{"private-key-block", kindSecret, "critical", regexp.MustCompile(`-----BEGIN[ A-Z]*PRIVATE KEY-----`), 0},
 	{"pgp-private-key-block", kindSecret, "critical", regexp.MustCompile(`-----BEGIN PGP PRIVATE KEY BLOCK-----`), 0},
 	{"database-connection-string", kindSecret, "critical", regexp.MustCompile(`(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|amqp):\/\/[^:\/\s'"]+:[^@\/\s'"]+@[^\s'"]+`), 0},
@@ -103,7 +113,21 @@ var rules = []patternRule{
 	{"shopify-access-token", kindSecret, "high", regexp.MustCompile(`shpat_[0-9a-fA-F]{32}`), 0},
 	{"grafana-api-key", kindSecret, "high", regexp.MustCompile(`eyJrIjoi[A-Za-z0-9_\-]+`), 0},
 	{"huggingface-token", kindSecret, "high", regexp.MustCompile(`hf_[A-Za-z0-9]{34}`), 0},
-	{"openai-api-key", kindSecret, "high", regexp.MustCompile(`sk-(?:proj|svcacct|admin|ant|convo|instructor|medium)_[A-Za-z0-9_\-]{20,}`), 0},
+	// OpenAI project/service-account/admin keys use a hyphen before the
+	// subtype, not an underscore (sk-proj-..., not sk-proj_...); the
+	// previous pattern used the wrong separator and mixed in several
+	// prefixes ("ant", "convo", "instructor", "medium") that belong to
+	// other providers or were never real OpenAI prefixes, so it matched
+	// almost nothing real. Legacy (pre-2024) keys carry no subtype prefix
+	// at all, but reliably encode the base64 string "OpenAI" mid-key
+	// (T3BlbkFJ), which is checked separately below.
+	{"openai-api-key", kindSecret, "high", regexp.MustCompile(`sk-(?:proj|svcacct|admin)-[A-Za-z0-9_\-]{20,}`), 0},
+	{"openai-api-key-legacy", kindSecret, "high", regexp.MustCompile(`sk-[A-Za-z0-9]{20,}T3BlbkFJ[A-Za-z0-9]{20,}`), 0},
+	{"anthropic-api-key", kindSecret, "high", regexp.MustCompile(`sk-ant-(?:api03|admin01)-[A-Za-z0-9_\-]{20,}`), 0},
+	{"xai-api-key", kindSecret, "high", regexp.MustCompile(`xai-[A-Za-z0-9]{32,}`), 0},
+	{"groq-api-key", kindSecret, "high", regexp.MustCompile(`gsk_[A-Za-z0-9]{32,}`), 0},
+	{"openrouter-api-key", kindSecret, "high", regexp.MustCompile(`sk-or-v1-[a-f0-9]{64}`), 0},
+	{"perplexity-api-key", kindSecret, "high", regexp.MustCompile(`pplx-[A-Za-z0-9]{32,}`), 0},
 	{"microsoft-teams-webhook", kindSecret, "high", regexp.MustCompile(`https:\/\/[a-zA-Z0-9.\-]+\.webhook\.office\.com\/webhookb2\/[A-Za-z0-9@\-]+`), 0},
 
 	// --- cloud storage buckets (often left publicly readable/writable) ---
@@ -211,6 +235,12 @@ func (m *Module) Description() string {
 func (m *Module) Requires() []string { return []string{"crawled_urls"} }
 func (m *Module) Produces() []string { return []string{"js_secrets", "js_payloads"} }
 
+// SoftRequires waits for gau and ffuf, when they're part of the profile, so
+// their URL corpora (historical_urls, discovered_paths) are available to
+// widen the JS file search beyond what katana's crawl reached. See
+// collectJSURLs.
+func (m *Module) SoftRequires() []string { return []string{"historical_urls", "discovered_paths"} }
+
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.Executor) (*modules.Result, error) {
 	inputArt, err := runCtx.MustArtifact("crawled_urls")
 	if err != nil {
@@ -218,7 +248,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	}
 	inputFile := runCtx.Run.Path(inputArt.Path)
 
-	urls, err := readJSURLs(inputFile)
+	urls, crawled, err := collectJSURLs(runCtx, inputFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read crawled URLs: %w", err)
 	}
@@ -230,6 +260,11 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 		runCtx.EmitWarning(fmt.Sprintf(
 			"jssecrets: 0 JS files to analyze (crawled_urls has %d line(s) rejected by scope; JS is usually served from subdomains/CDNs — re-run with --scope-mode domain if that applies)",
 			runCtx.RejectedCount("crawled_urls"),
+		))
+	} else if len(urls) > crawled {
+		runCtx.EmitWarning(fmt.Sprintf(
+			"jssecrets: %d JS file(s) found via gau/ffuf that katana's crawl missed (%d from the crawl, %d total)",
+			len(urls)-crawled, crawled, len(urls),
 		))
 	}
 
@@ -247,8 +282,9 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	}
 
 	var findings []finding
+	var attempted, fetched int
 	if !runCtx.DryRun && len(urls) > 0 {
-		findings, err = scanURLs(ctx, runCtx, urls)
+		findings, attempted, fetched, err = scanURLs(ctx, runCtx, urls)
 		if err != nil {
 			return nil, err
 		}
@@ -291,9 +327,20 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 		return nil, fmt.Errorf("failed to publish JS payloads: %w", err)
 	}
 
+	status := "completed"
+	var reason string
+	if attempted > 0 && fetched == 0 {
+		// Every JS file failed to fetch: zero secrets found here means
+		// nothing was actually scanned, not that the bundle was clean. A
+		// WAF/rate-limit blocking every request is the common cause.
+		status = "partial"
+		reason = fmt.Sprintf("all %d JS file(s) failed to fetch (network error, proxy issue, or every request blocked)", attempted)
+	}
+
 	return &modules.Result{
 		Name:   m.Name(),
-		Status: "completed",
+		Status: status,
+		Reason: reason,
 		OutputFiles: map[string]string{
 			"js_secrets":  outputRel,
 			"js_payloads": payloadsRel,
@@ -305,10 +352,14 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 // chunks (bounded by chaseBudget) so secrets in lazy-loaded bundles are still
 // found. Fetching is best effort: an unreachable or non-200 JS file yields no
 // findings rather than failing the module.
-func scanURLs(ctx context.Context, runCtx *modules.RunContext, urls []string) ([]finding, error) {
+// scanURLs fetches each URL and runs the detectors over its body. It returns
+// the findings plus how many fetches were attempted and how many actually
+// succeeded, so the caller can tell "nothing to find" apart from "every
+// request failed".
+func scanURLs(ctx context.Context, runCtx *modules.RunContext, urls []string) ([]finding, int, int, error) {
 	client, err := buildClient(runCtx.Proxy)
 	if err != nil {
-		return nil, err
+		return nil, 0, 0, err
 	}
 	defer closeClient(client)
 
@@ -323,9 +374,10 @@ func scanURLs(ctx context.Context, runCtx *modules.RunContext, urls []string) ([
 	}
 
 	var (
-		mu       sync.Mutex
-		findings []finding
-		chased   int
+		mu                 sync.Mutex
+		findings           []finding
+		chased             int
+		attempted, fetched int
 	)
 
 	for len(queue) > 0 {
@@ -347,10 +399,18 @@ func scanURLs(ctx context.Context, runCtx *modules.RunContext, urls []string) ([
 				defer wg.Done()
 				defer func() { <-sem }()
 
+				mu.Lock()
+				attempted++
+				mu.Unlock()
+
 				body, err := fetch(ctx, client, target, runCtx.Headers)
 				if err != nil {
 					return
 				}
+				mu.Lock()
+				fetched++
+				mu.Unlock()
+
 				matches := scanBody(target, body)
 				matches = append(matches, scanAST(target, body)...)
 				matches = append(matches, scanSourceMaps(ctx, runCtx, client, target, body, runCtx.Headers)...)
@@ -394,7 +454,7 @@ func scanURLs(ctx context.Context, runCtx *modules.RunContext, urls []string) ([
 		queue = append(queue, next...)
 	}
 
-	return findings, nil
+	return findings, attempted, fetched, nil
 }
 
 // chaseImports extracts absolute URLs of lazily loaded JS chunks referenced by
@@ -719,6 +779,101 @@ func resolveURL(base, ref string) string {
 // readJSURLs returns the deduplicated JavaScript URLs from a katana output
 // file. A missing file means the upstream crawl never wrote one (dry runs skip
 // execution), which is an empty list rather than an error.
+// collectJSURLs gathers candidate JavaScript file URLs from every corpus
+// available, not just the crawl: katana's depth-limited crawl routinely
+// misses bundles that are never linked from an HTML <script> tag within its
+// depth (lazy-loaded chunks, assets only referenced from old/removed pages),
+// which gau's historical URLs (Wayback/CommonCrawl) and ffuf's fuzzed paths
+// often still surface. crawled is the count sourced from the crawl alone, so
+// the caller can tell "nothing anywhere" apart from "the crawl missed some".
+func collectJSURLs(runCtx *modules.RunContext, crawledPath string) (urls []string, crawled int, err error) {
+	urls, err = readJSURLs(crawledPath)
+	if err != nil {
+		return nil, 0, err
+	}
+	crawled = len(urls)
+
+	seen := make(map[string]struct{}, len(urls))
+	for _, u := range urls {
+		seen[u] = struct{}{}
+	}
+	add := func(candidate string) {
+		if candidate == "" || !isJavaScriptURL(candidate) {
+			return
+		}
+		if _, dup := seen[candidate]; dup {
+			return
+		}
+		seen[candidate] = struct{}{}
+		urls = append(urls, candidate)
+	}
+
+	if art, ok := runCtx.GetArtifact("historical_urls"); ok {
+		if lines, rerr := readLines(runCtx.Run.Path(art.Path)); rerr == nil {
+			for _, line := range lines {
+				add(line)
+			}
+		}
+	}
+	if art, ok := runCtx.GetArtifact("discovered_paths"); ok {
+		if ffufURLs, rerr := readFfufURLs(runCtx.Run.Path(art.Path)); rerr == nil {
+			for _, u := range ffufURLs {
+				add(u)
+			}
+		}
+	}
+	return urls, crawled, nil
+}
+
+// readLines reads one value per non-empty line; a missing file yields no
+// lines rather than an error, matching readJSURLs' tolerance for an absent
+// optional corpus.
+func readLines(path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		if line := strings.TrimSpace(scanner.Text()); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines, scanner.Err()
+}
+
+// readFfufURLs extracts the URL of every ffuf result, mirroring the subset
+// of ffuf's JSON schema the report engine's ParseFfuf already relies on.
+func readFfufURLs(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var doc struct {
+		Results []struct {
+			URL string `json:"url"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	urls := make([]string, 0, len(doc.Results))
+	for _, r := range doc.Results {
+		urls = append(urls, r.URL)
+	}
+	return urls, nil
+}
+
 func readJSURLs(path string) ([]string, error) {
 	file, err := os.Open(path)
 	if err != nil {

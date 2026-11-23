@@ -23,10 +23,16 @@ func (s *runSession) consumeEvents(eventChan <-chan orchestrator.Event, done <-c
 // status (completed/partial/failed) in the run manifest.
 func (s *runSession) finalizeManifest(results []*modules.Result, runErr error) error {
 	s.scanRun.Manifest.CompletedAt = time.Now().Format(time.RFC3339)
-	completedModules := 0
+	completedModules, notApplicable := 0, 0
 	for _, result := range results {
-		if result.Status == "completed" {
+		switch {
+		case result.Status == "completed":
 			completedModules++
+		case modules.IsNotApplicable(result):
+			// The module skipped itself because there was nothing to do
+			// (e.g. no WordPress host): that is a normal outcome, not a
+			// reason to downgrade the run to partial.
+			notApplicable++
 		}
 	}
 	// A user-initiated abort is recorded as such, not as a failure.
@@ -34,7 +40,7 @@ func (s *runSession) finalizeManifest(results []*modules.Result, runErr error) e
 		s.scanRun.Manifest.Status = "aborted"
 	} else {
 		switch {
-		case runErr == nil && completedModules == len(results):
+		case runErr == nil && completedModules+notApplicable == len(results):
 			s.scanRun.Manifest.Status = "completed"
 		case completedModules == 0:
 			s.scanRun.Manifest.Status = "failed"

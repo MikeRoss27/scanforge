@@ -44,6 +44,58 @@ func TestRequiresAttackSurface(t *testing.T) {
 	}
 }
 
+func TestRunAppliesWAFBypassWhenWAFDetected(t *testing.T) {
+	run := testRun(t, t.TempDir())
+	if err := os.WriteFile(run.Path("04_surface", "attack-surface.txt"), []byte("http://example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	runCtx.SetWAFInfo(modules.WAFInfo{Detected: true, Names: []string{"Cloudflare"}})
+	executor := &recordingExecutor{}
+
+	if _, err := New("nuclei-test").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	args := strings.Join(executor.commands[0].Args, " ")
+	for _, want := range []string{"-rate-limit 40", "-c 10", "-random-agent"} {
+		if !strings.Contains(args, want) {
+			t.Errorf("args %q missing WAF-bypass flag %q", args, want)
+		}
+	}
+	if strings.Contains(args, "-rate-limit 150") {
+		t.Errorf("args %q still uses the non-WAF default rate limit", args)
+	}
+}
+
+func TestRunRespectsExplicitRateLimitAndHeaderDespiteWAF(t *testing.T) {
+	run := testRun(t, t.TempDir())
+	if err := os.WriteFile(run.Path("04_surface", "attack-surface.txt"), []byte("http://example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	runCtx.SetWAFInfo(modules.WAFInfo{Detected: true})
+	runCtx.Nuclei.RateLimit = 77
+	runCtx.Headers = []string{"User-Agent: my-custom-agent"}
+	executor := &recordingExecutor{}
+
+	if _, err := New("nuclei-test").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	args := strings.Join(executor.commands[0].Args, " ")
+	if !strings.Contains(args, "-rate-limit 77") {
+		t.Errorf("args %q should keep the operator's explicit rate limit", args)
+	}
+	if strings.Contains(args, "-random-agent") {
+		t.Errorf("args %q should not override an operator-supplied User-Agent", args)
+	}
+}
+
 func TestRunBuildsNucleiCommandWithDefaults(t *testing.T) {
 	run := testRun(t, t.TempDir())
 	if err := os.WriteFile(run.Path("04_surface", "attack-surface.txt"), []byte("http://example.com\n"), 0644); err != nil {

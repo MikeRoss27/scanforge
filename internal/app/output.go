@@ -143,10 +143,14 @@ func buildSummary(scanRun *storage.Run, results []*modules.Result, rep *report.R
 
 	summary.Modules = len(results)
 	for _, res := range results {
-		switch res.Status {
-		case "completed":
+		switch {
+		case res.Status == "completed":
 			summary.Completed++
-		case "skipped", "aborted":
+		case modules.IsNotApplicable(res):
+			// Nothing to do for this target (e.g. no WordPress): already
+			// shown as [SKIP] live; listing it under SKIPPED is noise.
+			summary.NotApplicable++
+		case res.Status == "skipped", res.Status == "aborted":
 			// Never ran to completion, but not a failure either: listing
 			// these under FAILED would overstate what went wrong.
 			summary.Skipped = append(summary.Skipped, fmt.Sprintf("%s (%s)", res.Name, res.Status))
@@ -173,8 +177,34 @@ func buildSummary(scanRun *storage.Run, results []*modules.Result, rep *report.R
 		for _, n := range summary.Findings {
 			summary.Total += n
 		}
+		summary.FindingTypes = findingTypesByReport(rep)
 	}
 	return summary
+}
+
+// findingTypesByReport groups every vulnerability in the report by
+// (module, title, severity) so the closing summary's "Finding types" recap
+// reflects the same authoritative data as the severity counts above it,
+// instead of the live event stream — which can miss findings a module
+// reports only once report generation parses its raw output (e.g. secrets
+// deduplicated differently than the live stream saw them).
+func findingTypesByReport(rep *report.Report) []console.FindingType {
+	type key struct{ module, title, severity string }
+	counts := make(map[key]int)
+	for _, asset := range rep.Assets {
+		for _, vuln := range asset.Vulnerabilities {
+			title := vuln.Title
+			if title == "" {
+				title = vuln.TemplateID
+			}
+			counts[key{module: vuln.Source, title: title, severity: strings.ToLower(vuln.Severity)}]++
+		}
+	}
+	types := make([]console.FindingType, 0, len(counts))
+	for k, n := range counts {
+		types = append(types, console.FindingType{Module: k.module, Title: k.title, Severity: k.severity, Count: n})
+	}
+	return types
 }
 
 // topTechs returns the sorted technology names, capped so one wide terminal

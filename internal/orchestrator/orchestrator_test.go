@@ -24,6 +24,8 @@ type mockModule struct {
 	// outFiles are the OutputFiles a failed module returns alongside its
 	// error, simulating partial output (e.g. nuclei killed by a timeout).
 	outFiles map[string]string
+	// skipReason makes the module skip itself as not applicable.
+	skipReason string
 }
 
 func (m *mockModule) Name() string        { return m.name }
@@ -46,7 +48,39 @@ func (m *mockModule) Run(ctx context.Context, runCtx *modules.RunContext, execut
 			return nil, err
 		}
 	}
+	if m.skipReason != "" {
+		return modules.SkipNotApplicable(&modules.Result{Name: m.name, Status: "completed"}, nil, m.skipReason)
+	}
 	return &modules.Result{Name: m.name, Status: "completed"}, nil
+}
+
+func TestModuleSkippedItselfIsNotAFailure(t *testing.T) {
+	reg := modules.NewRegistry()
+	reg.Register(&mockModule{name: "wpusers", skipReason: "no WordPress detected"})
+	cfg := config.Default()
+	cfg.Profiles["test"] = []string{"wpusers"}
+	events := make(chan Event, 16)
+
+	results, err := New(runner.NewDryRunExecutor(false), reg).Run(
+		context.Background(), nil,
+		Options{Target: "example.com", Profile: "test", Config: cfg},
+		events,
+	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || !modules.IsNotApplicable(results[0]) {
+		t.Fatalf("results = %+v, want one not-applicable skip", results)
+	}
+	var done *ModuleDoneEvent
+	for event := range events {
+		if e, ok := event.(ModuleDoneEvent); ok {
+			done = &e
+		}
+	}
+	if done == nil || done.Status != "skipped" || done.Failed || done.Reason != "no WordPress detected" {
+		t.Fatalf("done event = %+v, want skipped, not failed, with reason", done)
+	}
 }
 
 func TestOrchestratorReturnsModuleFailuresAfterFinishingWave(t *testing.T) {

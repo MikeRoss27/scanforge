@@ -21,8 +21,11 @@ type Summary struct {
 	// Module outcomes.
 	Modules   int
 	Completed int
-	Failed    []string
-	Skipped   []string
+	// NotApplicable counts modules that skipped themselves because the
+	// target gave them nothing to do (e.g. no WordPress detected).
+	NotApplicable int
+	Failed        []string
+	Skipped       []string
 
 	// Discovered inventory (a zero row is hidden).
 	Assets int
@@ -34,6 +37,11 @@ type Summary struct {
 	// Findings counts by severity plus the total.
 	Findings map[string]int
 	Total    int
+	// FindingTypes is the distinct finding-type breakdown (title × severity
+	// × module, with occurrence counts), derived from the authoritative
+	// report.json. Empty falls back to the live event stream, same as
+	// Findings/Total above.
+	FindingTypes []FindingType
 
 	// Report locations, relative to the workspace.
 	ReportJSON string
@@ -46,6 +54,16 @@ type Summary struct {
 
 // severityOrder is the display order of the findings recap.
 var severityOrder = []string{"critical", "high", "medium", "low", "info"}
+
+// FindingType is one distinct finding type in the closing recap: a title
+// (or module name, when the finding carries none) plus its severity and how
+// many times it occurred, counted from the authoritative report.json.
+type FindingType struct {
+	Module   string
+	Severity string
+	Title    string
+	Count    int
+}
 
 // PrintSummary renders the closing "── SCAN COMPLETE ──" block followed by
 // the final tagged event line. It works for completed, partial, aborted and
@@ -95,7 +113,11 @@ func (r *Renderer) summaryRows(s Summary) []string {
 	}
 	row("Status", r.statusLabel(s.Status))
 	if s.Modules > 0 {
-		row("Modules", fmt.Sprintf("%d/%d completed", s.Completed, s.Modules))
+		modulesLine := fmt.Sprintf("%d/%d completed", s.Completed, s.Modules)
+		if s.NotApplicable > 0 {
+			modulesLine += fmt.Sprintf(" · %d not applicable", s.NotApplicable)
+		}
+		row("Modules", modulesLine)
 	}
 
 	hasInventory := s.Assets > 0 || s.Alive > 0 || s.URLs > 0 || s.Ports > 0 || len(s.Techs) > 0
@@ -139,8 +161,16 @@ func (r *Renderer) summaryRows(s Summary) []string {
 				r.th.Severity(name), n))
 		}
 		// The distinct-type recap: secrets, emails, internal hosts, ...
-		// Every suppressed duplicate is counted here — the full story.
-		if recap := r.recapRows(10); len(recap) > 0 {
+		// Every suppressed duplicate is counted here — the full story. The
+		// report-derived breakdown is authoritative once it exists (it is
+		// normalized and deduplicated, unlike the raw live events); the live
+		// index is only a fallback for runs that never reached report
+		// generation, same as the Findings/Total fallback above.
+		entries := recapEntriesFromTypes(s.FindingTypes)
+		if len(entries) == 0 {
+			entries = r.findings.recapEntries()
+		}
+		if recap := r.recapRows(10, entries); len(recap) > 0 {
 			rows = append(rows, "", r.th.DimBold("Finding types"))
 			rows = append(rows, recap...)
 		}

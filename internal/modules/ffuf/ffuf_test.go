@@ -3,6 +3,7 @@ package ffuf
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -123,6 +124,59 @@ func TestRunBuildsFFUFCommand(t *testing.T) {
 	}
 	if _, ok := runCtx.GetArtifact("discovered_paths"); !ok {
 		t.Fatal("discovered_paths artifact was not published")
+	}
+}
+
+func TestRunAppliesWAFBypassWhenWAFDetected(t *testing.T) {
+	run := testRun(t, t.TempDir())
+	inputPath := run.Path("02_http", "httpx.txt")
+	if err := os.WriteFile(inputPath, []byte("http://example.com\nhttp://other.example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCtx := modules.NewRunContext("example.com", "web", true, run)
+	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{Name: "alive_urls", Type: "text", Path: "02_http/httpx.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	runCtx.SetWAFInfo(modules.WAFInfo{Detected: true, Names: []string{"Cloudflare"}})
+	executor := &recordingExecutor{}
+
+	if _, err := New("ffuf-test").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(executor.commands) != 2 {
+		t.Fatalf("got %d commands, want 2", len(executor.commands))
+	}
+	for _, cmd := range executor.commands {
+		args := strings.Join(cmd.Args, " ")
+		if !strings.Contains(args, "-p 0.4-1.6") {
+			t.Errorf("args %q missing WAF throttle flag", args)
+		}
+		if !strings.Contains(args, "-H User-Agent:") {
+			t.Errorf("args %q missing rotated User-Agent header", args)
+		}
+	}
+}
+
+func TestRunKeepsOperatorUserAgentDespiteWAF(t *testing.T) {
+	run := testRun(t, t.TempDir())
+	inputPath := run.Path("02_http", "httpx.txt")
+	if err := os.WriteFile(inputPath, []byte("http://example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCtx := modules.NewRunContext("example.com", "web", true, run)
+	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{Name: "alive_urls", Type: "text", Path: "02_http/httpx.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	runCtx.SetWAFInfo(modules.WAFInfo{Detected: true})
+	runCtx.Headers = []string{"User-Agent: my-custom-agent"}
+	executor := &recordingExecutor{}
+
+	if _, err := New("ffuf-test").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	args := strings.Join(executor.commands[0].Args, " ")
+	if strings.Count(args, "User-Agent:") != 1 {
+		t.Errorf("args %q should carry exactly the operator's User-Agent, no rotated one added: %d occurrences", args, strings.Count(args, "User-Agent:"))
 	}
 }
 
@@ -406,5 +460,242 @@ func TestRunDryRunMissingInputPublishesEmptyArtifact(t *testing.T) {
 	}
 	if _, ok := runCtx.GetArtifact("discovered_paths"); !ok {
 		t.Fatal("discovered_paths artifact was not published")
+	}
+}
+
+// ffufResult builds one ffuf-shaped result record.
+func ffufResult(url string, status, length, words int) json.RawMessage {
+	raw, _ := json.Marshal(map[string]any{"url": url, "status": status, "length": length, "words": words})
+	return raw
+}
+
+// wafFlood reproduces the real voltlaunchr.com case: a WAF answering every
+// wordlist entry with the same 403 block page (25103 bytes, 1053 words)
+// that ffuf's -ac calibration failed to filter.
+func wafFlood(host string, n int) []json.RawMessage {
+	out := make([]json.RawMessage, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, ffufResult(fmt.Sprintf("%s/word%04d", host, i), 403, 25103, 1053))
+	}
+	return out
+}
+
+func identicalResults(host string, n, status, length int) []json.RawMessage {
+	out := make([]json.RawMessage, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, ffufResult(fmt.Sprintf("%s/x%d-%d", host, status, i), status, length, 7))
+	}
+	return out
+}
+
+func variedResults(host string, n int) []json.RawMessage {
+	out := make([]json.RawMessage, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, ffufResult(fmt.Sprintf("%s/p%d", host, i), 200, 1000+i, 50+i))
+	}
+	return out
+}
+
+func joinResults(parts ...[]json.RawMessage) []json.RawMessage {
+	var out []json.RawMessage
+	for _, p := range parts {
+		out = append(out, p...)
+	}
+	return out
+}
+
+func urlsOf(t *testing.T, results []json.RawMessage) []string {
+	t.Helper()
+	var urls []string
+	for _, raw := range results {
+		var r struct {
+			URL string `json:"url"`
+		}
+		if err := json.Unmarshal(raw, &r); err != nil {
+			t.Fatal(err)
+		}
+		urls = append(urls, r.URL)
+	}
+	return urls
+}
+
+func TestFilterCatchAll(t *testing.T) {
+	const host = "https://voltlaunchr.com"
+	genuine := []json.RawMessage{
+		ffufResult(host+"/admin", 200, 4821, 310),
+		ffufResult(host+"/login", 302, 0, 1),
+	}
+	genuineURLs := []string{host + "/admin", host + "/login"}
+
+	tests := []struct {
+		name        string
+		results     []json.RawMessage
+		wantKept    []string // nil: compare only the count
+		wantCount   int
+		wantDropped []catchAll
+	}{
+		{
+			name:        "real WAF flood keeps only genuine hits",
+			results:     joinResults(wafFlood(host, 3871), genuine),
+			wantKept:    genuineURLs,
+			wantCount:   2,
+			wantDropped: []catchAll{{host: host, fp: fingerprint{Status: 403, Length: 25103, Words: 1053}, count: 3871}},
+		},
+		{
+			name:      "few identical responses are plausible and kept",
+			results:   joinResults(identicalResults(host, catchAllMinCount-1, 301, 178), genuine),
+			wantCount: catchAllMinCount - 1 + 2,
+		},
+		{
+			name:      "frequent but not dominant fingerprint is kept",
+			results:   joinResults(identicalResults(host, 30, 403, 199), variedResults(host, 30)),
+			wantCount: 60,
+		},
+		{
+			name:        "dominant fingerprint at the minimum count is dropped",
+			results:     joinResults(identicalResults(host, catchAllMinCount, 403, 199), genuine),
+			wantKept:    genuineURLs,
+			wantCount:   2,
+			wantDropped: []catchAll{{host: host, fp: fingerprint{Status: 403, Length: 199, Words: 7}, count: catchAllMinCount}},
+		},
+		{
+			name: "two block pages under the share threshold are dropped by absolute count",
+			results: joinResults(identicalResults(host, catchAllAbsoluteCount, 403, 500),
+				identicalResults(host, catchAllAbsoluteCount, 200, 900), genuine),
+			wantKept:  genuineURLs,
+			wantCount: 2,
+			wantDropped: []catchAll{
+				{host: host, fp: fingerprint{Status: 200, Length: 900, Words: 7}, count: catchAllAbsoluteCount},
+				{host: host, fp: fingerprint{Status: 403, Length: 500, Words: 7}, count: catchAllAbsoluteCount},
+			},
+		},
+		{
+			name:      "no results",
+			wantCount: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			kept, dropped := filterCatchAll(host, tt.results)
+			if len(kept) != tt.wantCount {
+				t.Fatalf("kept %d results, want %d", len(kept), tt.wantCount)
+			}
+			if tt.wantKept != nil {
+				if got := urlsOf(t, kept); !reflect.DeepEqual(got, tt.wantKept) {
+					t.Fatalf("kept = %v, want %v", got, tt.wantKept)
+				}
+			}
+			if !reflect.DeepEqual(dropped, tt.wantDropped) {
+				t.Fatalf("dropped = %+v, want %+v", dropped, tt.wantDropped)
+			}
+		})
+	}
+}
+
+// docExecutor writes a fixed ffuf document per host (matched by substring
+// of "-u") to each command's "-o" path.
+type docExecutor struct {
+	docs map[string][]json.RawMessage
+}
+
+func (e *docExecutor) Run(_ context.Context, command runner.Command) (*runner.CommandResult, error) {
+	var outputPath, target string
+	for i, arg := range command.Args {
+		if arg == "-o" && i+1 < len(command.Args) {
+			outputPath = command.Args[i+1]
+		}
+		if arg == "-u" && i+1 < len(command.Args) {
+			target = command.Args[i+1]
+		}
+	}
+	results := []json.RawMessage{}
+	for host, docs := range e.docs {
+		if strings.Contains(target, host) {
+			results = append(results, docs...)
+		}
+	}
+	data, _ := json.Marshal(map[string]any{"results": results})
+	_ = os.WriteFile(outputPath, data, 0644)
+	return &runner.CommandResult{Command: command}, nil
+}
+
+// TestRunDiscardsCatchAllFlood locks the fix for the real-world WAF flood:
+// 3871 identical 403s must not reach discovered_paths (and therefore
+// attacksurface and nuclei), genuine hits and other hosts must survive, the
+// operator gets one warning, and the raw per-host file stays intact.
+func TestRunDiscardsCatchAllFlood(t *testing.T) {
+	run := testRun(t, t.TempDir())
+	hosts := "https://voltlaunchr.com\nhttps://www.voltlaunchr.com\n"
+	if err := os.WriteFile(run.Path("02_http", "httpx.txt"), []byte(hosts), 0644); err != nil {
+		t.Fatal(err)
+	}
+	wordlist := filepath.Join(t.TempDir(), "words.txt")
+	if err := os.WriteFile(wordlist, []byte("admin\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCtx := modules.NewRunContext("voltlaunchr.com", "web", false, run)
+	if err := runCtx.AddArtifact("alive_urls", modules.Artifact{Name: "alive_urls", Type: "text", Path: "02_http/httpx.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	runCtx.Ffuf = modules.FfufOptions{Wordlist: wordlist}
+	var (
+		mu       sync.Mutex
+		warnings []string
+	)
+	runCtx.SetWarningSink(func(msg string) {
+		mu.Lock()
+		warnings = append(warnings, msg)
+		mu.Unlock()
+	})
+
+	flood := joinResults(wafFlood("https://voltlaunchr.com", 3871), []json.RawMessage{
+		ffufResult("https://voltlaunchr.com/admin", 200, 4821, 310),
+		ffufResult("https://voltlaunchr.com/login", 302, 0, 1),
+	})
+	executor := &docExecutor{docs: map[string][]json.RawMessage{
+		"//voltlaunchr.com":     flood,
+		"//www.voltlaunchr.com": {ffufResult("https://www.voltlaunchr.com/robots.txt", 200, 67, 4)},
+	}}
+
+	if _, err := New("ffuf").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	data, err := os.ReadFile(run.Path("05_content", "ffuf.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc ffufDocument
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"https://voltlaunchr.com/admin",
+		"https://voltlaunchr.com/login",
+		"https://www.voltlaunchr.com/robots.txt",
+	}
+	if got := urlsOf(t, doc.Results); !reflect.DeepEqual(got, want) {
+		t.Fatalf("discovered paths = %v, want %v", got, want)
+	}
+
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %q, want exactly one", warnings)
+	}
+	for _, part := range []string{"https://voltlaunchr.com ", "3871 identical responses", "status 403", "25103 bytes", "catch-all/WAF"} {
+		if !strings.Contains(warnings[0], part) {
+			t.Errorf("warning %q missing %q", warnings[0], part)
+		}
+	}
+
+	raw, err := os.ReadFile(run.Path("05_content", "ffuf", "host-0001.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rawDoc ffufDocument
+	if err := json.Unmarshal(raw, &rawDoc); err != nil {
+		t.Fatal(err)
+	}
+	if len(rawDoc.Results) != 3873 {
+		t.Fatalf("raw per-host file has %d results, want 3873 kept for audit", len(rawDoc.Results))
 	}
 }

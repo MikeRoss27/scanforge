@@ -126,6 +126,40 @@ func (r *Run) WriteManifest() error {
 // ManifestRelPath is the manifest location relative to a run root directory.
 const ManifestRelPath = "00_meta/manifest.json"
 
+// LatestRun opens the most recently created run for target under workspace
+// (the same directory Create would use for it). Run IDs are formatted
+// "2006-01-02_15-04-05[-N]" (see Create), which sorts lexicographically in
+// time order for any realistic run cadence; the one known gap is two or
+// more collisions in the very same second for the very same target, where
+// a "-10"+ suffix would sort before "-9" — harmless in practice (Create
+// itself only expects same-second collisions to be rare) and not worth
+// padding the suffix for.
+//
+// Callers that just ran a target (the benchmark command, in particular)
+// use this instead of threading the *storage.Run back out of app.Run,
+// which only ever returns an error.
+func LatestRun(workspace, target string) (*Run, error) {
+	parent := filepath.Join(workspace, safeTargetName(target))
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return nil, fmt.Errorf("no runs found for target %q under %q: %w", target, workspace, err)
+	}
+
+	var latest string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if entry.Name() > latest {
+			latest = entry.Name()
+		}
+	}
+	if latest == "" {
+		return nil, fmt.Errorf("no run directories found for target %q under %q", target, parent)
+	}
+	return OpenRun(filepath.Join(parent, latest))
+}
+
 // OpenRun loads an existing run directory (a rootDir pointing at a
 // runs/<target>/<id> folder) by reading its manifest back from disk. The
 // manifest is authoritative: every other path is derived from it.

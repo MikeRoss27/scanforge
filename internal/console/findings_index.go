@@ -167,12 +167,62 @@ func severityWeightValue(severity string) int {
 	}
 }
 
+// recapEntry is the common shape recapRows renders from, whether it comes
+// from the live event stream (findingIndex, before a report exists) or the
+// authoritative report.json (FindingType, once a report was generated).
+type recapEntry struct {
+	severity string
+	title    string
+	module   string
+	count    int
+}
+
+// recapEntriesFromTypes converts the report-derived finding-type breakdown
+// into the shared recap shape, sorted the same way the live recap is.
+func recapEntriesFromTypes(types []FindingType) []recapEntry {
+	if len(types) == 0 {
+		return nil
+	}
+	entries := make([]recapEntry, len(types))
+	for i, t := range types {
+		entries[i] = recapEntry{severity: strings.ToUpper(t.Severity), title: t.Title, module: t.Module, count: t.Count}
+	}
+	sortRecapEntries(entries)
+	return entries
+}
+
+// recapEntries converts the live stream's distinct finding types into the
+// shared recap shape, already sorted (severity, then count, then title).
+func (f *findingIndex) recapEntries() []recapEntry {
+	stats := f.distinct()
+	entries := make([]recapEntry, len(stats))
+	for i, stat := range stats {
+		entries[i] = recapEntry{severity: stat.severity, title: stat.title, module: stat.module, count: stat.count}
+	}
+	return entries
+}
+
+// sortRecapEntries orders entries the same way findingIndex.distinct() does:
+// highest severity first, then occurrence count, then title, so the live
+// and report-derived recaps read identically.
+func sortRecapEntries(entries []recapEntry) {
+	sort.Slice(entries, func(i, j int) bool {
+		wi, wj := severityWeightValue(entries[i].severity), severityWeightValue(entries[j].severity)
+		if wi != wj {
+			return wi > wj
+		}
+		if entries[i].count != entries[j].count {
+			return entries[i].count > entries[j].count
+		}
+		return entries[i].title < entries[j].title
+	})
+}
+
 // recapRows renders the "finding types" section of the closing summary: one
 // row per finding type with its occurrence count. This is how the complete
 // story (secrets, emails, internal hosts, ...) survives a noisy scan.
-func (r *Renderer) recapRows(limit int) []string {
-	stats := r.findings.distinct()
-	if len(stats) == 0 {
+func (r *Renderer) recapRows(limit int, entries []recapEntry) []string {
+	if len(entries) == 0 {
 		return nil
 	}
 	if limit <= 0 {
@@ -180,33 +230,33 @@ func (r *Renderer) recapRows(limit int) []string {
 	}
 
 	var rows []string
-	for i, stat := range stats {
+	for i, entry := range entries {
 		if i == limit {
-			rows = append(rows, r.th.Dim("  … and "+itoa(len(stats)-i)+" more finding types (see report.json)"))
+			rows = append(rows, r.th.Dim("  … and "+itoa(len(entries)-i)+" more finding types (see report.json)"))
 			break
 		}
-		rows = append(rows, r.recapRow(stat))
+		rows = append(rows, r.recapRow(entry))
 	}
 	return rows
 }
 
-func (r *Renderer) recapRow(stat *findingStat) string {
-	title := stat.title
+func (r *Renderer) recapRow(entry recapEntry) string {
+	title := entry.title
 	if title == "" {
-		title = stat.module
+		title = entry.module
 	}
 	module := ""
-	if stat.module != "" {
-		module = " (" + stat.module + ")"
+	if entry.module != "" {
+		module = " (" + entry.module + ")"
 	}
-	suffix := module + " ×" + itoa(stat.count)
+	suffix := module + " ×" + itoa(entry.count)
 	// Keep the count last, truncating the title if needed so the severity
 	// and the occurrence count never disappear past the terminal edge.
 	budget := r.ruleWidth() - 2 - 8 - 1 - len([]rune(suffix))
 	if budget < 10 {
 		budget = 10
 	}
-	return "  " + r.th.Severity(padSeverity(stat.severity)) + " " +
+	return "  " + r.th.Severity(padSeverity(entry.severity)) + " " +
 		ansi.Truncate(title, budget, "…") + r.th.Dim(suffix)
 }
 

@@ -95,11 +95,11 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 		return nil, fmt.Errorf("failed to read wp_fingerprint: %w", err)
 	}
 	if len(hosts) == 0 {
-		runCtx.EmitWarning("wpexposure: no WordPress hosts identified; skipping")
 		if err := writeFindings(runCtx.Run.Path(outputRel), nil); err != nil {
 			return nil, err
 		}
-		return finish(m, runCtx)
+		res, err := finish(m, runCtx)
+		return modules.SkipNotApplicable(res, err, "no WordPress detected")
 	}
 	if maxHosts > 0 && len(hosts) > maxHosts {
 		hosts = hosts[:maxHosts]

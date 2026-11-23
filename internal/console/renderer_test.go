@@ -157,6 +157,35 @@ func TestSkippedModuleNeverLooksLikeSuccess(t *testing.T) {
 	}
 }
 
+func TestNotApplicableSkipRendersReasonOnOneLine(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTestRenderer(t, &buf, nil)
+	r.Handle(orchestrator.ModuleDoneEvent{Name: "wpusers", Status: "skipped", Reason: "no WordPress detected"})
+	out := buf.String()
+	if strings.Count(strings.TrimSpace(out), "\n") != 0 {
+		t.Errorf("not-applicable skip must be a single line: %q", out)
+	}
+	if !strings.Contains(out, "[SKP]") || !strings.Contains(out, "no WordPress detected") {
+		t.Errorf("skip line missing tag or reason: %q", out)
+	}
+	if strings.Contains(out, "dependency unavailable") || strings.Contains(out, "[OK ]") {
+		t.Errorf("skip reason overridden or rendered as success: %q", out)
+	}
+}
+
+func TestSummaryCountsNotApplicableModules(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTestRenderer(t, &buf, nil)
+	r.PrintSummary(Summary{Target: "example.com", Status: "completed", Modules: 10, Completed: 7, NotApplicable: 3})
+	out := buf.String()
+	if !strings.Contains(out, "7/10 completed · 3 not applicable") {
+		t.Errorf("summary missing not-applicable count:\n%s", out)
+	}
+	if strings.Contains(out, "SKIPPED") {
+		t.Errorf("not-applicable modules must not be listed as SKIPPED:\n%s", out)
+	}
+}
+
 func TestAbortedModuleRendersWarn(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTestRenderer(t, &buf, nil)
@@ -803,6 +832,94 @@ func TestProgressTrackerView(t *testing.T) {
 	}
 	if view := p.view(now, 80, newTheme(false)); view != "" {
 		t.Errorf("empty tracker rendered a line: %q", view)
+	}
+}
+
+func TestProgressTrackerCountsWithMessage(t *testing.T) {
+	now := fixedClock()
+	event := orchestrator.ModuleProgressEvent{
+		Name: "nuclei", Current: 5880, Total: 17292, Unit: "requests",
+		Message: "34% · 1 matched · 587 rps",
+	}
+	tests := []struct {
+		name    string
+		width   int
+		want    []string
+		wantBar bool
+	}{
+		// Wide: bar + its percent, the module's own "34%" is not repeated.
+		{"wide", 160, []string{"5880/17292 requests", "34%", "1 matched · 587 rps", "02:00"}, true},
+		// Narrow: bar dropped, a plain percent and the counts survive.
+		{"narrow", 90, []string{"5880/17292 requests", "34%"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := newProgressTracker(SpinnerForge)
+			p.start("nuclei", now)
+			p.update(event, now)
+			view := p.view(now.Add(2*time.Minute), tt.width, newTheme(false))
+			for _, want := range tt.want {
+				if !strings.Contains(view, want) {
+					t.Errorf("view missing %q: %q", want, view)
+				}
+			}
+			if n := strings.Count(view, "34%"); n != 1 {
+				t.Errorf("percent shown %d times, want once: %q", n, view)
+			}
+			if hasBar := strings.Contains(view, "▕"); hasBar != tt.wantBar {
+				t.Errorf("bar shown = %v, want %v: %q", hasBar, tt.wantBar, view)
+			}
+			if ansiWidth(view) > tt.width-forgeWidth-3 {
+				t.Errorf("view exceeds its width budget: %q", view)
+			}
+		})
+	}
+}
+
+func TestProgressTrackerETA(t *testing.T) {
+	p := newProgressTracker(SpinnerForge)
+	now := fixedClock()
+	p.start("nuclei", now)
+	p.update(orchestrator.ModuleProgressEvent{Name: "nuclei", Current: 100, Total: 1000, Unit: "requests"}, now)
+	if view := p.view(now.Add(time.Second), 160, newTheme(false)); strings.Contains(view, "ETA") {
+		t.Errorf("ETA shown without enough signal: %q", view)
+	}
+	// 200 requests in 20s → 10/s; 700 remaining → 70s.
+	p.update(orchestrator.ModuleProgressEvent{Name: "nuclei", Current: 300, Total: 1000, Unit: "requests"}, now.Add(20*time.Second))
+	if view := p.view(now.Add(20*time.Second), 160, newTheme(false)); !strings.Contains(view, "ETA 01:10") {
+		t.Errorf("ETA missing or wrong: %q", view)
+	}
+}
+
+func TestProgressTrackerLastModule(t *testing.T) {
+	now := fixedClock()
+	p := newProgressTracker(SpinnerForge)
+	p.setExpected(3)
+	p.start("katana", now)
+	p.start("nuclei", now)
+	p.finish("katana")
+	if view := p.view(now, 120, newTheme(false)); strings.Contains(view, "last module") {
+		t.Errorf("a module is still pending, yet the line claims the last one: %q", view)
+	}
+	p.start("nmap", now)
+	p.finish("nmap")
+	if view := p.view(now.Add(12*time.Minute), 120, newTheme(false)); !strings.Contains(view, "nuclei") || !strings.Contains(view, "last module running") {
+		t.Errorf("last running module not flagged: %q", view)
+	}
+}
+
+func TestStripPercents(t *testing.T) {
+	tests := map[string]string{
+		"34% · 1 matched · 587 rps": "1 matched · 587 rps",
+		"SYN Stealth Scan 45.2%":    "SYN Stealth Scan",
+		"100%":                      "",
+		"1 matched":                 "1 matched",
+		"":                          "",
+	}
+	for in, want := range tests {
+		if got := stripPercents(in); got != want {
+			t.Errorf("stripPercents(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

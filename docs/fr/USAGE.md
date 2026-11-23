@@ -185,6 +185,7 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge scan TARGET` | Alias de `run`. |
 | `scanforge triage RUN` | Regroupe et (avec un backend `ai:`) analyse les findings d'un run. |
 | `scanforge auth` | Gère les clés requises par certains outils. |
+| `scanforge benchmark run LAB\|--all` | Outil mainteneur : exécute le pipeline réel contre des labs vulnérables embarqués et score la détection par rapport aux attentes. |
 | `scanforge version` | Affiche la version du binaire. |
 
 Consultez `scanforge <commande> --help` pour la liste exacte des options.

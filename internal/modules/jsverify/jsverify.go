@@ -131,6 +131,12 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	}
 
 	var results []verdict
+	// degraded explains why nothing was actually verified, when that's the
+	// case: a missing browser, a browser that failed to launch, or every
+	// page replay coming back "unreachable" (e.g. a WAF blocking every
+	// navigation). Any of these must not report as a clean "completed" with
+	// zero confirmed findings.
+	var degraded string
 	if !runCtx.DryRun && len(findings) > 0 {
 		if browser == "" {
 			results = []verdict{{
@@ -140,6 +146,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 				Verdict:  "not-observed",
 				Evidence: "no chromium/chrome binary found (set tools.chromium in scanforge.yaml)",
 			}}
+			degraded = "no chromium/chrome binary found; PoC replay was skipped (set tools.chromium in scanforge.yaml)"
 		} else {
 			var launchErr error
 			results, launchErr = verifyAll(ctx, runCtx, browser, findings, pages)
@@ -157,6 +164,9 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 				}); err != nil {
 					return nil, fmt.Errorf("failed to write commands log: %w", err)
 				}
+				degraded = fmt.Sprintf("browser failed to launch: %v", launchErr)
+			} else if allUnreachable(results) {
+				degraded = fmt.Sprintf("all %d replay(s) were unreachable (page failed to load — network error, proxy issue, or every request blocked)", len(results))
 			}
 		}
 	}
@@ -172,13 +182,34 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 		return nil, fmt.Errorf("failed to publish JS verification results: %w", err)
 	}
 
+	status := "completed"
+	if degraded != "" {
+		status = "partial"
+	}
+
 	return &modules.Result{
 		Name:   m.Name(),
-		Status: "completed",
+		Status: status,
+		Reason: degraded,
 		OutputFiles: map[string]string{
 			"js_verified": outputRel,
 		},
 	}, nil
+}
+
+// allUnreachable reports whether every verdict came back "unreachable" (the
+// page never loaded), the signature of a replay that never actually reached
+// its target rather than one that reached it and found nothing.
+func allUnreachable(results []verdict) bool {
+	if len(results) == 0 {
+		return false
+	}
+	for _, r := range results {
+		if r.Verdict != "unreachable" {
+			return false
+		}
+	}
+	return true
 }
 
 // readFindings loads jssecrets findings, keeping only the AST-based kinds

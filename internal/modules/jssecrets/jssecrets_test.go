@@ -162,6 +162,26 @@ func TestRunWritesEmptyFileWithoutFindings(t *testing.T) {
 	}
 }
 
+func TestRunReportsPartialWhenEveryFetchFails(t *testing.T) {
+	run := testRun(t)
+	// Nothing listens on these; every fetch fails at the transport level,
+	// the signature of a connection being dropped/blocked outright (e.g. a
+	// WAF). Zero secrets here must not be reported as a clean "completed".
+	writeCrawledURLs(t, run, "http://127.0.0.1:1/app.js\nhttp://127.0.0.1:2/app.js\n")
+	runCtx := newRunContext(t, run, false)
+
+	result, err := New().Run(context.Background(), runCtx, nil)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != "partial" {
+		t.Fatalf("Run() status = %q, want partial (every fetch was unreachable)", result.Status)
+	}
+	if result.Reason == "" {
+		t.Fatal("a non-completed status should carry a Reason explaining why")
+	}
+}
+
 func TestRunDryRunMakesNoRequests(t *testing.T) {
 	var requests atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -397,6 +417,106 @@ func TestChaseImportsIgnoresNonJS(t *testing.T) {
 	}
 }
 
+func TestScanBodyDetectsNewSecretPatterns(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		pattern string
+		match   string
+	}{
+		{"aws temporary STS key (ASIA prefix)", `var cfg = {key: "ASIAIOSFODNN7EXAMPLE"};`, "aws-access-key-id", "ASIAIOSFODNN7EXAMPLE"},
+		{"aws backup key (ABIA prefix)", `var cfg = {key: "ABIAIOSFODNN7EXAMPLE"};`, "aws-access-key-id", "ABIAIOSFODNN7EXAMPLE"},
+		{"aws codecommit key (ACCA prefix)", `var cfg = {key: "ACCAIOSFODNN7EXAMPLE"};`, "aws-access-key-id", "ACCAIOSFODNN7EXAMPLE"},
+		{
+			"aws session token",
+			`var creds = {sessionToken: "` + strings.Repeat("A", 220) + `"};`,
+			"aws-session-token",
+			`sessionToken: "` + strings.Repeat("A", 220) + `"`,
+		},
+		{"cloudinary url", `const CLOUDINARY_URL = "cloudinary://123456789012345:AbCdEfGhIjKlMnOpQrStUvWxYz@my-cloud";`, "cloudinary-url", "cloudinary://123456789012345:AbCdEfGhIjKlMnOpQrStUvWxYz@my-cloud"},
+		{
+			"postman api key",
+			`headers["X-Api-Key"] = "PMAK-` + strings.Repeat("0", 24) + `-` + strings.Repeat("a", 34) + `";`,
+			"postman-api-key",
+			`PMAK-` + strings.Repeat("0", 24) + `-` + strings.Repeat("a", 34),
+		},
+		{"basic auth header", `fetch(url, {headers: {"Authorization": "Basic dXNlcjpwYXNzd29yZDEyMw=="}});`, "basic-auth-header", `Authorization": "Basic dXNlcjpwYXNzd29yZDEyMw=="`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			findings := scanBody("https://target.example/app.js", tc.body)
+			for _, f := range findings {
+				if f.Pattern == tc.pattern {
+					if f.Match != tc.match {
+						t.Errorf("match = %q, want %q", f.Match, tc.match)
+					}
+					return
+				}
+			}
+			t.Errorf("no %s finding in %+v", tc.pattern, findings)
+		})
+	}
+}
+
+func TestScanBodyDetectsAIProviderKeys(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		pattern string
+		match   string
+	}{
+		{
+			"openai project key (hyphen separator, not underscore)",
+			`const OPENAI_KEY = "sk-proj-` + strings.Repeat("a", 24) + `";`,
+			"openai-api-key",
+			"sk-proj-" + strings.Repeat("a", 24),
+		},
+		{
+			"openai legacy key (base64 OpenAI marker)",
+			`const OPENAI_KEY = "sk-` + strings.Repeat("a", 20) + `T3BlbkFJ` + strings.Repeat("b", 20) + `";`,
+			"openai-api-key-legacy",
+			"sk-" + strings.Repeat("a", 20) + "T3BlbkFJ" + strings.Repeat("b", 20),
+		},
+		{
+			"anthropic key",
+			`const ANTHROPIC_KEY = "sk-ant-api03-` + strings.Repeat("a", 24) + `";`,
+			"anthropic-api-key",
+			"sk-ant-api03-" + strings.Repeat("a", 24),
+		},
+		{"xai key", `const XAI_KEY = "xai-` + strings.Repeat("a", 32) + `";`, "xai-api-key", "xai-" + strings.Repeat("a", 32)},
+		{"groq key", `const GROQ_KEY = "gsk_` + strings.Repeat("a", 32) + `";`, "groq-api-key", "gsk_" + strings.Repeat("a", 32)},
+		{"openrouter key", `const OR_KEY = "sk-or-v1-` + strings.Repeat("a", 64) + `";`, "openrouter-api-key", "sk-or-v1-" + strings.Repeat("a", 64)},
+		{"perplexity key", `const PPLX_KEY = "pplx-` + strings.Repeat("a", 32) + `";`, "perplexity-api-key", "pplx-" + strings.Repeat("a", 32)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			findings := scanBody("https://target.example/app.js", tc.body)
+			for _, f := range findings {
+				if f.Pattern == tc.pattern {
+					if f.Match != tc.match {
+						t.Errorf("match = %q, want %q", f.Match, tc.match)
+					}
+					return
+				}
+			}
+			t.Errorf("no %s finding in %+v", tc.pattern, findings)
+		})
+	}
+}
+
+// TestOpenAIPatternDoesNotMatchAnthropicKey guards the actual regression that
+// made the fix necessary: the old pattern's "ant" alternative made it match
+// Anthropic keys too, misreporting them as "openai-api-key".
+func TestOpenAIPatternDoesNotMatchAnthropicKey(t *testing.T) {
+	body := `const key = "sk-ant-api03-` + strings.Repeat("a", 24) + `";`
+	findings := scanBody("https://target.example/app.js", body)
+	for _, f := range findings {
+		if f.Pattern == "openai-api-key" || f.Pattern == "openai-api-key-legacy" {
+			t.Fatalf("an Anthropic key must not match the OpenAI pattern: %+v", f)
+		}
+	}
+}
+
 func TestScanBodyFlagsHighEntropySecret(t *testing.T) {
 	body := `var config = {"apiKey": "qW7zR4tY8uI2pL5sX9vB3nM6jH1kF8dA2cG5zE7wQ9rT1yU4iO6pA3sD9fG2hJ5kL8mN1vB4xZ7cV2"};`
 	findings := scanBody("https://target.example/app.js", body)
@@ -496,6 +616,70 @@ func writeCrawledURLs(t *testing.T, run *storage.Run, content string) {
 	t.Helper()
 	if err := os.WriteFile(run.Path("05_content", "katana.txt"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCollectJSURLsAddsHistoricalAndFuzzedJS(t *testing.T) {
+	run := testRun(t)
+	writeCrawledURLs(t, run, "https://a.example/crawled.js\n")
+	runCtx := newRunContext(t, run, false)
+
+	if err := os.WriteFile(run.Path("05_content", "gau.txt"), []byte(
+		"https://a.example/old-bundle.js\nhttps://a.example/page.html\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCtx.AddArtifact("historical_urls", modules.Artifact{Name: "historical_urls", Type: "text", Path: "05_content/gau.txt"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ffufJSON := `{"results":[{"url":"https://a.example/fuzzed.js","host":"a.example","status":200,"length":10},{"url":"https://a.example/admin","host":"a.example","status":403,"length":5}]}`
+	if err := os.WriteFile(run.Path("05_content", "ffuf.json"), []byte(ffufJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCtx.AddArtifact("discovered_paths", modules.Artifact{Name: "discovered_paths", Type: "json", Path: "05_content/ffuf.json"}); err != nil {
+		t.Fatal(err)
+	}
+
+	urls, crawled, err := collectJSURLs(runCtx, run.Path("05_content", "katana.txt"))
+	if err != nil {
+		t.Fatalf("collectJSURLs() error = %v", err)
+	}
+	if crawled != 1 {
+		t.Fatalf("crawled = %d, want 1", crawled)
+	}
+	want := map[string]bool{
+		"https://a.example/crawled.js":    true,
+		"https://a.example/old-bundle.js": true,
+		"https://a.example/fuzzed.js":     true,
+	}
+	if len(urls) != len(want) {
+		t.Fatalf("urls = %v, want exactly %v", urls, want)
+	}
+	for _, u := range urls {
+		if !want[u] {
+			t.Errorf("unexpected URL %q (non-JS fuzzed path or page.html must be excluded)", u)
+		}
+	}
+}
+
+func TestCollectJSURLsDeduplicatesAcrossSources(t *testing.T) {
+	run := testRun(t)
+	writeCrawledURLs(t, run, "https://a.example/app.js\n")
+	runCtx := newRunContext(t, run, false)
+
+	if err := os.WriteFile(run.Path("05_content", "gau.txt"), []byte("https://a.example/app.js\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCtx.AddArtifact("historical_urls", modules.Artifact{Name: "historical_urls", Type: "text", Path: "05_content/gau.txt"}); err != nil {
+		t.Fatal(err)
+	}
+
+	urls, _, err := collectJSURLs(runCtx, run.Path("05_content", "katana.txt"))
+	if err != nil {
+		t.Fatalf("collectJSURLs() error = %v", err)
+	}
+	if len(urls) != 1 {
+		t.Fatalf("urls = %v, want exactly 1 (deduplicated)", urls)
 	}
 }
 

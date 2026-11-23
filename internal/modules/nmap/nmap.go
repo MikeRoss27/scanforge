@@ -70,12 +70,32 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, fmt.Errorf("failed to create nmap output directory: %w", err)
 	}
 
+	// Several hostnames often front the exact same backend (a bare domain
+	// and its "www." alias resolving to one IP is the common case): naabu
+	// records open ports per hostname, so without this step nmap would
+	// run a full -sV + NSE scan against the identical server once per
+	// alias - doubling scan time and probe noise against the target for
+	// zero extra information. hostIPs reuses dnsx's own resolution (never
+	// a fresh DNS lookup here) so the grouping below only ever merges
+	// hosts proven identical; when that data isn't available (dnsx_raw
+	// not published, e.g. in unit tests) every host gets its own group,
+	// which is exactly today's behavior.
+	hostIndex := make(map[string]int, len(targets))
+	for i, target := range targets {
+		hostIndex[target.Host] = i
+	}
+	hostIPs := map[string]string{}
+	if art, ok := runCtx.GetArtifact("dnsx_raw"); ok {
+		hostIPs = loadHostIPs(runCtx.Run.Path(art.Path))
+	}
+	groups := groupTargets(targets, hostIPs)
+
 	concurrency := runCtx.NmapConcurrency
 	if concurrency <= 0 {
 		concurrency = defaultConcurrency
 	}
-	if concurrency > len(targets) {
-		concurrency = len(targets)
+	if concurrency > len(groups) {
+		concurrency = len(groups)
 	}
 
 	var (
@@ -85,50 +105,79 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		scanErrs []error
 	)
 	sem := make(chan struct{}, concurrency)
+	progress := newScanProgress(m.Name(), len(targets), runCtx.EmitProgress)
+	addErr := func(err error) {
+		mu.Lock()
+		scanErrs = append(scanErrs, err)
+		mu.Unlock()
+	}
 
-	for i, target := range targets {
+	for _, group := range groups {
+		if len(group.Hosts) > 1 {
+			runCtx.EmitWarning(group.dedupNote())
+		}
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(i int, target hostPorts) {
+		go func(group hostGroup) {
 			defer wg.Done()
 			defer func() { <-sem }()
-
-			chunks := chunkPorts(target.Ports)
-			for ci, chunk := range chunks {
-				base := fmt.Sprintf("host-%04d", i+1)
-				if len(chunks) > 1 {
-					base = fmt.Sprintf("host-%04d-%d", i+1, ci+1)
+			// Every host in the group - leader and aliases alike - counts
+			// toward the live "X of N hosts" progress exactly once,
+			// whatever path this goroutine returns through (success or a
+			// log/exec failure partway through a chunk).
+			defer func() {
+				for range group.Hosts {
+					progress.hostDone()
 				}
+			}()
+
+			leader := group.Hosts[0]
+			leaderIdx := hostIndex[leader]
+			chunks := chunkPorts(group.Ports)
+
+			for ci, chunk := range chunks {
+				leaderBase := chunkBase(leaderIdx, ci, len(chunks))
 				cmd := runner.Command{
 					Name: m.binary,
 					Args: []string{
 						"-p", joinPorts(chunk),
-						"-oX", filepath.Join(outputDir, base+".xml"),
-						"-oN", filepath.Join(outputDir, base+".txt"),
+						"-oX", filepath.Join(outputDir, leaderBase+".xml"),
+						"-oN", filepath.Join(outputDir, leaderBase+".txt"),
 						"-sV",
 						"-T4",
+						// Periodic "About NN% done" lines on stdout feed
+						// the live progress line; a -sV scan can sit for
+						// minutes without any other visible output.
+						"--stats-every", statsEvery,
 					},
 					Timeout:    1 * time.Hour,
-					StdoutFile: filepath.Join(outputDir, base+".stdout.log"),
-					StderrFile: filepath.Join(outputDir, base+".stderr.log"),
+					StdoutFile: filepath.Join(outputDir, leaderBase+".stdout.log"),
+					StderrFile: filepath.Join(outputDir, leaderBase+".stderr.log"),
 				}
-				if ip := net.ParseIP(target.Host); ip != nil && ip.To4() == nil {
+				if ip := net.ParseIP(leader); ip != nil && ip.To4() == nil {
 					cmd.Args = append(cmd.Args, "-6")
 				}
-				cmd.Args = append(cmd.Args, target.Host)
+				cmd.Args = append(cmd.Args, leader)
 
 				if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, cmd); err != nil {
-					mu.Lock()
-					scanErrs = append(scanErrs, fmt.Errorf("failed to write commands log for host %q: %w", target.Host, err))
-					mu.Unlock()
+					addErr(fmt.Errorf("failed to write commands log for host %q: %w", leader, err))
 					return
 				}
 
+				stop := make(chan struct{})
+				tailDone := make(chan struct{})
+				go func() {
+					defer close(tailDone)
+					modules.TailLines(cmd.StdoutFile, stop, time.Second, func(line string) {
+						progress.observe(leaderBase, line)
+					})
+				}()
 				res, err := executor.Run(ctx, cmd)
+				close(stop)
+				<-tailDone
+				progress.jobDone(leaderBase)
 				if err != nil {
-					mu.Lock()
-					scanErrs = append(scanErrs, fmt.Errorf("failed to run command %q for host %q: %w", cmd.Name, target.Host, err))
-					mu.Unlock()
+					addErr(fmt.Errorf("failed to run command %q for host %q: %w", cmd.Name, leader, err))
 					return
 				}
 				if res.ExitCode != 0 {
@@ -136,8 +185,22 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 					status = fmt.Sprintf("failed (exit code %d)", res.ExitCode)
 					mu.Unlock()
 				}
+
+				// Every alias is backed by the exact same host nmap just
+				// scanned: publish a copy of this chunk's result under
+				// each alias's own name instead of re-scanning it.
+				for _, alias := range group.Hosts[1:] {
+					aliasBase := chunkBase(hostIndex[alias], ci, len(chunks))
+					if err := publishAlias(
+						filepath.Join(outputDir, leaderBase+".xml"), filepath.Join(outputDir, aliasBase+".xml"),
+						filepath.Join(outputDir, leaderBase+".txt"), filepath.Join(outputDir, aliasBase+".txt"),
+						leader, alias,
+					); err != nil {
+						addErr(fmt.Errorf("failed to publish shared scan result for alias host %q: %w", alias, err))
+					}
+				}
 			}
-		}(i, target)
+		}(group)
 	}
 	wg.Wait()
 
@@ -285,6 +348,18 @@ func joinPorts(ports []int) string {
 }
 
 // chunkPorts splits a port list into batches of at most maxPortsPerCommand.
+// chunkBase names a command's output files: "host-%04d" for a host scanned
+// in one command, "host-%04d-%d" per chunk when its port list was split.
+// hostIdx is the host's position in the original (pre-grouping) target
+// list, so every hostname - leader or alias - keeps a stable, predictable
+// filename regardless of which group it ended up sharing a scan with.
+func chunkBase(hostIdx, chunkIdx, totalChunks int) string {
+	if totalChunks > 1 {
+		return fmt.Sprintf("host-%04d-%d", hostIdx+1, chunkIdx+1)
+	}
+	return fmt.Sprintf("host-%04d", hostIdx+1)
+}
+
 // The input stays sorted (readOpenPorts sorts it), so chunks are contiguous
 // slices and the -p argument of every command remains deterministic.
 func chunkPorts(ports []int) [][]int {

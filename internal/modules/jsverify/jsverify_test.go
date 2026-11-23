@@ -199,8 +199,13 @@ func TestRunWithoutBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if result.Status != "completed" {
-		t.Fatalf("status = %q, want completed", result.Status)
+	// No browser means nothing was actually verified: "completed" would
+	// misreport a replay that never ran as a clean pass.
+	if result.Status != "partial" {
+		t.Fatalf("status = %q, want partial (no browser available to verify anything)", result.Status)
+	}
+	if result.Reason == "" {
+		t.Fatal("a non-completed status should carry a Reason explaining why")
 	}
 
 	lines, err := readVerdictLines(run.Path("06_vulns", "js-verified.jsonl"))
@@ -403,6 +408,81 @@ func TestReplaySafePageNotObserved(t *testing.T) {
 	out := replayOne(browserCtx, item, server.URL+"/", payload)
 	if out.Verdict != "not-observed" {
 		t.Fatalf("verdict = %q (evidence %q), want not-observed on the safe page", out.Verdict, out.Evidence)
+	}
+}
+
+func TestAllUnreachable(t *testing.T) {
+	cases := []struct {
+		name  string
+		verds []verdict
+		want  bool
+	}{
+		{"empty", nil, false},
+		{"all unreachable", []verdict{{Verdict: "unreachable"}, {Verdict: "unreachable"}}, true},
+		{"mixed", []verdict{{Verdict: "unreachable"}, {Verdict: "not-observed"}}, false},
+		{"none unreachable", []verdict{{Verdict: "not-observed"}, {Verdict: "executed"}}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := allUnreachable(tc.verds); got != tc.want {
+				t.Errorf("allUnreachable(%+v) = %v, want %v", tc.verds, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRunReportsPartialWhenEveryReplayIsUnreachable is the Run()-level
+// counterpart of TestAllUnreachable: when every page a real browser tries to
+// load is unreachable (e.g. nothing listening, mirroring what a WAF
+// dropping every connection would look like), the module must not claim
+// "completed" with zero confirmed findings. It needs a real chrome binary
+// and is skipped on CI like the other replay tests above.
+func TestRunReportsPartialWhenEveryReplayIsUnreachable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("launches a real browser; skipped with -short")
+	}
+	if os.Getenv("CI") != "" {
+		t.Skip("browser launch is not reliable on CI runners")
+	}
+	chrome := detectBrowser()
+	if chrome == "" {
+		t.Skip("no chrome/chromium binary available")
+	}
+
+	run := testRun(t)
+	runCtx := modules.NewRunContext("a.example", "web", false, run)
+	secrets := filepath.Join(run.Path("06_vulns"), "js-secrets.jsonl")
+	if err := os.MkdirAll(filepath.Dir(secrets), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Nothing listens here; chromedp.Navigate will fail for every replay.
+	writeJSONL(t, secrets, []interface{}{
+		findingLine("http://127.0.0.1:1/app.js", "dom-sink", "eval-call", "high", []string{`alert(1)`}),
+	})
+	if err := runCtx.AddArtifact("js_secrets", modules.Artifact{Name: "js_secrets", Type: "jsonl", Path: "06_vulns/js-secrets.jsonl"}); err != nil {
+		t.Fatalf("add artifact: %v", err)
+	}
+	crawled := filepath.Join(run.Path("05_content"), "crawled.txt")
+	if err := os.MkdirAll(filepath.Dir(crawled), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(crawled, []byte("http://127.0.0.1:1/\n"), 0644); err != nil {
+		t.Fatalf("write crawl fixture: %v", err)
+	}
+	if err := runCtx.AddArtifact("crawled_urls", modules.Artifact{Name: "crawled_urls", Type: "text", Path: "05_content/crawled.txt"}); err != nil {
+		t.Fatalf("add artifact: %v", err)
+	}
+
+	mod := New(chrome)
+	result, err := mod.Run(context.Background(), runCtx, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Status != "partial" {
+		t.Fatalf("status = %q, want partial (every replay was unreachable)", result.Status)
+	}
+	if result.Reason == "" {
+		t.Fatal("a non-completed status should carry a Reason explaining why")
 	}
 }
 

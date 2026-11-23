@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- WAF-aware scanning: `ffuf`, `nuclei` and `katana` soft-depend on `wafw00f` and automatically back off (lower concurrency/rate-limit, randomized request delay, User-Agent rotation) when a WAF is detected, unless an explicit rate limit or `User-Agent` header was already set
+- New `dbdetect` module: passively fingerprints Supabase/Firebase/Appwrite/PocketBase backends from already-crawled pages/JS and auto-scopes the discovered backend host
+- New `dbenum` module: bounded, read-only enumeration of a `dbdetect`-discovered backend (table/collection listing, row counts, permission checks); never reads row/document contents
+- `jssecrets` now also scans JS-looking URLs surfaced by `gau`'s historical URLs and `ffuf`'s fuzzed paths, not just the crawl
+- `jssecrets` secret patterns: AWS session tokens, additional AWS access-key-ID prefixes (`ASIA`/`ABIA`/`ACCA`), Cloudinary URLs, Postman API keys, Basic-Auth headers, and dedicated, verified formats for Anthropic, OpenAI (current + legacy), xAI, Groq, OpenRouter and Perplexity API keys
+- `scanforge benchmark` command: runs the real scan pipeline against bundled intentionally-vulnerable lab targets (Firing Range, testphp.vulnweb.com, Juice Shop demo, local DVWA) and scores detection against documented expectations (maintainer/CI tool)
+
+### Fixed
+
+- `jssecrets`'s `openai-api-key` pattern used the wrong separator and matched Anthropic's `sk-ant-` prefix, so it never caught real OpenAI project/service-account keys and misreported Anthropic keys as OpenAI's
+- `httpcheck`, `jssecrets` and `jsverify` now report status `partial` (with a reason) instead of a false-clean `completed` when every request/replay they attempted was unreachable
+- The closing summary's `Finding types` recap is now derived from the final `report.json`, so its counts always match the severity totals shown above it instead of occasionally disagreeing with the live event stream
+
 ## [0.1.0] - 2026-08-02
 
 ### Added

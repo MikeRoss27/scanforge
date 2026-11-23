@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +48,10 @@ func (m *Module) Name() string        { return "ffuf" }
 func (m *Module) Description() string { return "Fast web fuzzer written in Go" }
 func (m *Module) Requires() []string  { return []string{"alive_urls"} }
 func (m *Module) Produces() []string  { return []string{"discovered_paths"} }
+
+// SoftRequires waits for wafw00f to finish, when it's part of the profile,
+// so WAF detection (GetWAFInfo) is settled before fuzzing starts.
+func (m *Module) SoftRequires() []string { return []string{"waf_raw"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	inputArt, err := runCtx.MustArtifact("alive_urls")
@@ -101,10 +106,20 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	// that actually holds per host, at the cost of several processes
 	// instead of one (bounded by defaultConcurrency, same tradeoff nmap
 	// already makes).
+	// A detected WAF changes two things about how ffuf is dispatched: fewer
+	// hosts fuzzed in parallel (a burst of concurrent fuzzers looks far more
+	// bot-like to a filtering edge than one at a time) and, per host, a
+	// throttling delay plus a rotated User-Agent instead of ffuf's own fixed
+	// default, so each host's request stream doesn't share one fingerprint.
+	waf := runCtx.GetWAFInfo()
 	concurrency := defaultConcurrency
+	if waf.Detected {
+		concurrency = 1
+	}
 	if concurrency > len(hosts) {
 		concurrency = len(hosts)
 	}
+	bypassUA := waf.Detected && !modules.HasHeaderNamed(runCtx.Headers, "User-Agent")
 
 	var (
 		mu       sync.Mutex
@@ -154,6 +169,15 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			}
 			args = append(args, runCtx.ProxyArgs("-x")...)
 			args = append(args, runCtx.HeaderArgs("-H")...)
+			if bypassUA {
+				args = append(args, "-H", "User-Agent: "+modules.RandomUserAgent())
+			}
+			if waf.Detected {
+				// Random delay (seconds) between requests, ffuf's own
+				// throttling flag; a fixed interval is itself a fingerprint
+				// a WAF can rate-limit against.
+				args = append(args, "-p", "0.4-1.6")
+			}
 
 			cmd := runner.Command{
 				Name:       m.binary,
@@ -189,9 +213,15 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	// Merge whatever per-host results exist even if one host's fuzz failed
 	// or timed out: a single bad host must not discard every other host's
 	// discovered paths from the report.
+	// Per-host files under 05_content/ffuf/ stay untouched (raw audit
+	// trail); only the merged discovered_paths artifact is filtered.
 	finalOutput := runCtx.Run.Path("05_content", "ffuf.json")
-	if err := mergeResults(outputs, finalOutput); err != nil {
+	catchAlls, err := mergeResults(hosts, outputs, finalOutput)
+	if err != nil {
 		scanErrs = append(scanErrs, fmt.Errorf("failed to merge ffuf results: %w", err))
+	}
+	for _, c := range catchAlls {
+		runCtx.EmitWarning(c.warning())
 	}
 
 	artifactErr := addArtifact(runCtx)
@@ -256,14 +286,105 @@ type ffufDocument struct {
 	Results []json.RawMessage `json:"results"`
 }
 
+// Catch-all detection thresholds. ffuf's -ac calibration misses some
+// WAF/CDN setups (e.g. a Vercel or Cloudflare block page returned as the
+// same 403 for every path): every wordlist entry then "matches" with an
+// identical response, and thousands of fake paths flood the attack surface
+// and nuclei. Real hits on one host almost never share an exact
+// (status, length, words) fingerprint dozens of times, so a fingerprint is
+// treated as catch-all noise when it is both frequent and dominant:
+//
+//   - catchAllMinCount: below this, identical responses are plausible
+//     (a handful of directories behind the same 301 or 403 body).
+//   - catchAllMinShare: the fingerprint must make up most of the host's
+//     results, so a host with many varied real hits is left alone.
+//   - catchAllAbsoluteCount: a fingerprint this frequent is noise whatever
+//     its share, covering hosts that flood with two block pages at once
+//     (e.g. 403 and 200 challenge pages, each under catchAllMinShare).
+const (
+	catchAllMinCount      = 20
+	catchAllMinShare      = 0.8
+	catchAllAbsoluteCount = 200
+)
+
+// fingerprint identifies a response shape independently of its path.
+type fingerprint struct {
+	Status int `json:"status"`
+	Length int `json:"length"`
+	Words  int `json:"words"`
+}
+
+// catchAll describes a discarded group of identical responses on one host.
+type catchAll struct {
+	host  string
+	fp    fingerprint
+	count int
+}
+
+func (c catchAll) warning() string {
+	return fmt.Sprintf("ffuf: %s returned %d identical responses (status %d, %d bytes) — treated as catch-all/WAF, discarded",
+		c.host, c.count, c.fp.Status, c.fp.Length)
+}
+
+// filterCatchAll drops results whose fingerprint looks like a catch-all
+// response (see the thresholds above). Result order is preserved and the
+// discarded groups are returned sorted by fingerprint, so output and
+// warnings stay deterministic.
+func filterCatchAll(host string, results []json.RawMessage) ([]json.RawMessage, []catchAll) {
+	fps := make([]fingerprint, len(results))
+	valid := make([]bool, len(results))
+	counts := map[fingerprint]int{}
+	for i, raw := range results {
+		if err := json.Unmarshal(raw, &fps[i]); err != nil {
+			continue
+		}
+		valid[i] = true
+		counts[fps[i]]++
+	}
+
+	noisy := map[fingerprint]bool{}
+	var dropped []catchAll
+	for fp, n := range counts {
+		share := float64(n) / float64(len(results))
+		if n >= catchAllAbsoluteCount || (n >= catchAllMinCount && share >= catchAllMinShare) {
+			noisy[fp] = true
+			dropped = append(dropped, catchAll{host: host, fp: fp, count: n})
+		}
+	}
+	if len(noisy) == 0 {
+		return results, nil
+	}
+	sort.Slice(dropped, func(i, j int) bool {
+		a, b := dropped[i].fp, dropped[j].fp
+		if a.Status != b.Status {
+			return a.Status < b.Status
+		}
+		if a.Length != b.Length {
+			return a.Length < b.Length
+		}
+		return a.Words < b.Words
+	})
+
+	kept := make([]json.RawMessage, 0, len(results))
+	for i, raw := range results {
+		if valid[i] && noisy[fps[i]] {
+			continue
+		}
+		kept = append(kept, raw)
+	}
+	return kept, dropped
+}
+
 // mergeResults combines every per-host ffuf.json into the single
 // discovered_paths artifact the rest of the pipeline (report parsers,
-// attacksurface) already expects. A missing or malformed per-host file
-// (process never ran under a dry-run/fake executor, or crashed before
-// writing) is skipped rather than failing the whole merge.
-func mergeResults(paths []string, out string) error {
+// attacksurface) already expects, discarding catch-all responses per host.
+// A missing or malformed per-host file (process never ran under a
+// dry-run/fake executor, or crashed before writing) is skipped rather than
+// failing the whole merge. hosts[i] is the target of paths[i].
+func mergeResults(hosts, paths []string, out string) ([]catchAll, error) {
 	merged := ffufDocument{Results: []json.RawMessage{}}
-	for _, path := range paths {
+	var dropped []catchAll
+	for i, path := range paths {
 		if path == "" {
 			continue
 		}
@@ -275,13 +396,19 @@ func mergeResults(paths []string, out string) error {
 		if err := json.Unmarshal(data, &doc); err != nil {
 			continue
 		}
-		merged.Results = append(merged.Results, doc.Results...)
+		host := path
+		if i < len(hosts) {
+			host = hosts[i]
+		}
+		kept, noise := filterCatchAll(host, doc.Results)
+		merged.Results = append(merged.Results, kept...)
+		dropped = append(dropped, noise...)
 	}
 	data, err := json.Marshal(merged)
 	if err != nil {
-		return err
+		return dropped, err
 	}
-	return os.WriteFile(out, data, 0644)
+	return dropped, os.WriteFile(out, data, 0644)
 }
 
 func maxInt(a, b int) int {

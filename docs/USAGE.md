@@ -183,6 +183,7 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge export RUN --format sarif\|defectdojo` | Exports a run report for CI (SARIF) or DefectDojo (generic findings). |
 | `scanforge triage RUN` | Groups, groups and (with an `ai:` backend) analyzes the findings of a run. |
 | `scanforge auth` | Manages the keys required by some tools. |
+| `scanforge benchmark run LAB\|--all` | Maintainer tool: runs the real pipeline against bundled vulnerable labs and scores detection against expectations. |
 | `scanforge version` | Displays the binary version. |
 
 See `scanforge <command> --help` for the exact list of options.

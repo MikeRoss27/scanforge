@@ -71,6 +71,36 @@ type RunContext struct {
 	// rejected counts per-artifact how many lines the scope filter dropped,
 	// so consumers can tell an empty input apart from a filtered one.
 	rejected map[string]int
+	// waf is wafw00f's detection result, read by request-heavy modules
+	// (ffuf, nuclei, katana) to decide whether to throttle and vary their
+	// request fingerprint. Zero value means no WAF was detected, or
+	// wafw00f was not part of the profile.
+	waf WAFInfo
+}
+
+// WAFInfo describes whether wafw00f detected a WAF in front of the target
+// and which product(s), so request-heavy modules can back off and vary
+// their footprint instead of hammering a filtering edge with a fixed
+// signature.
+type WAFInfo struct {
+	Detected bool
+	Names    []string
+}
+
+// SetWAFInfo records wafw00f's detection result. Safe for concurrent use;
+// called at most once per run, by wafw00f itself after it finishes.
+func (c *RunContext) SetWAFInfo(info WAFInfo) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.waf = info
+}
+
+// GetWAFInfo returns wafw00f's detection result, or the zero value when
+// wafw00f was not selected for this run or found nothing.
+func (c *RunContext) GetWAFInfo() WAFInfo {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.waf
 }
 
 // artifactState lets a running module wait for an optional artifact without
@@ -357,6 +387,47 @@ func (c *RunContext) IsInScope(value string) bool {
 		return true
 	}
 	return c.Scope.IsAllowed(value)
+}
+
+// scopeAddition is one audit line of 00_meta/scope-additions.jsonl: a host a
+// module added to the effective scope mid-run, with why.
+type scopeAddition struct {
+	Timestamp string `json:"timestamp"`
+	Host      string `json:"host"`
+	Source    string `json:"source"`
+	Reason    string `json:"reason"`
+}
+
+// AllowDiscoveredHost adds an exact host discovered mid-run — a backend
+// endpoint found in the target's own client code — to the effective scope so
+// downstream modules may probe the target's own infrastructure. It records
+// provenance to 00_meta/scope-additions.jsonl for audit. It is a no-op on a
+// nil scope or a dry run, and returns true only when the host was newly
+// allowed. The scope mutation happens under the same lock that guards
+// filterArtifact, so it is race-free with artifact publication.
+func (c *RunContext) AllowDiscoveredHost(host, source, reason string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.Scope == nil || c.Run == nil || c.DryRun {
+		return false
+	}
+	if !c.Scope.AllowHost(host) {
+		return false
+	}
+	rec := scopeAddition{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Host:      host,
+		Source:    source,
+		Reason:    reason,
+	}
+	if data, err := json.Marshal(rec); err == nil {
+		path := c.Run.Path("00_meta", "scope-additions.jsonl")
+		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			_, _ = f.Write(append(data, '\n'))
+			_ = f.Close()
+		}
+	}
+	return true
 }
 
 func (c *RunContext) MustArtifact(name string) (Artifact, error) {

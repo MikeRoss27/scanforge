@@ -10,6 +10,29 @@ type Result struct {
 	Name        string
 	Status      string
 	OutputFiles map[string]string
+	// Reason explains a non-completed Status the module chose itself, e.g.
+	// why it skipped ("no WordPress detected"). Empty otherwise.
+	Reason string
+}
+
+// SkipNotApplicable marks a successful result as skipped because the module
+// had nothing to do (its input is empty or irrelevant for this target). The
+// artifacts it published stay valid; only the status and reason change, so
+// the console shows a single [SKIP] line instead of a warning plus [OK].
+func SkipNotApplicable(res *Result, err error, reason string) (*Result, error) {
+	if err != nil || res == nil {
+		return res, err
+	}
+	res.Status = "skipped"
+	res.Reason = reason
+	return res, nil
+}
+
+// IsNotApplicable reports whether a result was skipped by the module itself
+// (SkipNotApplicable) rather than by the orchestrator for a missing
+// dependency.
+func IsNotApplicable(res *Result) bool {
+	return res != nil && res.Status == "skipped" && res.Reason != ""
 }
 
 type Module interface {

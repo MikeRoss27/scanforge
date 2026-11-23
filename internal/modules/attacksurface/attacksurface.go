@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
@@ -19,6 +20,47 @@ import (
 )
 
 const outputRel = "04_surface/attack-surface.txt"
+
+// maxURLsPerHost bounds how many URLs one host contributes to the attack
+// surface. It is a safety net behind ffuf's catch-all filtering: a single
+// host feeding thousands of URLs to nuclei turned a minute-long scan into a
+// 12+ minute one with zero findings. 500 stays well above what crawling and
+// a common wordlist legitimately find on one host.
+const maxURLsPerHost = 500
+
+// hostTruncation records a host whose URLs exceeded maxURLsPerHost.
+type hostTruncation struct {
+	host  string
+	total int
+}
+
+// capPerHost keeps at most limit URLs per host, preserving input order
+// (alive hosts first, then crawled, fuzzed and JS-discovered URLs, so the
+// most trustworthy sources survive). Truncated hosts are returned sorted by
+// host name so warnings are deterministic. URLs without a parseable host
+// share one bucket.
+func capPerHost(urls []string, limit int) ([]string, []hostTruncation) {
+	counts := map[string]int{}
+	kept := make([]string, 0, len(urls))
+	for _, value := range urls {
+		host := ""
+		if parsed, err := url.Parse(value); err == nil {
+			host = strings.ToLower(parsed.Host)
+		}
+		counts[host]++
+		if counts[host] <= limit {
+			kept = append(kept, value)
+		}
+	}
+	var truncated []hostTruncation
+	for host, total := range counts {
+		if total > limit {
+			truncated = append(truncated, hostTruncation{host: host, total: total})
+		}
+	}
+	sort.Slice(truncated, func(i, j int) bool { return truncated[i].host < truncated[j].host })
+	return kept, truncated
+}
 
 type Module struct{}
 
@@ -100,6 +142,12 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 			return nil, fmt.Errorf("failed to read JS-discovered endpoints: %w", err)
 		}
 		add(endpoints)
+	}
+
+	urls, truncated := capPerHost(urls, maxURLsPerHost)
+	for _, t := range truncated {
+		runCtx.EmitWarning(fmt.Sprintf("attacksurface: %s has %d URLs, keeping the first %d (likely a catch-all or WAF response; downstream scanners would otherwise crawl through thousands of fake paths)",
+			t.host, t.total, maxURLsPerHost))
 	}
 
 	if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, runner.Command{

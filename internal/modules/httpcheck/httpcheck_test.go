@@ -109,12 +109,22 @@ func TestInspectURLCrossHostRedirectNotAttributed(t *testing.T) {
 	}))
 	defer redirector.Close()
 
-	found := inspectURL(context.Background(), &http.Client{Timeout: requestTimeout}, redirector.URL, nil)
+	found, reached := inspectURL(context.Background(), &http.Client{Timeout: requestTimeout}, redirector.URL, nil)
 	if len(found) != 0 {
 		t.Fatalf("cross-host redirect must not produce findings, got %+v", found)
 	}
+	if !reached {
+		t.Fatal("a followed redirect counts as reached even when its findings are discarded")
+	}
 	if external.Load() == 0 {
 		t.Fatal("redirect was not followed; test is inconclusive")
+	}
+}
+
+func TestInspectURLUnreachableIsNotReached(t *testing.T) {
+	found, reached := inspectURL(context.Background(), &http.Client{Timeout: requestTimeout}, "http://127.0.0.1:1", nil)
+	if found != nil || reached {
+		t.Fatalf("inspectURL(unreachable) = (%+v, %v), want (nil, false)", found, reached)
 	}
 }
 
@@ -252,6 +262,28 @@ func TestRunChecksLiveServer(t *testing.T) {
 	}
 	if strings.Contains(string(data), "missing-hsts") {
 		t.Fatalf("plain HTTP target must not be flagged for HSTS, got %q", data)
+	}
+}
+
+func TestRunReportsPartialWhenEveryURLUnreachable(t *testing.T) {
+	run := testRun(t)
+	// Nothing listens on these; every probe fails at the transport level,
+	// the signature of a connection being dropped/blocked outright.
+	writeURLs(t, run, "http://127.0.0.1:1/\nhttp://127.0.0.1:2/\n")
+	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	if err := runCtx.AddArtifact("attack_surface_urls", modules.Artifact{Name: "attack_surface_urls", Type: "text", Path: "04_surface/attack-surface.txt"}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := New().Run(context.Background(), runCtx, nil)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != "partial" {
+		t.Fatalf("Run() status = %q, want partial (every probe was unreachable)", result.Status)
+	}
+	if result.Reason == "" {
+		t.Fatal("a non-completed status should carry a Reason explaining why")
 	}
 }
 

@@ -1,0 +1,24 @@
+name: dvwa
+description: "Damn Vulnerable Web Application, self-hosted locally via Docker — the only lab here with a precisely known, pinned vulnerability set."
+target: "http://localhost:4280"
+scope_mode: exact
+profile: web
+timeout: 10m
+strict: true
+setup: >
+  Not reachable by default: start it yourself first.
+    docker run --rm -d -p 4280:80 --name dvwa vulnerables/web-dvwa
+  Then open http://localhost:4280, log in with admin/password, click
+  "Create / Reset Database", and set DVWA Security to "low" under
+  DVWA Security before running this benchmark.
+expected_technologies: ["php", "mysql"]
+expected_categories:
+  - name: sqli
+    keywords: ["sqli", "sql-injection"]
+    min_count: 1
+  - name: xss
+    keywords: ["xss", "cross-site-scripting"]
+    min_count: 1
+  - name: command-injection
+    keywords: ["command-injection", "rce", "os-command"]
+    min_count: 1

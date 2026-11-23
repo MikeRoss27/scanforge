@@ -71,6 +71,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(NewAuthCommand(application))
 	cmd.AddCommand(NewConfigCommand(application))
 	cmd.AddCommand(NewDoctorCommand(application))
+	cmd.AddCommand(NewBenchmarkCommand(application))
 	cmd.AddCommand(NewUpdateCommand(application))
 	cmd.AddCommand(NewVersionCommand())
 
