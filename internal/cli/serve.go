@@ -83,7 +83,7 @@ func NewMCPCommand(application *app.App) *cobra.Command {
 	var f serveFlags
 	cmd := &cobra.Command{
 		Use:     "mcp",
-		GroupID: groupReports,
+		GroupID: groupIntegration,
 		Short:   "Serve ScanForge to AI agents over MCP (stdio)",
 		Long: `Starts a Model Context Protocol server on stdin/stdout exposing the run
 store (list_runs, get_run, get_assets, get_findings, get_evidence) and plan_scan.
@@ -112,7 +112,7 @@ func NewAPICommand(application *app.App) *cobra.Command {
 	var unsafeBind bool
 	cmd := &cobra.Command{
 		Use:     "api",
-		GroupID: groupReports,
+		GroupID: groupIntegration,
 		Short:   "Serve the run store over a local HTTP JSON API",
 		Long: `Serves runs, assets, findings and evidence read-only on 127.0.0.1.
 POST/DELETE endpoints (plan, scans) require a bearer token generated at startup.

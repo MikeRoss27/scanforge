@@ -29,7 +29,8 @@ execution waves (which modules run, in what order, and what each one
 requires) without executing anything. Use it to sanity-check a profile
 before running a scan.`,
 		Example: `  scanforge plan example.com --preset deep
-  scanforge plan --targets targets.txt --profile web`,
+  scanforge plan --targets targets.txt --profile web
+  scanforge plan example.com --workflow workflows/web-recon.yaml`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --profile takes precedence; --preset is shorthand for one of

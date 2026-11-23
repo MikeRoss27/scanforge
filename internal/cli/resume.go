@@ -48,7 +48,12 @@ func NewStatusCommand(application *app.App) *cobra.Command {
 		Use:     "status <run-id>",
 		GroupID: groupReports,
 		Short:   "Show the checkpoint state of a run",
-		Args:    cobra.ExactArgs(1),
+		Long: `Prints each module's status (pending, running, completed, failed, skipped,
+cancelled), its input hash and the run's scope provenance. <run-id> can be a
+bare id, <target>/<id> or a run directory path.`,
+		Example: `  scanforge status 2026-08-18_10-00-00
+  scanforge status example.com/2026-08-18_10-00-00 --json`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			run, text, err := application.RunStatus(args[0])
 			if err != nil {
@@ -75,13 +80,18 @@ func NewRunsCommand(application *app.App) *cobra.Command {
 		Use:     "runs",
 		GroupID: groupReports,
 		Short:   "Inspect previous runs",
+		Long:    "Lists and inspects runs stored in the workspace's runs/ directory.",
+		Example: `  scanforge runs list
+  scanforge runs list --target example.com --json`,
 	}
 	var target string
 	var jsonOut bool
 	list := &cobra.Command{
 		Use:   "list",
 		Short: "List runs in the workspace, newest first",
-		Args:  cobra.NoArgs,
+		Example: `  scanforge runs list
+  scanforge runs list --target example.com --json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runs, err := application.ListRuns(target)
 			if err != nil {

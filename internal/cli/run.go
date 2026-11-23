@@ -70,10 +70,17 @@ func NewRunCommand(application *app.App) *cobra.Command {
 the selected profile or preset. The effective scope is built from scope.txt
 and every artifact is filtered against it before downstream modules consume
 it. Results are written to runs/<target>/<timestamp>/ with a consolidated
-report (report.json / report.md).`,
+report (report.json / report.md).
+
+An interrupted run can be continued with 'scanforge resume'. Use --workflow
+to run a validated YAML workflow instead of a profile, and --concurrency,
+--rps, --max-requests and --command-timeout to cap how hard the run hits
+its targets.`,
 		Example: `  scanforge run example.com
   scanforge run --targets targets.txt --profile web
-  scanforge run example.com --dry-run`,
+  scanforge run example.com --dry-run
+  scanforge run example.com --scope scope.txt --workflow workflows/web-recon.yaml
+  scanforge run example.com --preset web --rps 10 --concurrency 4`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --profile takes precedence; --preset is shorthand for one of

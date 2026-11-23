@@ -19,7 +19,7 @@ var newIntelClient = func() *vulnintel.Client {
 func NewIntelCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "intel",
-		GroupID: groupMaintenance,
+		GroupID: groupIntegration,
 		Short:   "Manage the local vulnerability intelligence cache (NVD, KEV, EPSS)",
 		Long: `Manage the local vulnerability intelligence cache used by techcve.
 
@@ -27,6 +27,8 @@ Feeds are downloaded ONLY by 'intel update'; scans never touch the network for
 intel and use the cache in offline mode. Set SCANFORGE_NVD_API_KEY (or
 NVD_API_KEY) for a higher NVD rate limit. Cache directory: SCANFORGE_INTEL_DIR
 or ~/.cache/scanforge/vulnintel.`,
+		Example: `  scanforge intel update
+  scanforge intel status`,
 	}
 	cmd.AddCommand(newIntelUpdateCommand(), newIntelStatusCommand())
 	return cmd
@@ -64,9 +66,10 @@ func newIntelUpdateCommand() *cobra.Command {
 
 func newIntelStatusCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "status",
-		Short: "Show what the local intel cache contains (offline)",
-		Args:  cobra.NoArgs,
+		Use:     "status",
+		Short:   "Show what the local intel cache contains (offline)",
+		Example: `  scanforge intel status`,
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, err := vulnintel.OpenDefault()
 			if err != nil {

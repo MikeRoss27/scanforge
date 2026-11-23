@@ -12,6 +12,7 @@ import (
 const (
 	groupCore        = "core"
 	groupReports     = "reports"
+	groupIntegration = "integrations"
 	groupConfig      = "config"
 	groupMaintenance = "maintenance"
 )
@@ -23,9 +24,19 @@ func NewRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scanforge",
 		Short: "Authorized pentest scan orchestrator",
-		Long:  "ScanForge runs scope-validated security scans and saves consolidated reports.",
+		Long: `ScanForge runs scope-validated security scans and saves consolidated reports.
+
+Every artifact is filtered against the effective scope before any module can
+read it. Runs are stored as plain files under runs/<target>/<timestamp>/ and can
+be interrupted and resumed. Findings keep leaked secret values in full (they are
+the evidence); only your own credentials are masked in logs and agent output.`,
 		Example: `  scanforge run example.com --profile web --confirm-scope
   scanforge plan example.com --preset deep
+  scanforge run example.com --workflow workflows/web-recon.yaml --rps 20
+  scanforge resume example.com/<run-id>
+  scanforge runs list
+  scanforge intel update
+  scanforge mcp --allow-active --scope scope.txt
   scanforge diff runs/<target>/<run-a> runs/<target>/<run-b>
   scanforge doctor --profile web`,
 		// Runtime errors (a failed module, a deadlock, ...) must not dump
@@ -53,6 +64,7 @@ func NewRootCommand() *cobra.Command {
 
 	cmd.AddGroup(&cobra.Group{ID: groupCore, Title: "Core Commands:"})
 	cmd.AddGroup(&cobra.Group{ID: groupReports, Title: "Reports & Analysis:"})
+	cmd.AddGroup(&cobra.Group{ID: groupIntegration, Title: "Agents & Intelligence:"})
 	cmd.AddGroup(&cobra.Group{ID: groupConfig, Title: "Configuration:"})
 	cmd.AddGroup(&cobra.Group{ID: groupMaintenance, Title: "Maintenance:"})
 

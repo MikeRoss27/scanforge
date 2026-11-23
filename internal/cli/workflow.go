@@ -13,6 +13,12 @@ func NewWorkflowCommand(application *app.App) *cobra.Command {
 		Use:     "workflow",
 		GroupID: groupCore,
 		Short:   "Manage declarative YAML workflows",
+		Long: `Workflows describe steps, dependencies, timeouts, retries and error policy in
+YAML. They are validated against the module registry, cannot run arbitrary
+shell commands, and go through the same scope enforcement as profiles. Run
+one with 'scanforge run --workflow file.yaml'; see docs/WORKFLOWS.md.`,
+		Example: `  scanforge workflow validate workflows/web-recon.yaml
+  scanforge plan example.com --workflow workflows/web-recon.yaml`,
 	}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "validate <file.yaml>",
