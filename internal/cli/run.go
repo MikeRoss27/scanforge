@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/app"
+	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/console"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/spf13/cobra"
@@ -40,6 +41,11 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var nucleiFullScan bool
 
 	var nmapConcurrency int
+
+	var limitConcurrency int
+	var limitRPS float64
+	var limitMaxRequests int
+	var limitCommandTimeout time.Duration
 
 	var ffufWordlist string
 	var ffufFilterCodes string
@@ -104,6 +110,12 @@ report (report.json / report.md).`,
 					FullScan:               nucleiFullScan,
 				},
 				NmapConcurrency: nmapConcurrency,
+				Limits: config.Limits{
+					Concurrency:    limitConcurrency,
+					RPS:            limitRPS,
+					MaxRequests:    limitMaxRequests,
+					CommandTimeout: limitCommandTimeout,
+				},
 				Ffuf: modules.FfufOptions{
 					Wordlist:    ffufWordlist,
 					FilterCodes: ffufFilterCodes,
@@ -148,6 +160,10 @@ report (report.json / report.md).`,
 	cmd.Flags().BoolVar(&nucleiIncludeCustom, "nuclei-include-custom", false, "Nuclei: also run the bundled ScanForge custom templates")
 	cmd.Flags().BoolVar(&nucleiFullScan, "nuclei-full-scan", false, "Nuclei: run every template against every host instead of nuclei's technology-aware automatic scan (-as); much slower, raise --nuclei-timeout to match")
 
+	cmd.Flags().IntVar(&limitConcurrency, "concurrency", 0, "Global cap on commands running at once (overrides limits.concurrency; 0 = config/unlimited)")
+	cmd.Flags().Float64Var(&limitRPS, "rps", 0, "Global cap on command launches per second; also lowers tools' own rate flags (overrides limits.rps)")
+	cmd.Flags().IntVar(&limitMaxRequests, "max-requests", 0, "Global budget of commands per run; later commands fail once spent (overrides limits.max_requests)")
+	cmd.Flags().DurationVar(&limitCommandTimeout, "command-timeout", 0, "Upper bound for every command's timeout, e.g. 20m (overrides limits.command_timeout)")
 	cmd.Flags().IntVar(&nmapConcurrency, "nmap-concurrency", 0, "Max concurrent nmap processes (default 4; lower to reduce noise)")
 
 	cmd.Flags().StringVar(&ffufWordlist, "ffuf-wordlist", "", "Path to an ffuf wordlist (default: auto-detect)")

@@ -59,6 +59,9 @@ type RunOptions struct {
 	// WordPress carries WordPress-engagement tuning (enumeration mode,
 	// aggressive wordlist, opt-in brute force).
 	WordPress modules.WordPressOptions
+	// Limits overrides the config `limits:` section; zero fields keep the
+	// config value.
+	Limits config.Limits
 }
 
 type DoctorOptions struct {
