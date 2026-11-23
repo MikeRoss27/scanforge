@@ -211,6 +211,7 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 			Ffuf:            s.opts.Ffuf,
 			NmapConcurrency: s.opts.NmapConcurrency,
 			WordPress:       s.opts.WordPress,
+			Events:          s.opts.Events,
 		}, eventChan)
 	}()
 

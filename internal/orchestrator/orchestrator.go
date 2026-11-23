@@ -43,6 +43,8 @@ type Options struct {
 	NmapConcurrency int
 	// WordPress carries WordPress-engagement tuning.
 	WordPress modules.WordPressOptions
+	// Events enables the experimental discovery event bus (off by default).
+	Events bool
 	// ModuleStallTimeout overrides the default module stall detection
 	// window (how long a module may run without output before the console is
 	// warned that it appears stalled). Zero means the orchestrator default.
@@ -121,6 +123,11 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	runCtx.Ffuf = opts.Ffuf
 	runCtx.NmapConcurrency = opts.NmapConcurrency
 	runCtx.WordPress = opts.WordPress
+	if opts.Events {
+		if err := runCtx.EnableEvents(); err != nil {
+			return nil, fmt.Errorf("enable events: %w", err)
+		}
+	}
 
 	// moduleActivity tracks, per module name, when it started and when it
 	// last emitted progress or a finding. The stall watchdog watches this

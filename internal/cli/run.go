@@ -25,6 +25,7 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var quiet bool
 
 	var proxy string
+	var eventsEnabled bool
 	var headers []string
 
 	var nucleiSeverity string
@@ -90,6 +91,7 @@ report (report.json / report.md).`,
 				Verbosity:    console.ParseVerbosity(verbosityCount, quiet),
 				Proxy:        proxy,
 				Headers:      headers,
+				Events:       eventsEnabled,
 				Nuclei: modules.NucleiOptions{
 					Severity:               nucleiSeverity,
 					ExcludeSeverity:        nucleiExcludeSeverity,
@@ -133,6 +135,7 @@ report (report.json / report.md).`,
 	cmd.Flags().CountVarP(&verbosityCount, "verbose", "v", "Increase verbosity: -v detailed modules, -vv commands, -vvv redirections")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Only findings, warnings, errors and the summary")
 
+	cmd.Flags().BoolVar(&eventsEnabled, "events", false, "Experimental: emit discovery events (subdomains -> DNS_NAME) to 00_meta/events.jsonl, scope-gated")
 	cmd.Flags().StringVar(&proxy, "proxy", "", "Route HTTP-capable modules through a proxy, e.g. Caido/Burp at http://127.0.0.1:8080")
 	cmd.Flags().StringArrayVarP(&headers, "header", "H", nil, "Custom HTTP header sent with every request, e.g. 'Authorization: Bearer <token>' (repeatable)")
 
