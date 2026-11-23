@@ -48,6 +48,13 @@ type RunOptions struct {
 	// Events enables the experimental discovery event bus (off by default).
 	Events bool
 
+	// Recursive enables the bounded recursive discovery loop (implies the
+	// event bus). RecursiveDepth/RecursiveBudget override the config
+	// `recursive:` section when non-zero.
+	Recursive       bool
+	RecursiveDepth  int
+	RecursiveBudget int
+
 	// Proxy routes HTTP-capable modules through an intercepting proxy such
 	// as Caido or Burp Suite (e.g. http://127.0.0.1:8080).
 	Proxy string
