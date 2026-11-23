@@ -146,7 +146,7 @@ func artifactNonEmpty(path string) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	buf, _ := io.ReadAll(io.LimitReader(f, 1<<20))
 	return len(strings.TrimSpace(string(buf))) > 0
 }

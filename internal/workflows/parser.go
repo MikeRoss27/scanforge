@@ -95,7 +95,7 @@ func Load(path string) (*Workflow, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open workflow: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(io.LimitReader(f, MaxFileSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("read workflow: %w", err)

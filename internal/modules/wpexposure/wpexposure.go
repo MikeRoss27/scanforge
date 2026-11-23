@@ -80,11 +80,6 @@ func (m *Module) Description() string {
 func (m *Module) Requires() []string { return []string{"wp_fingerprint"} }
 func (m *Module) Produces() []string { return []string{reportName} }
 
-type probeJob struct {
-	host  wpcore.FingerprintRecord
-	check exposureCheck
-}
-
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.Executor) (*modules.Result, error) {
 	fpArt, err := runCtx.MustArtifact("wp_fingerprint")
 	if err != nil {

@@ -1,4 +1,4 @@
-// help.go replaces Cobra's plain-text help template with one shared, colored
+// Package cli implements the scanforge cobra commands. help.go replaces Cobra's plain-text help template with one shared, colored
 // renderer for the whole command tree. Section labels, ordering and wording
 // follow Cobra's defaults so scripts, tests and docs keep parsing the output;
 // lipgloss adds color only when the terminal supports it — piped output and
@@ -31,7 +31,7 @@ var flagLineRe = regexp.MustCompile(`^(\s*(?:-[[:alnum:]], )?--[^\s]+(?: [^\s]+)
 // Installed on the root command, it is inherited by every child through
 // Cobra's HelpFunc lookup.
 func renderColoredHelp(cmd *cobra.Command, _ []string) {
-	fmt.Fprint(cmd.OutOrStdout(), renderHelp(cmd))
+	_, _ = fmt.Fprint(cmd.OutOrStdout(), renderHelp(cmd))
 }
 
 // renderHelp assembles the help of a single command from its sections. Every

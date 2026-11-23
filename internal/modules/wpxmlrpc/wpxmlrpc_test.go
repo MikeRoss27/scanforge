@@ -41,7 +41,7 @@ func TestProbeXMLRPCEnabled(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/xml")
-		io.WriteString(w, listMethodsReply)
+		_, _ = io.WriteString(w, listMethodsReply)
 	}))
 	defer server.Close()
 
@@ -64,7 +64,7 @@ func TestProbeXMLRPCEnabled(t *testing.T) {
 
 func TestProbeXMLRPCNotXMLRPC(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "plain 404-like page")
+		_, _ = io.WriteString(w, "plain 404-like page")
 	}))
 	defer server.Close()
 
@@ -99,7 +99,7 @@ func TestProbeXMLRPCGetFallbackDetectsEnabled(t *testing.T) {
 	// though the listMethods call itself didn't parse.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, "XML-RPC server accepts POST requests only.")
+		_, _ = io.WriteString(w, "XML-RPC server accepts POST requests only.")
 	}))
 	defer server.Close()
 
@@ -121,7 +121,7 @@ func TestRunPublishesFindingsForEnabledHosts(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/xml")
-		io.WriteString(w, listMethodsReply)
+		_, _ = io.WriteString(w, listMethodsReply)
 	}))
 	defer server.Close()
 

@@ -52,25 +52,25 @@ func supabaseServer(t *testing.T, paths *[]string, mu *sync.Mutex) *httptest.Ser
 		mu.Lock()
 		*paths = append(*paths, r.URL.Path+"?"+r.URL.RawQuery)
 		mu.Unlock()
-		switch {
-		case r.URL.Path == "/rest/v1/":
+		switch r.URL.Path {
+		case "/rest/v1/":
 			if r.Header.Get("apikey") == "" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 			w.Header().Set("Content-Type", "application/openapi+json")
 			_, _ = w.Write([]byte(`{"swagger":"2.0","definitions":{"public_notes":{},"private_audit":{}},"paths":{"/":{}}}`))
-		case r.URL.Path == "/rest/v1/public_notes":
+		case "/rest/v1/public_notes":
 			// Readable under anon: return a count, and (hostilely) a row body.
 			// dbenum must store the count but never the row body.
 			w.Header().Set("Content-Range", "0-0/7")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`[{"secret":"` + secretRowMarker + `"}]`))
-		case r.URL.Path == "/rest/v1/private_audit":
+		case "/rest/v1/private_audit":
 			// RLS blocks anon reads.
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"message":"permission denied"}`))
-		case r.URL.Path == "/auth/v1/settings":
+		case "/auth/v1/settings":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"external":{"github":true,"email":true},"disable_signup":false}`))
 		default:

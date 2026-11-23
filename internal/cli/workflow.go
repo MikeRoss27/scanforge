@@ -35,10 +35,10 @@ executed and no run directory is created.`,
 				return fmt.Errorf("invalid workflow: %w", err)
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "workflow %q is valid: %d steps\n", c.Name, len(c.Modules))
+			_, _ = fmt.Fprintf(out, "workflow %q is valid: %d steps\n", c.Name, len(c.Modules))
 			for _, s := range c.Waves {
 				p := c.Policies[s.Name]
-				fmt.Fprintf(out, "  wave %d  %-14s step=%s on_error=%s retries=%d\n", s.Wave, s.Name, p.StepID, p.OnError, p.Retries)
+				_, _ = fmt.Fprintf(out, "  wave %d  %-14s step=%s on_error=%s retries=%d\n", s.Wave, s.Name, p.StepID, p.OnError, p.Retries)
 			}
 			return nil
 		},

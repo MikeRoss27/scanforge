@@ -55,11 +55,6 @@ func (m *Module) Produces() []string { return []string{reportName} }
 
 var authorSlugRe = regexp.MustCompile(`/author/([A-Za-z0-9_.-]+)`)
 
-type probeJob struct {
-	host wpcore.FingerprintRecord
-	id   int
-}
-
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.Executor) (*modules.Result, error) {
 	fpArt, err := runCtx.MustArtifact("wp_fingerprint")
 	if err != nil {
