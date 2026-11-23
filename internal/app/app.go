@@ -113,6 +113,9 @@ type runSession struct {
 	scanRun     *storage.Run
 	cfg         *config.Config
 	reportErr   error
+	// resume makes the orchestrator reuse unchanged completed modules from
+	// the run's manifest checkpoints.
+	resume bool
 	// console owns every terminal write of the run and term describes the
 	// output destination it renders for.
 	console *console.Renderer

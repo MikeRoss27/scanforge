@@ -46,15 +46,21 @@ func (a *App) runOne(ctx context.Context, opts RunOptions) error {
 		return err
 	}
 
-	results, runErr := session.execute(ctx)
+	return session.executeAndFinish(ctx)
+}
 
-	manifestErr := session.finalizeManifest(results, runErr)
-	rep := session.generateReports()
-	session.printSummary(results, rep, runErr)
+// executeAndFinish runs the pipeline, then finalizes the manifest, reports
+// and summary. Shared by `run` and `resume`.
+func (s *runSession) executeAndFinish(ctx context.Context) error {
+	results, runErr := s.execute(ctx)
 
-	if !opts.DryRun {
-		if err := notifyWebhook(ctx, session.cfg, session.scanRun, rep); err != nil {
-			session.console.Warn("webhook notification failed: %v", err)
+	manifestErr := s.finalizeManifest(results, runErr)
+	rep := s.generateReports()
+	s.printSummary(results, rep, runErr)
+
+	if !s.opts.DryRun {
+		if err := notifyWebhook(ctx, s.cfg, s.scanRun, rep); err != nil {
+			s.console.Warn("webhook notification failed: %v", err)
 		}
 	}
 
@@ -138,13 +144,32 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 	scanRun.Manifest.ScopeSource = effective.proposal.Source
 	scanRun.Manifest.ScopeMode = effective.proposal.Mode
 	scanRun.Manifest.Outputs["effective_scope"] = scanRun.Manifest.ScopePath
+	scanRun.Manifest.DryRun = opts.DryRun
+	scope256, err := fileSHA256(effectiveScopePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash effective scope: %w", err)
+	}
+	scanRun.Manifest.ScopeSHA256 = scope256
+	params, err := persistParams(opts, moduleNames)
+	if err != nil {
+		return nil, err
+	}
+	scanRun.Manifest.Params = params
 	if err := scanRun.WriteManifest(); err != nil {
 		return nil, fmt.Errorf("failed to record effective scope in manifest: %w", err)
 	}
 
+	session := newRunSession(opts, profile, effective, moduleNames, scanRun, cfg)
+	session.printIntro(len(moduleNames))
+	return session, nil
+}
+
+// newRunSession builds the session and the console renderer that owns every
+// terminal write of the run.
+func newRunSession(opts RunOptions, profile string, effective *effectiveScope, moduleNames []string, scanRun *storage.Run, cfg *config.Config) *runSession {
 	out := os.Stdout
 	term := console.DetectTerminal(out)
-	session := &runSession{
+	return &runSession{
 		opts:        opts,
 		profile:     profile,
 		effective:   effective,
@@ -162,8 +187,6 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 			Spinner:   console.ResolveSpinner(),
 		}),
 	}
-	session.printIntro(len(moduleNames))
-	return session, nil
 }
 
 // execute builds the registry and executor, then runs the orchestrator in a
@@ -177,7 +200,17 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 		executor = runner.NewRealExecutor(s.executorVerbose(), runner.WithCommandSink(s.commandSink()))
 	}
 
+	s.scanRun.Manifest.Status = "running"
+	if err := s.scanRun.WriteManifest(); err != nil {
+		s.console.Warn("failed to mark run as running: %v", err)
+	}
+
 	orch := orchestrator.New(executor, buildRegistry(s.cfg))
+	var toolVersion func(string) string
+	if !s.opts.DryRun {
+		versions := detectToolVersions(ctx, executor, s.cfg, s.moduleNames)
+		toolVersion = func(name string) string { return versions[name] }
+	}
 	// Buffered so a module emitting a burst of findings (e.g. nuclei) doesn't
 	// block on the renderer catching up.
 	eventChan := make(chan orchestrator.Event, 64)
@@ -211,6 +244,8 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 			Ffuf:            s.opts.Ffuf,
 			NmapConcurrency: s.opts.NmapConcurrency,
 			WordPress:       s.opts.WordPress,
+			Resume:          s.resume,
+			ToolVersion:     toolVersion,
 		}, eventChan)
 	}()
 
