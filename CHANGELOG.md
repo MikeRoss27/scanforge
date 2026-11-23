@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pinned external tools bumped: subfinder v2.17.0, dnsx v1.3.1, httpx v1.12.0, naabu v2.7.0, katana v1.8.0, nuclei v3.11.1, tlsx v1.5.0, ffuf v2.3.0 (SecLists, gau, shuffledns, massdns, wafw00f unchanged)
 - Fixed existing golangci-lint findings (unchecked errors, unused types)
 
+### Fixed
+
+- `nuclei` no longer fails when a WAF is detected: it was passed `-random-agent`, a flag that does not exist in nuclei v3 ("flag provided but not defined"). It now sets a random browser-like `User-Agent` header, as `ffuf` and `katana` do
+
 ### Notes
 
 - Findings keep leaked secret values in full (they are bounty evidence); only the operator's own credentials are masked in API/MCP output

@@ -150,10 +150,11 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		// undone by a burst of parallel requests.
 		args = append(args, "-c", "10")
 		if !modules.HasHeaderNamed(runCtx.Headers, "User-Agent") {
-			// Vary the User-Agent per request instead of nuclei's own fixed
-			// default, so the whole template sweep doesn't share one
-			// fingerprint a WAF can block outright.
-			args = append(args, "-random-agent")
+			// Use a browser-like User-Agent instead of nuclei's own default
+			// fingerprint, which a WAF can block outright. nuclei v3 has no
+			// built-in rotation flag (-random-agent does not exist), so a
+			// random one is picked per run, as ffuf and katana do.
+			args = append(args, "-H", "User-Agent: "+modules.RandomUserAgent())
 		}
 	}
 	args = append(args, runCtx.ProxyArgs("-proxy")...)

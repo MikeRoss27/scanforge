@@ -60,7 +60,7 @@ func TestRunAppliesWAFBypassWhenWAFDetected(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 	args := strings.Join(executor.commands[0].Args, " ")
-	for _, want := range []string{"-rate-limit 40", "-c 10", "-random-agent"} {
+	for _, want := range []string{"-rate-limit 40", "-c 10", "-H User-Agent: "} {
 		if !strings.Contains(args, want) {
 			t.Errorf("args %q missing WAF-bypass flag %q", args, want)
 		}
@@ -91,8 +91,8 @@ func TestRunRespectsExplicitRateLimitAndHeaderDespiteWAF(t *testing.T) {
 	if !strings.Contains(args, "-rate-limit 77") {
 		t.Errorf("args %q should keep the operator's explicit rate limit", args)
 	}
-	if strings.Contains(args, "-random-agent") {
-		t.Errorf("args %q should not override an operator-supplied User-Agent", args)
+	if strings.Count(args, "User-Agent:") != 1 {
+		t.Errorf("args %q should keep exactly the operator-supplied User-Agent", args)
 	}
 }
 
