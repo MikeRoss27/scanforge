@@ -303,7 +303,12 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 				status = "aborted"
 			}
 			if outChan != nil {
-				done := ModuleDoneEvent{Name: m.Name(), Status: status, Dur: time.Since(start), Failed: status != "completed", Summary: moduleSummary(runCtx, m, result)}
+				// A module that skipped itself (nothing applicable to do) is
+				// not a failure: the console renders it as a single [SKIP].
+				done := ModuleDoneEvent{Name: m.Name(), Status: status, Dur: time.Since(start), Failed: status != "completed" && status != "skipped", Summary: moduleSummary(runCtx, m, result)}
+				if err == nil && result != nil {
+					done.Reason = result.Reason
+				}
 				if err != nil {
 					done.Error = err.Error()
 					done.Kind = runner.ClassifyFailure(err)

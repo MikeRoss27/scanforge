@@ -26,8 +26,11 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 - **Interactive wizard**: a bare `scanforge run` on a terminal asks for the missing target and profile instead of failing.
 - **Proxy integration (Caido / Burp Suite)**: `--proxy` routes HTTP traffic of the relevant modules through your interception proxy for manual triage/replay.
 - **Authenticated scanning**: `-H/--header` (repeatable) injects headers/cookies (session, bearer token) into every HTTP request issued.
-- **JavaScript secrets scanner**: the `jssecrets` module fetches crawled `.js` files and detects exposed API keys/tokens/creds, public cloud buckets, internal hosts, emails, sensitive API endpoints and accessible source maps; the `jsverify` module then replays the generated PoC payloads in a headless browser and reports executed, sink-reached or not-observed verdicts.
+- **JavaScript secrets scanner**: the `jssecrets` module fetches crawled `.js` files (plus JS-looking URLs surfaced by `gau`'s historical URLs and `ffuf`'s fuzzed paths) and detects exposed API keys/tokens/creds — including Anthropic, OpenAI (current and legacy), xAI, Groq, OpenRouter and Perplexity key formats, AWS access/session tokens, Cloudinary URLs, Postman API keys and Basic-Auth headers — public cloud buckets, internal hosts, emails, sensitive API endpoints and accessible source maps; the `jsverify` module then replays the generated PoC payloads in a headless browser and reports executed, sink-reached, not-observed or unreachable verdicts.
+- **Backend-as-a-service detection**: the `dbdetect` module passively fingerprints Supabase/Firebase/Appwrite/PocketBase backends from the target's own crawled pages and JS (never contacting them), then scopes the discovered backend host; `dbenum` performs bounded, read-only enumeration of that backend (table/collection listing, row counts, permission checks) without ever reading row contents.
+- **WAF-aware scanning**: when `wafw00f` reports a WAF, `ffuf`, `nuclei` and `katana` automatically back off — lower concurrency/rate-limit, randomized request delay, and User-Agent rotation — unless you already set an explicit rate limit or `User-Agent` header yourself.
 - **Visual snapshots**: the `screenshot` module captures screenshots of alive URLs via `httpx`, listed in the report.
+- **Benchmark suite**: `scanforge benchmark` runs the real pipeline against bundled intentionally-vulnerable lab targets (Firing Range, testphp.vulnweb.com, Juice Shop demo, local DVWA) and scores detection against documented expectations — a maintainer/CI tool, not part of a client engagement.
 - **WordPress parity mode**: `--preset wp` (or `--wp` on any profile) chains wpdetect (multi-signal core version), wpplugins/wpthemes (passive or aggressive enumeration), wpusers (author + REST API), wpexposure (wp-config backups, debug.log, listings), wpxmlrpc (methods/multicall/pingback) and wpcve (advisory correlation) — the same surface wpscan covers, without new external tools. `wpbrute` is opt-in strict (off by default everywhere).
 - **Tech-to-CVE correlation**: `techcve` matches detected technologies and versions against a bundled dataset with real CVSS base scores from NVD.
 - **Fully configurable Nuclei**: severity, tags, rate-limit, overall timeout, custom templates and template updates via dedicated flags.
@@ -43,7 +46,7 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 
 ## <img src="public/icons/servers.png" height="24" alt=""> Supported Tools
 
-ScanForge centralizes and orchestrates **14 external security tools** and **14 native modules**:
+ScanForge centralizes and orchestrates **14 external security tools** and **16 native modules**:
 
 External tools:
 
@@ -64,11 +67,13 @@ External tools:
 
 Native modules (no external binary):
 
-- **jssecrets** — analyzes JS crawled by `katana` to detect secrets, cloud buckets, internal hosts, emails and exposed source maps
-- **jsverify** — replays `jssecrets` PoC payloads in a headless browser (payload injected via URL parameters, fragment and `postMessage`) and reports executed, sink-reached, or not-observed verdicts
+- **jssecrets** — analyzes JS crawled by `katana` (plus JS URLs from `gau`/`ffuf`) to detect secrets (including AI-provider API keys), cloud buckets, internal hosts, emails and exposed source maps; reports `partial` when every fetch fails instead of a false-clean `completed`
+- **jsverify** — replays `jssecrets` PoC payloads in a headless browser (payload injected via URL parameters, fragment and `postMessage`) and reports executed, sink-reached, not-observed or unreachable verdicts; reports `partial` when the browser is unavailable, fails to launch, or every replay is unreachable
+- **dbdetect** — passively fingerprints Supabase/Firebase/Appwrite/PocketBase backends from already-crawled pages/JS and auto-scopes the discovered backend host
+- **dbenum** — active, read-only enumeration of a `dbdetect`-discovered backend (table/collection listing, row counts, permission checks); never reads row/document contents
 - **attacksurface** — consolidates alive hosts, crawled URLs, fuzzed paths and JS-discovered endpoints into one attack surface list for downstream scanners
 - **techcve** — correlates detected technologies and versions with known CVEs from a bundled dataset (real CVSS base scores from NVD)
-- **httpcheck** — checks HTTP security headers (CSP, HSTS, clickjacking, cookies) on the discovered attack surface
+- **httpcheck** — checks HTTP security headers (CSP, HSTS, clickjacking, cookies) on the discovered attack surface; reports `partial` when every probed URL was unreachable
 - **payloadgen** — generates contextual wordlists (API paths, parameters, per-technology endpoints) from scan findings
 - **wpdetect** — multi-signal WordPress detection and core version fingerprinting (generator, RSS, readme.html, REST index)
 - **wpplugins** / **wpthemes** — enumerate installed plugins/themes passively (crawled assets, `?ver=`) or actively (`readme.txt`/`style.css`, bundled top lists, `--wp-detection-mode`/`--wp-wordlist`)
@@ -78,7 +83,7 @@ Native modules (no external binary):
 - **wpcve** — correlates WordPress core/plugin/theme versions with the bundled advisory dataset (offline)
 - **wpbrute** — opt-in credential probe for enumerated users (`--wp-bruteforce` + `--confirm-scope` + `--wp-passwords`; off by default)
 
-`httpx`, `nuclei`, `katana`, `ffuf`, `whatweb`, `wafw00f`, `subfinder`, `gau`, `jssecrets`, `jsverify`, `httpcheck` and `screenshot` support `--proxy` and `-H/--header` to route traffic through Caido/Burp and scan in authenticated mode.
+`httpx`, `nuclei`, `katana`, `ffuf`, `whatweb`, `wafw00f`, `subfinder`, `gau`, `jssecrets`, `jsverify`, `httpcheck`, `dbdetect`, `dbenum` and `screenshot` support `--proxy` and `-H/--header` to route traffic through Caido/Burp and scan in authenticated mode.
 
 ---
 
@@ -340,8 +345,8 @@ ports, vulnerabilities by severity, run directory).
 | `recon` | subfinder, dnsbrute, gau, dnsx, httpx, tlsx | Inventory enriched with historical URLs and DNS bruteforce. |
 | `passive` | subfinder, dnsx, httpx | Minimal historical pipeline. |
 | `ports` | subfinder, dnsx, naabu, nmap | Open ports then service validation. |
-| `web` | subfinder, dnsbrute, dnsx, httpx, whatweb, wafw00f, katana, jssecrets, jsverify, attacksurface, techcve, httpcheck, payloadgen, screenshot, nuclei | Application analysis: attack-surface consolidation, JS secrets + headless verification, screenshots, tech-to-CVE correlation, header checks and payload generation. |
-| `vuln` | subfinder, dnsbrute, dnsx, httpx, tlsx, katana, jssecrets, attacksurface, techcve, nuclei | Targeted vulnerability detection (tech-to-CVE + templates). |
+| `web` | subfinder, dnsbrute, dnsx, httpx, whatweb, wafw00f, katana, jssecrets, dbdetect, dbenum, jsverify, attacksurface, techcve, httpcheck, payloadgen, screenshot, nuclei | Application analysis: attack-surface consolidation, JS secrets + headless verification, backend-as-a-service detection/enumeration, screenshots, tech-to-CVE correlation, header checks and payload generation. |
+| `vuln` | subfinder, dnsbrute, dnsx, httpx, tlsx, katana, jssecrets, dbdetect, dbenum, attacksurface, techcve, nuclei | Targeted vulnerability detection (tech-to-CVE + templates). |
 | `deep` | All modules | Full and noisy pipeline. |
 | `full` | All modules | Full profile, history-compatible. |
 | `wp` | subfinder, dnsbrute, dnsx, httpx, whatweb, wpdetect, wpplugins, wpthemes, wpusers, wpexposure, wpxmlrpc, wpcve, techcve, httpcheck, attacksurface, nuclei, screenshot | WordPress engagement: detection, plugin/theme enumeration, user mapping, exposure checks, XML-RPC and advisory correlation. `wordpress` is accepted as an alias. `--wp` injects the chain into any other profile. `wpbrute` is opt-in only (`--wp-bruteforce` + `--confirm-scope` + `--wp-passwords`). |
@@ -370,6 +375,7 @@ At the end of each scan, a timestamped folder is created under `./runs/`. In add
 - `06_vulns/cve-findings.jsonl`: Vulnerable versions correlated from fingerprints (module `techcve`).
 - `06_vulns/http-checks.jsonl`: Missing security headers and cookie flags (module `httpcheck`).
 - `06_vulns/nuclei.jsonl`: Raw nuclei findings (module `nuclei`).
+- `06_vulns/db-fingerprint.jsonl`: Detected backend-as-a-service endpoints/keys (module `dbdetect`) and read-only enumeration results — table/collection lists, row counts, permission checks (module `dbenum`).
 
 > <img src="public/icons/shield.png" height="18" alt=""> ScanForge must only be used on assets for which you have explicit
 > authorization.

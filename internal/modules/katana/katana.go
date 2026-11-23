@@ -26,6 +26,10 @@ func (m *Module) Description() string { return "A next-generation crawling and s
 func (m *Module) Requires() []string  { return []string{"alive_urls"} }
 func (m *Module) Produces() []string  { return []string{"crawled_urls"} }
 
+// SoftRequires waits for wafw00f to finish, when it's part of the profile,
+// so WAF detection (GetWAFInfo) is settled before the crawl starts.
+func (m *Module) SoftRequires() []string { return []string{"waf_raw"} }
+
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	inputArt, err := runCtx.MustArtifact("alive_urls")
 	if err != nil {
@@ -37,6 +41,15 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	stderrFile := runCtx.Run.Path("00_meta", "katana.stderr.log")
 
 	args := []string{"-list", inputFile, "-silent", "-depth", "2"}
+	if waf := runCtx.GetWAFInfo(); waf.Detected {
+		// Throttle the crawl (requests/sec) and lower concurrency instead of
+		// katana's defaults, so the crawl doesn't look like a burst of
+		// scripted requests to the filtering edge wafw00f just found.
+		args = append(args, "-rate-limit", "5", "-c", "2")
+		if !modules.HasHeaderNamed(runCtx.Headers, "User-Agent") {
+			args = append(args, "-H", "User-Agent: "+modules.RandomUserAgent())
+		}
+	}
 	args = append(args, runCtx.ProxyArgs("-proxy")...)
 	args = append(args, runCtx.HeaderArgs("-H")...)
 

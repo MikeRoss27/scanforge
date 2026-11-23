@@ -84,6 +84,19 @@ func (a *App) loadConfig() (*config.Config, error) {
 	return config.Load(config.ResolvePath(a.ConfigPath))
 }
 
+// Workspace resolves the configured runs root (default "runs/"), the same
+// directory Run writes every scan into. Exported for callers outside this
+// package that need to locate a run after the fact without re-running
+// App.Run's whole config-loading path themselves — the benchmark command,
+// in particular, which reads back the report a run it just triggered wrote.
+func (a *App) Workspace() (string, error) {
+	cfg, err := a.loadConfig()
+	if err != nil {
+		return "", err
+	}
+	return config.WorkspaceDir(cfg), nil
+}
+
 // runSession holds everything a single run needs after validation, so Run
 // stays a thin sequence and each phase can be reasoned about and tested on
 // its own.

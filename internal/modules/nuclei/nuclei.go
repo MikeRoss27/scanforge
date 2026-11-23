@@ -41,6 +41,10 @@ func (m *Module) Produces() []string {
 	return []string{"nuclei_raw"}
 }
 
+// SoftRequires waits for wafw00f to finish, when it's part of the profile,
+// so WAF detection (GetWAFInfo) is settled before the scan starts.
+func (m *Module) SoftRequires() []string { return []string{"waf_raw"} }
+
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
 	inputArt, err := runCtx.MustArtifact("attack_surface_urls")
 	if err != nil {
@@ -72,12 +76,20 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	if severity == "" {
 		severity = "low,medium,high,critical"
 	}
+	// wafw00f having flagged a WAF changes the pacing defaults below: a
+	// slower rate limit and lower bulk concurrency look less like a scanner
+	// hammering every endpoint at once. Only applied when the operator
+	// hasn't already chosen their own rate limit.
+	waf := runCtx.GetWAFInfo()
 	rateLimit := opts.RateLimit
 	if rateLimit <= 0 {
 		// nuclei's own default; ours used to be 10, which throttles a single
 		// generic host's ~17000-request template sweep to ~20 minutes all by
 		// itself, before a second host is even started.
 		rateLimit = 150
+		if waf.Detected {
+			rateLimit = 40
+		}
 	}
 	timeout := opts.Timeout
 	if timeout <= 0 {
@@ -92,6 +104,12 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		"-jsonl",
 		"-matcher-status",
 		"-no-mhe",
+		// Periodic JSON statistics on stderr (requests done/total, percent,
+		// matches, rps): tailed below to feed the live progress line, so a
+		// long scan never looks indistinguishable from a hung one.
+		"-stats",
+		"-stats-json",
+		"-stats-interval", strconv.Itoa(statsIntervalSeconds),
 	}
 	// Automatic scan (-as) picks templates by the host's detected tech
 	// instead of firing the full ~7000+ template catalog at every host: on a
@@ -126,6 +144,18 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			args = append(args, "-t", customDir)
 		}
 	}
+	if waf.Detected {
+		// Lower bulk concurrency (nuclei's default is 25 hosts/templates in
+		// flight at once) so the slower rate limit above isn't immediately
+		// undone by a burst of parallel requests.
+		args = append(args, "-c", "10")
+		if !modules.HasHeaderNamed(runCtx.Headers, "User-Agent") {
+			// Vary the User-Agent per request instead of nuclei's own fixed
+			// default, so the whole template sweep doesn't share one
+			// fingerprint a WAF can block outright.
+			args = append(args, "-random-agent")
+		}
+	}
 	args = append(args, runCtx.ProxyArgs("-proxy")...)
 	args = append(args, runCtx.HeaderArgs("-H")...)
 
@@ -148,16 +178,28 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	// before this module returns.
 	stop := make(chan struct{})
 	tailDone := make(chan struct{})
+	statsDone := make(chan struct{})
 	go func() {
 		defer close(tailDone)
 		modules.TailLines(rawOutputFile, stop, 500*time.Millisecond, func(line string) {
 			emitNucleiFinding(runCtx, line)
 		})
 	}()
+	// The stats stream shares stderr with nuclei's own diagnostics; only
+	// lines that parse as a stats object become progress updates.
+	go func() {
+		defer close(statsDone)
+		modules.TailLines(stderrFile, stop, time.Second, func(line string) {
+			if s, ok := parseStats(line); ok {
+				runCtx.EmitProgress(s.progressEvent(m.Name()))
+			}
+		})
+	}()
 
 	res, err := executor.Run(ctx, cmd)
 	close(stop)
 	<-tailDone
+	<-statsDone
 
 	// A stopped nuclei (timeout, cancellation, crash) may still have streamed
 	// real matches to the JSONL file. Return the partial result alongside the

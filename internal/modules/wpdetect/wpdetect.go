@@ -143,67 +143,47 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	}, nil
 }
 
+// probeSignal is one detection probe's outcome: whether it found WordPress,
+// under what source label, and the version it read (if any).
+type probeSignal struct {
+	isWordPress bool
+	source      string
+	version     string
+}
+
 // ProbeHost runs the module's passive detection signals (homepage generator
 // meta, RSS feed, readme.html, REST index) against a single host. Exported
 // so callers outside the module — the app layer's pre-scan WordPress
 // suggestion, in particular — can reuse the exact same detection logic
 // without needing the full Run() artifact pipeline.
+//
+// The four probes are independent requests to the same host, so they run
+// concurrently: on a slow or WAF-throttled target where every request
+// takes seconds, running them one after another (as this used to do)
+// multiplies that latency by four for no benefit. Each probe writes to its
+// own slot, then the slots are merged in a fixed order (homepage, feed,
+// readme, rest-api) so the result — which source "wins" an empty
+// CoreVersion, what Sources contains — is identical to the old serial
+// version regardless of which request actually finished first.
 func ProbeHost(ctx context.Context, client *http.Client, runCtx *modules.RunContext, host string) Finding {
+	signals := make([]probeSignal, 4)
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() { defer wg.Done(); signals[0] = probeHomepage(ctx, client, runCtx, host) }()
+	go func() { defer wg.Done(); signals[1] = probeFeed(ctx, client, runCtx, host) }()
+	go func() { defer wg.Done(); signals[2] = probeReadme(ctx, client, runCtx, host) }()
+	go func() { defer wg.Done(); signals[3] = probeRestAPI(ctx, client, runCtx, host) }()
+	wg.Wait()
+
 	result := Finding{Target: host, FetchedAt: time.Now().UTC().Format(time.RFC3339)}
-
-	_, homepageBody, _, _ := modules.WPBody(ctx, client, host+"/", runCtx.Headers, maxBodyBytes)
-	if homepageBody != nil {
-		lower := strings.ToLower(string(homepageBody))
-		if m := generatorRe.FindSubmatch(homepageBody); m != nil {
-			result.IsWordPress = true
-			result.Sources = append(result.Sources, "generator")
-			if v := strings.TrimSpace(string(m[1])); v != "" {
-				result.CoreVersion = v
-			}
-		} else if strings.Contains(lower, "/wp-content/") || strings.Contains(lower, "/wp-includes/") {
-			result.IsWordPress = true
-			result.Sources = append(result.Sources, "paths")
+	for _, signal := range signals {
+		if !signal.isWordPress {
+			continue
 		}
-	}
-
-	_, feedBody, _, _ := modules.WPBody(ctx, client, host+"/?feed=rss2", runCtx.Headers, maxBodyBytes)
-	if feedBody != nil {
-		if m := feedGenRe.FindSubmatch(feedBody); m != nil {
-			result.IsWordPress = true
-			result.Sources = append(result.Sources, "feed")
-			if result.CoreVersion == "" {
-				result.CoreVersion = strings.TrimSpace(string(m[1]))
-			}
-		}
-	}
-
-	status, readmeBody, _, _ := modules.WPBody(ctx, client, host+"/readme.html", runCtx.Headers, maxBodyBytes)
-	if status == http.StatusOK && readmeBody != nil {
-		if m := readmeRe.FindSubmatch(readmeBody); m != nil && looksLikeWordPressReadme(readmeBody) {
-			result.IsWordPress = true
-			result.Sources = append(result.Sources, "readme")
-			if result.CoreVersion == "" {
-				result.CoreVersion = strings.TrimSpace(string(m[1]))
-			}
-		}
-	}
-
-	status, restBody, restHeader, _ := modules.WPBody(ctx, client, host+"/wp-json/", runCtx.Headers, maxBodyBytes)
-	if status == http.StatusOK && restBody != nil {
-		var index struct {
-			Namespaces []string `json:"namespaces"`
-		}
-		if json.Unmarshal(restBody, &index) == nil {
-			for _, ns := range index.Namespaces {
-				if strings.HasPrefix(ns, "wp/") {
-					result.IsWordPress = true
-					result.Sources = append(result.Sources, "rest-api")
-					break
-				}
-			}
-		} else if strings.Contains(strings.ToLower(string(restBody)), "wp-json") || restHeader.Get("X-WP-Total") != "" {
-			result.IsWordPress = true
-			result.Sources = append(result.Sources, "rest-api")
+		result.IsWordPress = true
+		result.Sources = append(result.Sources, signal.source)
+		if result.CoreVersion == "" && signal.version != "" {
+			result.CoreVersion = signal.version
 		}
 	}
 
@@ -220,6 +200,65 @@ func ProbeHost(ctx context.Context, client *http.Client, runCtx *modules.RunCont
 	}
 	sort.Strings(result.Sources)
 	return result
+}
+
+func probeHomepage(ctx context.Context, client *http.Client, runCtx *modules.RunContext, host string) probeSignal {
+	_, body, _, _ := modules.WPBody(ctx, client, host+"/", runCtx.Headers, maxBodyBytes)
+	if body == nil {
+		return probeSignal{}
+	}
+	if m := generatorRe.FindSubmatch(body); m != nil {
+		return probeSignal{isWordPress: true, source: "generator", version: strings.TrimSpace(string(m[1]))}
+	}
+	lower := strings.ToLower(string(body))
+	if strings.Contains(lower, "/wp-content/") || strings.Contains(lower, "/wp-includes/") {
+		return probeSignal{isWordPress: true, source: "paths"}
+	}
+	return probeSignal{}
+}
+
+func probeFeed(ctx context.Context, client *http.Client, runCtx *modules.RunContext, host string) probeSignal {
+	_, body, _, _ := modules.WPBody(ctx, client, host+"/?feed=rss2", runCtx.Headers, maxBodyBytes)
+	if body == nil {
+		return probeSignal{}
+	}
+	if m := feedGenRe.FindSubmatch(body); m != nil {
+		return probeSignal{isWordPress: true, source: "feed", version: strings.TrimSpace(string(m[1]))}
+	}
+	return probeSignal{}
+}
+
+func probeReadme(ctx context.Context, client *http.Client, runCtx *modules.RunContext, host string) probeSignal {
+	status, body, _, _ := modules.WPBody(ctx, client, host+"/readme.html", runCtx.Headers, maxBodyBytes)
+	if status != http.StatusOK || body == nil {
+		return probeSignal{}
+	}
+	if m := readmeRe.FindSubmatch(body); m != nil && looksLikeWordPressReadme(body) {
+		return probeSignal{isWordPress: true, source: "readme", version: strings.TrimSpace(string(m[1]))}
+	}
+	return probeSignal{}
+}
+
+func probeRestAPI(ctx context.Context, client *http.Client, runCtx *modules.RunContext, host string) probeSignal {
+	status, body, header, _ := modules.WPBody(ctx, client, host+"/wp-json/", runCtx.Headers, maxBodyBytes)
+	if status != http.StatusOK || body == nil {
+		return probeSignal{}
+	}
+	var index struct {
+		Namespaces []string `json:"namespaces"`
+	}
+	if json.Unmarshal(body, &index) == nil {
+		for _, ns := range index.Namespaces {
+			if strings.HasPrefix(ns, "wp/") {
+				return probeSignal{isWordPress: true, source: "rest-api"}
+			}
+		}
+		return probeSignal{}
+	}
+	if strings.Contains(strings.ToLower(string(body)), "wp-json") || header.Get("X-WP-Total") != "" {
+		return probeSignal{isWordPress: true, source: "rest-api"}
+	}
+	return probeSignal{}
 }
 
 func looksLikeWordPressReadme(body []byte) bool {

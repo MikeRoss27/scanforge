@@ -4,6 +4,8 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/modules/attacksurface"
+	"github.com/MikeRoss27/scanforge/internal/modules/dbdetect"
+	"github.com/MikeRoss27/scanforge/internal/modules/dbenum"
 	"github.com/MikeRoss27/scanforge/internal/modules/dnsbrute"
 	"github.com/MikeRoss27/scanforge/internal/modules/dnsx"
 	"github.com/MikeRoss27/scanforge/internal/modules/ffuf"
@@ -47,6 +49,8 @@ func buildRegistry(cfg *config.Config) *modules.Registry {
 	registry.Register(wafw00f.New(cfg.ToolPath("wafw00f")))
 	registry.Register(katana.New(cfg.ToolPath("katana")))
 	registry.Register(jssecrets.New())
+	registry.Register(dbdetect.New())
+	registry.Register(dbenum.New())
 	registry.Register(jsverify.New(cfg.ToolPath("chromium")))
 	registry.Register(attacksurface.New())
 	registry.Register(ffuf.New(cfg.ToolPath("ffuf")))

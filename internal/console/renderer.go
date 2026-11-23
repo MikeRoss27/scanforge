@@ -296,6 +296,9 @@ type RunHeader struct {
 // PrintHeader renders the run configuration block. Quiet mode skips it:
 // the operator asked for findings and errors, not setup echo.
 func (r *Renderer) PrintHeader(h RunHeader) {
+	// The module count also lets the volatile line tell when the module on
+	// screen is the last one of the run.
+	r.progress.setExpected(h.Modules)
 	if r.verbosity <= Quiet {
 		return
 	}

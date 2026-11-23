@@ -98,3 +98,49 @@ func TestOpenRunRejectsNonRunDirectory(t *testing.T) {
 		t.Fatal("OpenRun() on a directory without manifest must fail")
 	}
 }
+
+func TestLatestRunPicksMostRecent(t *testing.T) {
+	store := NewRunStore(t.TempDir())
+
+	first, err := store.Create("example.com")
+	if err != nil {
+		t.Fatalf("first Create() error = %v", err)
+	}
+	second, err := store.Create("example.com")
+	if err != nil {
+		t.Fatalf("second Create() error = %v", err)
+	}
+	if first.ID == second.ID {
+		t.Fatalf("test setup: expected distinct run IDs, got %q twice", first.ID)
+	}
+
+	latest, err := LatestRun(store.Workspace, "example.com")
+	if err != nil {
+		t.Fatalf("LatestRun() error = %v", err)
+	}
+	if latest.RootDir != second.RootDir {
+		t.Fatalf("LatestRun() = %q, want the most recently created run %q", latest.RootDir, second.RootDir)
+	}
+}
+
+func TestLatestRunNoRuns(t *testing.T) {
+	store := NewRunStore(t.TempDir())
+	if _, err := LatestRun(store.Workspace, "never-scanned.example.com"); err == nil {
+		t.Fatal("expected an error when the target has no runs")
+	}
+}
+
+func TestLatestRunUsesSameSafeNameAsCreate(t *testing.T) {
+	store := NewRunStore(t.TempDir())
+	created, err := store.Create("https://example.com/")
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	latest, err := LatestRun(store.Workspace, "https://example.com/")
+	if err != nil {
+		t.Fatalf("LatestRun() error = %v", err)
+	}
+	if latest.RootDir != created.RootDir {
+		t.Fatalf("LatestRun() = %q, want %q (same safeTargetName as Create)", latest.RootDir, created.RootDir)
+	}
+}

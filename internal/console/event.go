@@ -123,7 +123,10 @@ func (r *Renderer) renderModuleDone(e orchestrator.ModuleDoneEvent) []string {
 			return nil
 		}
 		reason := "dependency unavailable"
-		if e.Error != "" {
+		switch {
+		case e.Reason != "":
+			reason = singleLine(e.Reason)
+		case e.Error != "":
 			reason = singleLine(e.Error)
 		}
 		return []string{r.lifecycleLine(TagSkip, e.Name, r.th.Subtle(reason), e.Dur)}

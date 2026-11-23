@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -41,9 +42,56 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	resolvedOutputFile := runCtx.Run.Path("01_subdomains", "dnsx.txt")
 	stderrFile := runCtx.Run.Path("00_meta", "dnsx.stderr.log")
 
-	passiveResult, err := m.runDNSX(ctx, runCtx, executor, inputFile, passiveRawFile, stderrFile)
-	if err != nil {
-		return nil, err
+	// dnsx resolves hostnames; fed an address that is already an IP
+	// literal (the common case when the scan target itself is a bare IP),
+	// it has nothing to look up and silently produces no output line for
+	// it - no error, no warning, just a missing entry. That emptied the
+	// whole pipeline downstream (naabu/httpx get an empty resolved_hosts)
+	// while the run still reported "completed". IP literals are split out
+	// here and published directly below instead of being sent through the
+	// subprocess; only genuine hostnames go through dnsx.
+	//
+	// This inspection needs the subdomains artifact to actually exist on
+	// disk, which a dry run never writes (the executor never runs
+	// subfinder for real): skip it entirely in that case and fall back to
+	// the original, unconditional dnsx invocation below, exactly as
+	// before this change - a dry run only ever records intended commands.
+	var ips, hostnames []string
+	passiveInputFile := inputFile
+	skipPassiveDNSX := false
+	if !runCtx.DryRun {
+		var splitErr error
+		ips, hostnames, splitErr = splitIPLiterals(inputFile)
+		if splitErr != nil {
+			return nil, fmt.Errorf("failed to inspect subdomains for IP literals: %w", splitErr)
+		}
+		skipPassiveDNSX = len(ips) > 0 && len(hostnames) == 0
+		if len(ips) > 0 && len(hostnames) > 0 {
+			passiveInputFile = runCtx.Run.Path("01_subdomains", "dnsx-input-hosts.txt")
+			if err := os.WriteFile(passiveInputFile, []byte(strings.Join(hostnames, "\n")+"\n"), 0644); err != nil {
+				return nil, fmt.Errorf("failed to write filtered DNS input: %w", err)
+			}
+		}
+	}
+
+	var passiveResult *runner.CommandResult
+	if skipPassiveDNSX {
+		// Every input line is already an IP literal: nothing for dnsx to
+		// resolve. Record the skip for the audit trail and seed an empty
+		// raw file so the merge step below has something to open.
+		skipCmd := runner.Command{Name: "dnsx (skipped)", Args: []string{"-ip-literals", strings.Join(ips, ",")}}
+		if err := runner.AppendCommandLog(runCtx.Run.CommandsLog, skipCmd); err != nil {
+			return nil, fmt.Errorf("failed to write commands log: %w", err)
+		}
+		if err := os.WriteFile(passiveRawFile, nil, 0644); err != nil {
+			return nil, fmt.Errorf("failed to initialize DNS results: %w", err)
+		}
+		passiveResult = &runner.CommandResult{}
+	} else {
+		passiveResult, err = m.runDNSX(ctx, runCtx, executor, passiveInputFile, passiveRawFile, stderrFile)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	rawInputs := []string{passiveRawFile}
@@ -76,6 +124,11 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	if !runCtx.DryRun {
 		if err := mergeLineFiles(rawOutputFile, rawInputs...); err != nil {
 			return nil, fmt.Errorf("failed to merge DNS results: %w", err)
+		}
+		if len(ips) > 0 {
+			if err := appendIPLiteralRecords(rawOutputFile, ips); err != nil {
+				return nil, fmt.Errorf("failed to publish IP literal targets: %w", err)
+			}
 		}
 		if err := writeResolvedHosts(rawOutputFile, resolvedOutputFile); err != nil {
 			return nil, fmt.Errorf("failed to derive resolved hosts: %w", err)
@@ -128,6 +181,70 @@ func (m *Module) runDNSX(ctx context.Context, runCtx *modules.RunContext, execut
 		return nil, fmt.Errorf("failed to run command %q: %w", cmd.Name, err)
 	}
 	return result, nil
+}
+
+// splitIPLiterals separates a subdomains-artifact file's lines into IP
+// literals (which dnsx cannot meaningfully "resolve") and genuine hostnames.
+func splitIPLiterals(path string) (ips []string, hostnames []string, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if net.ParseIP(line) != nil {
+			ips = append(ips, line)
+		} else {
+			hostnames = append(hostnames, line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, nil, err
+	}
+	return ips, hostnames, nil
+}
+
+// appendIPLiteralRecords appends one dnsx-shaped JSON line per IP literal to
+// path, so a bare-IP target flows into resolved_hosts exactly like a
+// genuinely resolved hostname would, instead of disappearing silently.
+func appendIPLiteralRecords(path string, ips []string) error {
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+
+	writer := bufio.NewWriter(file)
+	for _, ip := range ips {
+		record := struct {
+			Host string   `json:"host"`
+			A    []string `json:"a,omitempty"`
+			AAAA []string `json:"aaaa,omitempty"`
+		}{Host: ip}
+		if parsed := net.ParseIP(ip); parsed != nil && parsed.To4() != nil {
+			record.A = []string{ip}
+		} else {
+			record.AAAA = []string{ip}
+		}
+		data, err := json.Marshal(record)
+		if err != nil {
+			return err
+		}
+		if _, err := writer.Write(data); err != nil {
+			return err
+		}
+		if err := writer.WriteByte('\n'); err != nil {
+			return err
+		}
+	}
+	return writer.Flush()
 }
 
 func mergeLineFiles(outputPath string, inputPaths ...string) error {

@@ -17,7 +17,20 @@ resolved_hosts → httpx → alive_urls
 resolved_hosts → naabu → open_ports → nmap
 alive_urls → tlsx / whatweb / wafw00f / katana / ffuf / nuclei
 target → gau → historical_urls
+crawled_urls/historical_urls/discovered_paths → jssecrets → js_secrets → dbdetect → db_fingerprint → dbenum
 ```
+
+`ffuf`, `nuclei` et `katana` dépendent « souplement » (`modules.SoftRequires`)
+de l'artefact `waf_raw` produit par `wafw00f` : ils attendent sa fin quand il
+fait partie du profil choisi, sans jamais échouer s'il n'y est pas. Quand
+`wafw00f` détecte un WAF, `RunContext.WAFInfo` le transmet aux trois
+scanners, qui réduisent automatiquement leur agressivité — concurrence/
+rate-limit abaissés, délai aléatoire par requête, rotation de User-Agent
+(`modules.RandomUserAgent`) — sauf si l'opérateur a déjà fixé un rate-limit
+explicite ou un en-tête `User-Agent`, qui prime toujours. `jssecrets`
+dépend aussi souplement de `historical_urls` et `discovered_paths` pour
+analyser des URL JS trouvées par gau/ffuf que le crawl aurait manquées
+(`collectJSURLs`).
 
 DNSX résout les découvertes passives pendant le bruteforce DNS. Quand le
 producteur optionnel termine, DNSX résout uniquement ses hôtes supplémentaires,
@@ -57,7 +70,13 @@ report.md      synthèse lisible
 ```
 
 Le manifeste distingue les états `completed`, `partial` et `failed`, référence
-les artefacts produits et conserve la source du scope pour audit.
+les artefacts produits et conserve la source du scope pour audit. `partial`
+signifie que le module a tourné mais en mode dégradé : `httpcheck` et
+`jssecrets` le rapportent quand toutes les URL tentées étaient inaccessibles,
+et `jsverify` quand aucun navigateur n'était disponible, qu'il n'a pas pu se
+lancer, ou que chaque replay PoC est revenu `unreachable` — un WAF ou un
+problème réseau qui bloque tout se voit donc, au lieu d'un faux `completed`
+sans aucune trouvaille.
 
 ## Couche triage (H3.1)
 

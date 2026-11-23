@@ -79,8 +79,9 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	}
 
 	var checks []check
+	var attempted, reached int
 	if !runCtx.DryRun && len(urls) > 0 {
-		checks, err = runChecks(ctx, runCtx, urls)
+		checks, attempted, reached, err = runChecks(ctx, runCtx, urls)
 		if err != nil {
 			return nil, err
 		}
@@ -123,21 +124,37 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 		return nil, fmt.Errorf("failed to publish HTTP checks: %w", err)
 	}
 
+	status := "completed"
+	var reason string
+	if attempted > 0 && reached == 0 {
+		// Every single probe failed at the transport level: the module ran,
+		// but never actually reached the target, so "completed" with zero
+		// findings would misreport a fully hardened site. A WAF/rate-limit
+		// blocking every connection is the common cause.
+		status = "partial"
+		reason = fmt.Sprintf("all %d probed URLs were unreachable (network error, proxy issue, or every request blocked)", attempted)
+	}
+
 	return &modules.Result{
 		Name:   m.Name(),
-		Status: "completed",
+		Status: status,
+		Reason: reason,
 		OutputFiles: map[string]string{
 			"http_checks": outputRel,
 		},
 	}, nil
 }
 
-func runChecks(ctx context.Context, runCtx *modules.RunContext, urls []string) ([]check, error) {
+// runChecks probes urls concurrently and returns the hardening gaps found
+// plus how many URLs were attempted and how many actually returned a
+// response (reached), so the caller can tell "fully hardened site" apart
+// from "every request failed".
+func runChecks(ctx context.Context, runCtx *modules.RunContext, urls []string) ([]check, int, int, error) {
 	transport := &http.Transport{}
 	if runCtx.Proxy != "" {
 		parsed, err := url.Parse(runCtx.Proxy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse proxy %q: %w", runCtx.Proxy, err)
+			return nil, 0, 0, fmt.Errorf("failed to parse proxy %q: %w", runCtx.Proxy, err)
 		}
 		transport.Proxy = http.ProxyURL(parsed)
 	}
@@ -145,10 +162,11 @@ func runChecks(ctx context.Context, runCtx *modules.RunContext, urls []string) (
 	defer transport.CloseIdleConnections()
 
 	var (
-		mu     sync.Mutex
-		checks []check
-		wg     sync.WaitGroup
-		sem    = make(chan struct{}, workerCount)
+		mu                 sync.Mutex
+		checks             []check
+		attempted, reached int
+		wg                 sync.WaitGroup
+		sem                = make(chan struct{}, workerCount)
 	)
 	for _, target := range urls {
 		wg.Add(1)
@@ -160,13 +178,22 @@ func runChecks(ctx context.Context, runCtx *modules.RunContext, urls []string) (
 			// avoids racing the caller's read of checks.
 			wg.Done()
 			wg.Wait()
-			return checks, nil
+			return checks, attempted, reached, nil
 		}
 		go func(target string) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			found := inspectURL(ctx, client, target, runCtx.Headers)
+			mu.Lock()
+			attempted++
+			mu.Unlock()
+
+			found, ok := inspectURL(ctx, client, target, runCtx.Headers)
+			if ok {
+				mu.Lock()
+				reached++
+				mu.Unlock()
+			}
 			if len(found) == 0 {
 				return
 			}
@@ -176,21 +203,24 @@ func runChecks(ctx context.Context, runCtx *modules.RunContext, urls []string) (
 		}(target)
 	}
 	wg.Wait()
-	return checks, nil
+	return checks, attempted, reached, nil
 }
 
-// inspectURL fetches target and derives security header findings. Fetching is
-// best effort: transport errors or non-HTTP responses yield no findings.
-func inspectURL(ctx context.Context, client *http.Client, target string, headers []string) []check {
+// inspectURL fetches target and derives security header findings. reached
+// reports whether a response was actually obtained (even a response with
+// zero findings, i.e. a fully hardened host); only a request-build failure
+// or a transport-level error (network, timeout, blocked connection) counts
+// as unreached.
+func inspectURL(ctx context.Context, client *http.Client, target string, headers []string) (checks []check, reached bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	applyHeaders(req, headers)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxBodyBytes))
@@ -201,12 +231,12 @@ func inspectURL(ctx context.Context, client *http.Client, target string, headers
 	if resp.Request != nil && resp.Request.URL != nil {
 		if requested, err := url.Parse(target); err == nil {
 			if !strings.EqualFold(resp.Request.URL.Host, requested.Host) {
-				return nil
+				return nil, true
 			}
 		}
 	}
 
-	return evaluateHeaders(target, resp.Header)
+	return evaluateHeaders(target, resp.Header), true
 }
 
 func evaluateHeaders(target string, header http.Header) []check {

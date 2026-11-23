@@ -1,0 +1,21 @@
+name: juice-shop-demo
+description: "OWASP Juice Shop's public demo instance (shared with other people practicing attacks)."
+target: "https://demo.owasp-juice.shop"
+scope_mode: exact
+profile: vuln
+timeout: 10m
+strict: false
+notes: >
+  This is a SHARED public demo instance also used by other people
+  practicing attacks; be considerate of load — this lab intentionally uses
+  the lighter "vuln" profile (no ffuf/naabu/nmap). For a reproducible,
+  non-shared benchmark, self-host instead:
+    docker run --rm -p 3000:3000 bkimminich/juice-shop
+  and run `scanforge benchmark run juice-shop-demo --target http://localhost:3000`.
+  Category expectations here are advisory only (they never fail the
+  benchmark; only a failed/crashed pipeline run does).
+expected_technologies: ["node", "express", "angular"]
+expected_categories:
+  - name: outdated-component
+    keywords: ["outdated", "vulnerable-dependency", "cve"]
+    min_count: 1

@@ -29,6 +29,9 @@ type ModuleDoneEvent struct {
 	Dur     time.Duration
 	Failed  bool
 	Summary string
+	// Reason explains a status the module chose itself, e.g. why it
+	// skipped ("no WordPress detected").
+	Reason string
 	// Error carries the underlying failure message when the module failed,
 	// so the console can render an actionable error block instead of a bare
 	// status word.

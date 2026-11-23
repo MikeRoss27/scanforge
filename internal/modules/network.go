@@ -5,12 +5,42 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 )
+
+// WAFUserAgents is a small pool of realistic desktop/mobile browser user
+// agents. Request-heavy modules rotate through these when wafw00f detects a
+// WAF, so each probe doesn't carry the scanner's own fixed UA signature.
+var WAFUserAgents = []string{
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+	"Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+}
+
+// RandomUserAgent returns a random entry from WAFUserAgents.
+func RandomUserAgent() string {
+	return WAFUserAgents[rand.Intn(len(WAFUserAgents))]
+}
+
+// HasHeaderNamed reports whether headers already sets name (case
+// insensitive), so WAF-evasion logic doesn't clobber a header the operator
+// explicitly configured (e.g. a custom --header "User-Agent: ...").
+func HasHeaderNamed(headers []string, name string) bool {
+	for _, header := range headers {
+		field, _, ok := strings.Cut(header, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(field), name) {
+			return true
+		}
+	}
+	return false
+}
 
 // ProxyArgs returns the flag/value pair to append to a command's args when a
 // proxy is configured, or nil otherwise. flag is the tool-specific proxy

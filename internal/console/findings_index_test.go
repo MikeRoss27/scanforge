@@ -301,6 +301,35 @@ func TestRecapHasSectionHeading(t *testing.T) {
 	}
 }
 
+func TestRecapPrefersReportFindingTypesOverLiveStream(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTestRenderer(t, &buf, nil)
+	// The live stream saw one thing; report.json (the authoritative source,
+	// generated after the run) says another. The recap must reflect the
+	// report, not the live stream — this is the "6 INFO counted, 0 listed"
+	// bug: report.json's severity totals and the live-only recap used to
+	// disagree because they read different data.
+	r.Handle(finding("jssecrets", "low", "DOM XSS sink", "x"))
+	r.PrintSummary(Summary{
+		Target: "t", Status: "completed",
+		Total:    1,
+		Findings: map[string]int{"info": 1},
+		FindingTypes: []FindingType{
+			{Module: "jssecrets", Severity: "info", Title: "Internal host/IP referenced in JavaScript", Count: 1},
+		},
+	})
+	out := buf.String()
+	// "DOM XSS sink" legitimately appears once, in the live [FND] line
+	// printed as soon as it was seen; the recap section itself must come
+	// from the report, not add a second ("DOM XSS sink (jssecrets)") line.
+	if strings.Contains(out, "DOM XSS sink (jssecrets)") {
+		t.Errorf("recap should not fall back to the live stream when report data exists:\n%s", out)
+	}
+	if !strings.Contains(out, "Internal host/IP referenced in JavaScript") {
+		t.Errorf("recap missing the report-derived finding type:\n%s", out)
+	}
+}
+
 func TestPhaseForJoinsMixedWave(t *testing.T) {
 	got := phaseFor([]string{"nmap", "tlsx", "httpx", "screenshot"})
 	if want := "PORTS · WEB SURFACE"; got != want {

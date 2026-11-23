@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/storage"
@@ -70,6 +71,31 @@ func TestProbeHostIgnoresNonWordPress(t *testing.T) {
 	result := ProbeHost(context.Background(), server.Client(), runCtx, server.URL)
 	if result.IsWordPress {
 		t.Fatalf("unexpected WordPress detection on %s", server.URL)
+	}
+}
+
+// TestProbeHostRunsSignalsConcurrently proves the four passive signals
+// (homepage, feed, readme, rest-api) are fetched in parallel rather than
+// one after another: on a target where every request is slow (a
+// throttling WAF, a loaded server), serializing them used to multiply
+// ProbeHost's latency by four. With a generous margin against scheduling
+// noise, the whole probe must still land well under 4x a single request's
+// delay.
+func TestProbeHostRunsSignalsConcurrently(t *testing.T) {
+	const perRequestDelay = 150 * time.Millisecond
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(perRequestDelay)
+		io.WriteString(w, "<html>not wordpress</html>")
+	}))
+	defer server.Close()
+
+	runCtx := testRunContext(t, server.URL)
+	start := time.Now()
+	ProbeHost(context.Background(), server.Client(), runCtx, server.URL)
+	elapsed := time.Since(start)
+
+	if elapsed >= 3*perRequestDelay {
+		t.Fatalf("ProbeHost took %s for 4 requests at %s each — looks serialized, not concurrent", elapsed, perRequestDelay)
 	}
 }
 

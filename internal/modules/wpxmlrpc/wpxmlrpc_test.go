@@ -167,8 +167,8 @@ func TestRunNoWordPressHostsSkipsProbing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if result.Status != "completed" {
-		t.Fatalf("status = %q, want completed", result.Status)
+	if result.Status != "skipped" || result.Reason != "no WordPress detected" {
+		t.Fatalf("status = %q reason = %q, want skipped/no WordPress detected", result.Status, result.Reason)
 	}
 }
 

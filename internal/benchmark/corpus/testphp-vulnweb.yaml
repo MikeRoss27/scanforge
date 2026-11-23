@@ -1,0 +1,21 @@
+name: testphp-vulnweb
+description: "Acunetix's long-standing public scanner test target (classic PHP app with intentional SQLi/XSS)."
+target: "http://testphp.vulnweb.com"
+scope_mode: exact
+profile: vuln
+timeout: 10m
+strict: false
+notes: >
+  Acunetix-run and explicitly published as a scanner test target — safe to
+  hit directly. Its exact current vulnerable endpoints are only documented
+  in unverified third-party write-ups, so category expectations here are
+  advisory only (they never fail the benchmark; only a failed/crashed
+  pipeline run does).
+expected_technologies: ["php", "nginx"]
+expected_categories:
+  - name: sqli
+    keywords: ["sqli", "sql-injection", "sql injection"]
+    min_count: 1
+  - name: xss
+    keywords: ["xss", "cross-site-scripting"]
+    min_count: 1

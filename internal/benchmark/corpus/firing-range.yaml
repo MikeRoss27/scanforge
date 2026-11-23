@@ -1,0 +1,18 @@
+name: firing-range
+description: "Google's Firing Range — built specifically for automated scanner testing (mostly XSS variants)."
+target: "https://public-firing-range.appspot.com"
+scope_mode: exact
+profile: vuln
+timeout: 10m
+strict: false
+notes: >
+  Google-run, explicitly built and intended for repeated automated scanner
+  testing — safe to hit directly. ZAP's own docs note the project is no
+  longer actively maintained and some tests no longer trigger on modern
+  browsers, so category expectations here are advisory only (they never
+  fail the benchmark; only a failed/crashed pipeline run does).
+expected_technologies: []
+expected_categories:
+  - name: xss
+    keywords: ["xss", "cross-site-scripting", "dom-xss", "reflected-xss"]
+    min_count: 1

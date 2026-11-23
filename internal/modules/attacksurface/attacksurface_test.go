@@ -2,6 +2,7 @@ package attacksurface
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -164,6 +165,99 @@ func TestRunDropsOutOfScopeJSEndpoints(t *testing.T) {
 	got := readLines(t, run.Path(outputRel))
 	if !reflect.DeepEqual(got, []string{"https://example.com/"}) {
 		t.Fatalf("attack surface = %v, want only the in-scope URL", got)
+	}
+}
+
+func TestCapPerHost(t *testing.T) {
+	many := func(host string, n int) []string {
+		out := make([]string, 0, n)
+		for i := 0; i < n; i++ {
+			out = append(out, fmt.Sprintf("https://%s/p%d", host, i))
+		}
+		return out
+	}
+	tests := []struct {
+		name          string
+		urls          []string
+		limit         int
+		wantKept      []string
+		wantTruncated []hostTruncation
+	}{
+		{
+			name:     "under the cap is untouched",
+			urls:     many("a.test", 3),
+			limit:    3,
+			wantKept: many("a.test", 3),
+		},
+		{
+			name:          "keeps the first URLs of a flooding host only",
+			urls:          append(many("b.test", 5), many("a.test", 2)...),
+			limit:         3,
+			wantKept:      append(many("b.test", 3), many("a.test", 2)...),
+			wantTruncated: []hostTruncation{{host: "b.test", total: 5}},
+		},
+		{
+			name:          "host matching is case-insensitive and truncations are sorted",
+			urls:          []string{"https://Z.test/1", "https://z.test/2", "https://y.test/1", "https://y.test/2"},
+			limit:         1,
+			wantKept:      []string{"https://Z.test/1", "https://y.test/1"},
+			wantTruncated: []hostTruncation{{host: "y.test", total: 2}, {host: "z.test", total: 2}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			kept, truncated := capPerHost(tt.urls, tt.limit)
+			if !reflect.DeepEqual(kept, tt.wantKept) {
+				t.Fatalf("kept = %v, want %v", kept, tt.wantKept)
+			}
+			if !reflect.DeepEqual(truncated, tt.wantTruncated) {
+				t.Fatalf("truncated = %+v, want %+v", truncated, tt.wantTruncated)
+			}
+		})
+	}
+}
+
+// TestRunCapsFloodingHost reproduces the 3873-URL attack surface that fed
+// nuclei for 12+ minutes: one host's URLs are capped, other hosts and the
+// alive URLs (listed first) survive, and the operator is warned.
+func TestRunCapsFloodingHost(t *testing.T) {
+	run := testRun(t)
+	writeFile(t, run.Path("05_content", "alive.txt"), "https://voltlaunchr.com\nhttps://www.voltlaunchr.com\n")
+	var b strings.Builder
+	b.WriteString(`{"results":[`)
+	for i := 0; i < 3871; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `{"url":"https://voltlaunchr.com/word%04d","status":403,"length":25103}`, i)
+	}
+	b.WriteString("]}\n")
+	writeFile(t, run.Path("05_content", "ffuf.json"), b.String())
+
+	runCtx := modules.NewRunContext("voltlaunchr.com", "deep", false, run)
+	for name, path := range map[string]string{
+		"alive_urls":       "05_content/alive.txt",
+		"discovered_paths": "05_content/ffuf.json",
+	} {
+		if err := runCtx.AddArtifact(name, modules.Artifact{Name: name, Type: "text", Path: path}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var warnings []string
+	runCtx.SetWarningSink(func(msg string) { warnings = append(warnings, msg) })
+
+	if _, err := New().Run(context.Background(), runCtx, nil); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	got := readLines(t, run.Path(outputRel))
+	if len(got) != maxURLsPerHost+1 {
+		t.Fatalf("attack surface has %d URLs, want %d", len(got), maxURLsPerHost+1)
+	}
+	if got[0] != "https://voltlaunchr.com" || got[1] != "https://www.voltlaunchr.com" {
+		t.Fatalf("alive URLs must survive the cap first, got %v", got[:2])
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "voltlaunchr.com has 3872 URLs") {
+		t.Fatalf("warnings = %q, want one truncation warning for voltlaunchr.com", warnings)
 	}
 }
 

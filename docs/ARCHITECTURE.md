@@ -17,7 +17,19 @@ resolved_hosts → httpx → alive_urls
 resolved_hosts → naabu → open_ports → nmap
 alive_urls → tlsx / whatweb / wafw00f / katana / ffuf / nuclei
 target → gau → historical_urls
+crawled_urls/historical_urls/discovered_paths → jssecrets → js_secrets → dbdetect → db_fingerprint → dbenum
 ```
+
+`ffuf`, `nuclei` and `katana` soft-depend on `wafw00f`'s `waf_raw` artifact
+(`modules.SoftRequires`): they wait for wafw00f to finish when it is part of
+the selected profile, but never error if it isn't. When wafw00f reports a WAF,
+`RunContext.WAFInfo` carries that to the three scanners, which back off
+automatically — lower concurrency/rate-limit, a randomized per-request delay,
+and User-Agent rotation (`modules.RandomUserAgent`) — unless the operator
+already set an explicit rate limit or a `User-Agent` header, which always
+wins. `jssecrets` also soft-depends on `historical_urls` and
+`discovered_paths` so it can scan JS URLs gau/ffuf found that the crawl missed
+(`collectJSURLs`).
 
 DNSX resolves passive discoveries while DNS bruteforce runs. Once the optional
 producer finishes, DNSX resolves only its additional hosts, merges both JSONL
@@ -63,7 +75,10 @@ and `internal/console` decides how those look:
 - critical/high findings expand into a structured block
   (Target / Module / Severity / Evidence) once per finding type; suppressed
   occurrences are counted and listed in the closing summary's
-  `Finding types` recap (e.g. `INFO Email address exposed (jssecrets) ×9`)
+  `Finding types` recap (e.g. `INFO Email address exposed (jssecrets) ×9`),
+  grouped from the final `report.json` (source/title/severity) so its counts
+  always agree with the severity totals shown above it, instead of the
+  live event stream, which can lag or double-count
 - a compact volatile loading block is drawn only on interactive terminals
   (never on pipes, CI runners or in quiet mode). A canonical hammer and anvil come from an
   embedded imagegen sprite sheet. Forty poses are sampled once along a rigid
@@ -109,6 +124,12 @@ report.md      readable summary
 
 The manifest distinguishes the `completed`, `partial` and `failed` states,
 references the produced artifacts and keeps the scope source for audit.
+`partial` means the module ran but was degraded rather than clean: `httpcheck`
+and `jssecrets` report it when every URL they tried to fetch was unreachable,
+and `jsverify` reports it when no browser was available, the browser failed
+to launch, or every PoC replay came back `unreachable` — so a WAF or network
+issue blocking every request shows up as a visible degradation instead of a
+false-clean `completed` with zero findings.
 
 ## Triage layer (H3.1)
 

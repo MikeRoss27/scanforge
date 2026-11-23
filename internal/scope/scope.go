@@ -133,6 +133,34 @@ func (s *Scope) IsAllowed(target string) bool {
 	return matches(host, s.ExactHosts, s.Wildcards, s.CIDRs)
 }
 
+// AllowHost adds a single exact host to the allow list at runtime and reports
+// whether it was newly added. It never introduces a wildcard: only the one
+// host becomes in-scope, so widening is minimal and auditable. It is used when
+// a module discovers a backend endpoint (e.g. a Supabase project host) that is
+// part of the target's own attack surface but lives outside the primary
+// domain. A host already excluded stays out of scope (exclusions win), and an
+// invalid host is rejected.
+func (s *Scope) AllowHost(host string) bool {
+	if s == nil {
+		return false
+	}
+	h, err := hostFromInput(host)
+	if err != nil {
+		return false
+	}
+	if _, excluded := s.ExcludedExactHosts[h]; excluded {
+		return false
+	}
+	if s.ExactHosts == nil {
+		s.ExactHosts = map[string]struct{}{}
+	}
+	if _, ok := s.ExactHosts[h]; ok {
+		return false
+	}
+	s.ExactHosts[h] = struct{}{}
+	return true
+}
+
 // Entries returns a deterministic, canonical representation of the effective
 // scope. Exclusions are prefixed with "!", making the result suitable for
 // WriteFile and LoadFromFile.
