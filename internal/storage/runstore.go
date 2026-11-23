@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -15,9 +16,50 @@ type RunStore struct {
 	Workspace string
 }
 
+// Module checkpoint states recorded in the manifest. "aborted" results from
+// the orchestrator are stored as ModuleCancelled.
+const (
+	ModulePending   = "pending"
+	ModuleRunning   = "running"
+	ModuleCompleted = "completed"
+	ModuleFailed    = "failed"
+	ModuleSkipped   = "skipped"
+	ModuleCancelled = "cancelled"
+)
+
+// ArtifactRef is the persisted form of a published artifact, enough to
+// re-publish it (through the scope filter) when a module is restored from a
+// checkpoint.
+type ArtifactRef struct {
+	Type   string `json:"type"`
+	Path   string `json:"path"`
+	Scoped bool   `json:"scoped,omitempty"`
+}
+
+// ModuleResult is one module's checkpoint. Only Name and Status are
+// required; the remaining fields are written by the orchestrator and make a
+// run resumable.
 type ModuleResult struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
+	// InputHash is the sha256 of everything that determines the module's
+	// output (scope, parameters, tool version, required artifact contents).
+	InputHash   string                 `json:"input_hash,omitempty"`
+	StartedAt   string                 `json:"started_at,omitempty"`
+	FinishedAt  string                 `json:"finished_at,omitempty"`
+	Reason      string                 `json:"reason,omitempty"`
+	Error       string                 `json:"error,omitempty"`
+	Artifacts   map[string]ArtifactRef `json:"artifacts,omitempty"`
+	OutputFiles map[string]string      `json:"output_files,omitempty"`
+}
+
+// RunParams are the non-secret inputs of a run, persisted so `resume` can
+// rebuild the same pipeline. Proxy and headers are deliberately not stored
+// (they may carry credentials); resume callers pass them again and they are
+// part of each module's input hash.
+type RunParams struct {
+	Modules []string        `json:"modules,omitempty"`
+	Options json.RawMessage `json:"options,omitempty"`
 }
 
 type RunManifest struct {
@@ -33,6 +75,14 @@ type RunManifest struct {
 	Modules     []ModuleResult    `json:"modules,omitempty"`
 	Outputs     map[string]string `json:"outputs"`
 	Artifacts   map[string]string `json:"artifacts,omitempty"`
+	DryRun      bool              `json:"dry_run,omitempty"`
+	// ScopeSHA256 is the digest of 00_meta/effective-scope.txt at run
+	// creation; resume refuses to continue if the file no longer matches,
+	// so a resumed run can never use a widened scope.
+	ScopeSHA256 string     `json:"scope_sha256,omitempty"`
+	Params      *RunParams `json:"params,omitempty"`
+	ResumeCount int        `json:"resume_count,omitempty"`
+	UpdatedAt   string     `json:"updated_at,omitempty"`
 }
 
 type Run struct {
@@ -43,6 +93,10 @@ type Run struct {
 	CommandsLog  string
 	ManifestPath string
 	Manifest     RunManifest
+
+	// mu serializes manifest mutations and writes: modules finish
+	// concurrently and each state change is persisted immediately.
+	mu sync.Mutex
 }
 
 func NewRunStore(workspace string) *RunStore {
@@ -114,13 +168,96 @@ func (r *Run) Path(parts ...string) string {
 	return filepath.Join(all...)
 }
 
+// WriteManifest persists the manifest atomically (temp file in the same
+// directory + rename), so an interrupted process never leaves a truncated
+// manifest behind.
 func (r *Run) WriteManifest() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.writeManifestLocked()
+}
+
+func (r *Run) writeManifestLocked() error {
+	r.Manifest.UpdatedAt = time.Now().Format(time.RFC3339)
 	data, err := json.MarshalIndent(r.Manifest, "", "  ")
 	if err != nil {
 		return err
 	}
+	return writeFileAtomic(r.ManifestPath, data, 0644)
+}
 
-	return os.WriteFile(r.ManifestPath, data, 0644)
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".manifest-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	fail := func(err error) error {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fail(err)
+	}
+	if err := os.Chmod(tmpPath, perm); err != nil {
+		return fail(err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fail(err)
+	}
+	return nil
+}
+
+// Module returns the checkpoint recorded for name.
+func (r *Run) Module(name string) (ModuleResult, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, m := range r.Manifest.Modules {
+		if m.Name == name {
+			return m, true
+		}
+	}
+	return ModuleResult{}, false
+}
+
+// ModuleRecords returns a snapshot of every module checkpoint.
+func (r *Run) ModuleRecords() []ModuleResult {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]ModuleResult(nil), r.Manifest.Modules...)
+}
+
+// SetModule upserts a module checkpoint in memory, keeping first-seen order.
+func (r *Run) SetModule(rec ModuleResult) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.setModuleLocked(rec)
+}
+
+func (r *Run) setModuleLocked(rec ModuleResult) {
+	for i := range r.Manifest.Modules {
+		if r.Manifest.Modules[i].Name == rec.Name {
+			r.Manifest.Modules[i] = rec
+			return
+		}
+	}
+	r.Manifest.Modules = append(r.Manifest.Modules, rec)
+}
+
+// UpdateModule upserts a module checkpoint and atomically persists the
+// manifest. The orchestrator calls it on every module state change.
+func (r *Run) UpdateModule(rec ModuleResult) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.setModuleLocked(rec)
+	return r.writeManifestLocked()
 }
 
 // ManifestRelPath is the manifest location relative to a run root directory.

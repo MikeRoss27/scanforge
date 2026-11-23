@@ -50,6 +50,15 @@ type Options struct {
 	// ModuleStallCheckInterval overrides the stall watchdog cadence; zero
 	// means the orchestrator default.
 	ModuleStallCheckInterval time.Duration
+
+	// Resume reuses modules recorded as completed in the run manifest when
+	// their input hash is unchanged and their outputs still exist; every
+	// other module is executed again.
+	Resume bool
+	// ToolVersion optionally reports the external tool version behind a
+	// module; it is folded into the module's input hash. Empty means
+	// unknown.
+	ToolVersion func(module string) string
 }
 
 // ErrRunAborted is returned when the run was intentionally aborted by the
@@ -243,7 +252,25 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	}
 	outcomes := make(chan moduleOutcome, totalModules)
 
+	cp := newCheckpointer(scanRun, runCtx, opts, selectedModules)
+	if err := cp.seed(selectedModules); err != nil {
+		return nil, fmt.Errorf("record module checkpoints: %w", err)
+	}
+
 	launch := func(m modules.Module) {
+		if cp != nil {
+			hash := cp.inputHash(m)
+			if result, ok := cp.restore(m, hash); ok {
+				cp.hashes[m.Name()] = hash
+				if outChan != nil {
+					outChan <- ModuleStartEvent{Name: m.Name()}
+					outChan <- ModuleDoneEvent{Name: m.Name(), Status: result.Status, Reason: result.Reason, Summary: "resumed from checkpoint"}
+				}
+				outcomes <- moduleOutcome{module: m, result: result}
+				return
+			}
+			cp.started(m, hash)
+		}
 		go func() {
 			start := time.Now()
 			runningMu.Lock()
@@ -348,6 +375,7 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 		runningCount--
 		completed[name] = true
 		resultsByName[name] = outcome.result
+		cp.finished(outcome.module, outcome.result, outcome.err)
 		if outcome.err != nil {
 			runErrors = append(runErrors, outcome.err)
 		}
@@ -374,6 +402,7 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 				result := &modules.Result{Name: m.Name(), Status: "aborted"}
 				resultsByName[m.Name()] = result
 				completed[m.Name()] = true
+				cp.finished(m, result, nil)
 				if outChan != nil {
 					outChan <- ModuleDoneEvent{Name: m.Name(), Status: "aborted"}
 				}
@@ -418,6 +447,7 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 			result := &modules.Result{Name: m.Name(), Status: "skipped"}
 			resultsByName[m.Name()] = result
 			completed[m.Name()] = true
+			cp.finished(m, result, nil)
 			if outChan != nil {
 				outChan <- ModuleDoneEvent{Name: m.Name(), Status: "skipped"}
 			}
