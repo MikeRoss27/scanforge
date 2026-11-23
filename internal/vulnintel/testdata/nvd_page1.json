@@ -1,0 +1,51 @@
+{
+  "resultsPerPage": 2,
+  "startIndex": 0,
+  "totalResults": 3,
+  "format": "NVD_CVE",
+  "version": "2.0",
+  "timestamp": "2025-01-15T10:00:00.000",
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2023-0001",
+        "published": "2023-03-01T10:00:00.000",
+        "lastModified": "2023-04-01T10:00:00.000",
+        "descriptions": [
+          {"lang": "es", "value": "descripcion"},
+          {"lang": "en", "value": "Tomcat request smuggling example."}
+        ],
+        "metrics": {
+          "cvssMetricV31": [
+            {"cvssData": {"baseScore": 9.8, "baseSeverity": "CRITICAL"}}
+          ]
+        },
+        "configurations": [
+          {"nodes": [{"operator": "OR", "cpeMatch": [
+            {"vulnerable": true, "criteria": "cpe:2.3:a:apache:tomcat:*:*:*:*:*:*:*:*",
+             "versionStartIncluding": "9.0.0", "versionEndExcluding": "9.0.81"},
+            {"vulnerable": false, "criteria": "cpe:2.3:o:linux:linux_kernel:-:*:*:*:*:*:*:*"}
+          ]}]}
+        ]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2023-0002",
+        "published": "2023-05-01T10:00:00.000",
+        "lastModified": "2023-05-02T10:00:00.000",
+        "descriptions": [{"lang": "en", "value": "nginx issue with no version data."}],
+        "metrics": {
+          "cvssMetricV2": [
+            {"cvssData": {"baseScore": 5.0}, "baseSeverity": "MEDIUM"}
+          ]
+        },
+        "configurations": [
+          {"nodes": [{"operator": "OR", "cpeMatch": [
+            {"vulnerable": true, "criteria": "cpe:2.3:a:f5:nginx:*:*:*:*:*:*:*:*"}
+          ]}]}
+        ]
+      }
+    }
+  ]
+}
