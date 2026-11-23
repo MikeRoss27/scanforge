@@ -9,6 +9,7 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/console"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/storage"
+	"github.com/MikeRoss27/scanforge/internal/workflows"
 )
 
 type App struct {
@@ -28,9 +29,12 @@ func New(configPath string) *App {
 }
 
 type RunOptions struct {
-	Target       string
-	TargetsFile  string
-	Profile      string
+	Target      string
+	TargetsFile string
+	Profile     string
+	// Workflow is the path of a YAML workflow replacing the profile
+	// (--workflow). Mutually exclusive with Profile and WP.
+	Workflow     string
 	Scope        string
 	ScopeMode    string
 	ScopeAdd     []string
@@ -59,6 +63,9 @@ type RunOptions struct {
 	// WordPress carries WordPress-engagement tuning (enumeration mode,
 	// aggressive wordlist, opt-in brute force).
 	WordPress modules.WordPressOptions
+
+	// compiled is the validated workflow, set by Run when Workflow is used.
+	compiled *workflows.Compiled
 }
 
 type DoctorOptions struct {

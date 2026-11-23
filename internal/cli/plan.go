@@ -13,6 +13,7 @@ import (
 func NewPlanCommand(application *app.App) *cobra.Command {
 	var profile string
 	var preset string
+	var workflowFile string
 	var scopeFile string
 	var scopeMode string
 	var scopeAdd []string
@@ -41,7 +42,7 @@ before running a scan.`,
 				target = args[0]
 			}
 			plans, err := application.Plan(app.PlanOptions{
-				Target: target, TargetsFile: targetsFile, Profile: profile, Scope: scopeFile,
+				Target: target, TargetsFile: targetsFile, Profile: profile, Workflow: workflowFile, Scope: scopeFile,
 				ScopeMode: scopeMode, ScopeAdd: scopeAdd, Exclusions: exclusions, WP: wp,
 			})
 			if err != nil {
@@ -55,6 +56,7 @@ before running a scan.`,
 		},
 	}
 	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan profile to inspect (default from config)")
+	cmd.Flags().StringVar(&workflowFile, "workflow", "", "YAML workflow file to inspect instead of a profile")
 	cmd.Flags().StringVar(&preset, "preset", "", "User-oriented preset (safe, recon, web, ports, vuln, deep, wp)")
 	cmd.Flags().BoolVar(&wp, "wp", false, "Add the WordPress engagement chain to the resolved profile")
 	cmd.Flags().StringVar(&targetsFile, "targets", "", "File with one target per line (multi-target engagement; exclusive with a positional target)")

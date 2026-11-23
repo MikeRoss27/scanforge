@@ -64,6 +64,7 @@ func NewRootCommand() *cobra.Command {
 		"{{runFlagHelp .}}", 1))
 	cmd.AddCommand(run)
 	cmd.AddCommand(NewPlanCommand(application))
+	cmd.AddCommand(NewWorkflowCommand(application))
 	cmd.AddCommand(NewDiffCommand(application))
 	cmd.AddCommand(NewExportCommand(application))
 	cmd.AddCommand(NewTriageCommand(application))

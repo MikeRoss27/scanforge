@@ -25,6 +25,19 @@ func (a *App) Run(ctx context.Context, opts RunOptions) error {
 	if err != nil {
 		return err
 	}
+	if opts.Workflow != "" {
+		if err := checkWorkflowExclusive(opts.Profile, opts.WP); err != nil {
+			return err
+		}
+		cfg, err := a.loadConfig()
+		if err != nil {
+			return err
+		}
+		if opts.compiled, err = loadWorkflow(cfg, opts.Workflow); err != nil {
+			return fmt.Errorf("workflow: %w", err)
+		}
+		mergeWorkflowOverrides(&opts, opts.compiled.Overrides)
+	}
 	targets, err := expandTargets(opts.Target, opts.TargetsFile)
 	if err != nil {
 		return err
@@ -91,6 +104,9 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 	if profile == "" {
 		profile = cfg.DefaultProfile
 	}
+	if opts.compiled != nil {
+		profile = workflowProfilePrefix + opts.compiled.Name
+	}
 
 	effective, err := resolveScope(
 		cfg,
@@ -104,11 +120,18 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 		return nil, err
 	}
 
-	moduleNames, err := cfg.ProfileModules(profile)
-	if err != nil {
-		return nil, err
+	var moduleNames []string
+	if opts.compiled != nil {
+		// A workflow compiles to the exact module list a profile would
+		// yield; nothing is appended to it.
+		moduleNames = append(moduleNames, opts.compiled.Modules...)
+	} else {
+		moduleNames, err = cfg.ProfileModules(profile)
+		if err != nil {
+			return nil, err
+		}
+		moduleNames = applyWordPress(moduleNames, opts.WP, opts.WordPress.Bruteforce)
 	}
-	moduleNames = applyWordPress(moduleNames, opts.WP, opts.WordPress.Bruteforce)
 	if opts.WordPress.Bruteforce && opts.WordPress.PasswordsFile == "" {
 		return nil, fmt.Errorf("--wp-bruteforce requires --wp-passwords <file> (no password list is bundled)")
 	}
@@ -121,7 +144,9 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 	// Only after scope is confirmed: the suggestion probe is itself live
 	// network traffic against the target, so it must never run ahead of
 	// that boundary.
-	moduleNames = a.maybeSuggestWordPress(opts, moduleNames)
+	if opts.compiled == nil {
+		moduleNames = a.maybeSuggestWordPress(opts, moduleNames)
+	}
 
 	store := storage.NewRunStore(config.WorkspaceDir(cfg))
 
@@ -177,7 +202,16 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 		executor = runner.NewRealExecutor(s.executorVerbose(), runner.WithCommandSink(s.commandSink()))
 	}
 
-	orch := orchestrator.New(executor, buildRegistry(s.cfg))
+	registry := buildRegistry(s.cfg)
+	if s.opts.compiled != nil {
+		// Same registry API, modules wrapped with their step policy.
+		wrapped, err := s.opts.compiled.Registry(registry)
+		if err != nil {
+			return nil, err
+		}
+		registry = wrapped
+	}
+	orch := orchestrator.New(executor, registry)
 	// Buffered so a module emitting a burst of findings (e.g. nuclei) doesn't
 	// block on the renderer catching up.
 	eventChan := make(chan orchestrator.Event, 64)
