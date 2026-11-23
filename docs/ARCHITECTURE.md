@@ -170,3 +170,13 @@ validation sits between them.**
 - Provenance is recorded in `triage/manifest.json` (model, prompt version,
   input digest, temperature) and the cache reuses results when the input
   digest, model and prompt version are unchanged (`--force` bypasses it).
+
+## Persistance, reprise et accès agents
+
+- **Persistance par fichiers** : le manifest (`00_meta/manifest.json`) est aussi le store de checkpoints (statut + `input_hash` par module, écriture atomique). Pas de base SQLite : les runs restent lisibles, copiables et versionnables. Voir `docs/RESUME.md`.
+- **Scheduler** (`internal/scheduler`) : décorateur d'`Executor` (concurrence, req/s, budget de commandes, timeouts).
+- **Événements** (`internal/events`) : bus typé en complément du DAG, scope vérifié en premier, `00_meta/events.jsonl`.
+- **Workflows** (`internal/workflows`) : compilés vers la sélection de modules d'un profil ; le DAG et le filtrage de scope restent inchangés.
+- **Vulnintel** (`internal/vulnintel`) : cache NVD/KEV/EPSS, mis à jour uniquement par `scanforge intel update`.
+- **MCP / API** : lecture des runs, scans actifs désactivés par défaut (`--allow-active` + fichier de scope strict, journal d'audit).
+- **Secrets** : les secrets trouvés sur la cible restent en clair dans les findings (preuves) ; seuls les identifiants de l'opérateur sont masqués.

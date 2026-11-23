@@ -14,6 +14,9 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 - [Usage guide](docs/USAGE.md): installation, configuration, commands and examples.
 - [Scope management](docs/SCOPE.md): implicit modes, files, exclusions and CI.
 - [Architecture](docs/ARCHITECTURE.md): DAG, artifacts, central filtering and outputs.
+- [Resume & checkpoints](docs/RESUME.md): interrupt and resume runs (French).
+- [Workflows](docs/WORKFLOWS.md): YAML workflows (French).
+- [MCP server](docs/MCP.md) and [local API](docs/API.md): drive ScanForge from agents (French).
 - [Contribution guide](AGENTS.md): repository structure, style and validations.
 
 > **Français** : [Documentation en français](docs/fr/README.md) · **中文**：[中文文档](docs/zh/README.md)
@@ -32,7 +35,11 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 - **Visual snapshots**: the `screenshot` module captures screenshots of alive URLs via `httpx`, listed in the report.
 - **Benchmark suite**: `scanforge benchmark` runs the real pipeline against bundled intentionally-vulnerable lab targets (Firing Range, testphp.vulnweb.com, Juice Shop demo, local DVWA) and scores detection against documented expectations — a maintainer/CI tool, not part of a client engagement.
 - **WordPress parity mode**: `--preset wp` (or `--wp` on any profile) chains wpdetect (multi-signal core version), wpplugins/wpthemes (passive or aggressive enumeration), wpusers (author + REST API), wpexposure (wp-config backups, debug.log, listings), wpxmlrpc (methods/multicall/pingback) and wpcve (advisory correlation) — the same surface wpscan covers, without new external tools. `wpbrute` is opt-in strict (off by default everywhere).
-- **Tech-to-CVE correlation**: `techcve` matches detected technologies and versions against a bundled dataset with real CVSS base scores from NVD.
+- **Tech-to-CVE correlation**: `techcve` matches detected technologies and versions against a small bundled dataset and, after `scanforge intel update`, against a local NVD/CISA KEV/EPSS cache. A match is only reported as confirmed when the version falls in an affected CPE range; name-only similarity stays an unconfirmed lead.
+- **Resume & checkpoints**: `scanforge resume <run-id>` continues an interrupted run, skipping modules already completed with identical inputs; `status` and `runs list` inspect runs. File-based, no database.
+- **YAML workflows**: `--workflow file.yaml` defines steps, dependencies, timeouts, retries and error policy; validated before execution, no arbitrary shell, same scope enforcement.
+- **Resource limits**: `--concurrency`, `--rps`, `--max-requests` and `--command-timeout` (or `limits:` in the config) cap how hard a run hits targets.
+- **Agent access (MCP + API)**: `scanforge mcp` and `scanforge api` expose runs, assets, findings and evidence. Active scans are off by default and require `--allow-active` plus a strict scope file; every active call is audited.
 - **Fully configurable Nuclei**: severity, tags, rate-limit, overall timeout, custom templates and template updates via dedicated flags.
 - **Parallelized Nmap**: bounded worker pool (`--nmap-concurrency`) instead of sequential host-by-host scans.
 - **Live console**: the scan streams a chronological, tagged event log (no fullscreen interface) — pipeline phases, module lifecycle, findings printed the moment they are discovered (with the exposed email, secret or host), a volatile progress line on interactive terminals (a generated pixel-art hammer/anvil loop, 16 columns by 6 rows with status alongside; a single-line spinner below 50 columns by default; `SCANFORGE_SPINNER=forge|dots|off` changes it), expanded severity blocks for high/critical findings, deduplicated repeats counted in a `Finding types` recap, and a final `── SCAN COMPLETE ──` summary. Output stays grep/tee/CI friendly; `-v/-vv/-vvv` raise verbosity, `-q` silences everything but findings, errors and the summary.
@@ -276,7 +283,26 @@ scanforge export runs/example.com/2026-08-10_10-00-00 --format sarif          # 
 scanforge export runs/example.com/2026-08-10_10-00-00 --format defectdojo     # import-scan "Generic Findings Import"
 ```
 
-### 6. API keys and updates
+### 6. Resume, workflows and agent access
+
+```bash
+scanforge runs list
+scanforge status example.com/2026-08-10_10-00-00
+scanforge resume example.com/2026-08-10_10-00-00      # re-run only what changed or failed
+
+scanforge workflow validate workflows/web-recon.yaml
+scanforge run example.com --scope scope.txt --workflow workflows/web-recon.yaml
+
+scanforge intel update                                # explicit network step: NVD, KEV, EPSS
+scanforge mcp                                         # read-only MCP over stdio
+scanforge mcp --allow-active --scope scope.txt        # also allow scope-bound active scans
+```
+
+Findings keep leaked secret values in full, since they are the evidence for a
+report. Only your own credentials (API keys, auth headers/cookies) are masked in
+API/MCP output.
+
+### 7. API keys and updates
 
 Some tools (subfinder, nuclei, ...) benefit from API keys. Manage them with
 `scanforge auth`:

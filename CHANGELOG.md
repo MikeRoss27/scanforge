@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `scanforge resume <run-id>`, `scanforge status <run-id>` and `scanforge runs list`: file-based checkpoints in the existing manifest (per-module status, input hash, atomic writes). Resume skips completed modules whose inputs (scope, params, tool version, required artifacts) are unchanged and never widens the scope (see `docs/RESUME.md`)
+- Global scheduler (`internal/scheduler`): concurrency, requests-per-second, command budget and timeout caps via a `limits:` config section and `--concurrency/--rps/--max-requests/--command-timeout`; counts launched commands, not HTTP requests
+- Typed discovery event bus (`internal/events`) with deterministic IDs, dedup, depth/budget limits and mandatory scope gating, persisted to `00_meta/events.jsonl`; demo wiring behind the off-by-default `--events` flag
+- YAML workflows (`--workflow file.yaml`, `scanforge workflow validate`, `plan --workflow`): validated against the module registry, no shell steps, compiled to the existing DAG (see `docs/WORKFLOWS.md`)
+- Local vulnerability intel (`scanforge intel update|status`): NVD, CISA KEV and EPSS cached as files with provenance; `techcve` uses it when present and labels matches `exact-cpe-range` / `version-range` / `name-only` (name-only is never confirmed)
+- `scanforge mcp` (stdio) and `scanforge api` (loopback HTTP): read-only access to runs, assets, findings and evidence; active scan tools are disabled unless `--allow-active` is given together with a strict `--scope` file, and every active call is audit-logged (see `docs/MCP.md`, `docs/API.md`)
+
+### Notes
+
+- Findings keep leaked secret values in full (they are bounty evidence); only the operator's own credentials are masked in API/MCP output
+
 ## [0.10.0] - 2026-11-23
 
 ### Added
