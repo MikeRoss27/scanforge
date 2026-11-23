@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Go toolchain bumped to 1.27 (`go.mod`, CI, release workflow); CI lint pinned to golangci-lint v2.15.0
+- Go modules updated (chromedp v0.24, cdproto v0.160.8, goja, ws); `jsverify` ported to chromedp's generic API
+- Pinned external tools bumped: subfinder v2.17.0, dnsx v1.3.1, httpx v1.12.0, naabu v2.7.0, katana v1.8.0, nuclei v3.11.1, tlsx v1.5.0, ffuf v2.3.0 (SecLists, gau, shuffledns, massdns, wafw00f unchanged)
 - Fixed existing golangci-lint findings (unchecked errors, unused types)
 
 ### Notes

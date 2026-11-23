@@ -52,7 +52,7 @@ PATH="$old_path"
 assert_equal "$PACKAGE_MANAGER" pacman
 
 load_tool_versions
-assert_equal "$SUBFINDER_VERSION" v2.15.0
+assert_equal "$SUBFINDER_VERSION" v2.17.0
 assert_equal "$WAFW00F_VERSION" v2.4.2
 
 arch_packages="$(packages_for_manager pacman)"
