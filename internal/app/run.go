@@ -262,6 +262,7 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 			WordPress:       s.opts.WordPress,
 			Resume:          s.resume,
 			ToolVersion:     toolVersion,
+			Events:          s.opts.Events,
 		}, eventChan)
 	}()
 

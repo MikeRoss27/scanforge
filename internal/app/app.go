@@ -41,6 +41,9 @@ type RunOptions struct {
 	// (-v), Debug (-vv) or Trace (-vvv). See console.Verbosity.
 	Verbosity console.Verbosity
 
+	// Events enables the experimental discovery event bus (off by default).
+	Events bool
+
 	// Proxy routes HTTP-capable modules through an intercepting proxy such
 	// as Caido or Burp Suite (e.g. http://127.0.0.1:8080).
 	Proxy string

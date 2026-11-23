@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikeRoss27/scanforge/internal/events"
 	scanScope "github.com/MikeRoss27/scanforge/internal/scope"
 	"github.com/MikeRoss27/scanforge/internal/storage"
 )
@@ -62,6 +63,9 @@ type RunContext struct {
 	// WordPress carries WordPress-engagement tuning (enumeration mode,
 	// aggressive wordlists, opt-in brute force).
 	WordPress WordPressOptions
+
+	// events is the optional discovery event bus (nil unless --events).
+	events *events.Bus
 
 	onFinding func(Finding)
 	onWarn    func(string)
@@ -360,6 +364,14 @@ func (c *RunContext) finishArtifactState(state *artifactState) {
 // are filtered in place first, making this the central scope boundary for all
 // line-oriented host, URL, IP, and host:port lists.
 func (c *RunContext) AddArtifact(name string, artifact Artifact) error {
+	if err := c.addArtifact(name, artifact); err != nil {
+		return err
+	}
+	c.emitArtifactEvents(name, artifact)
+	return nil
+}
+
+func (c *RunContext) addArtifact(name string, artifact Artifact) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -371,6 +383,54 @@ func (c *RunContext) AddArtifact(name string, artifact Artifact) error {
 	delete(c.artifactErrors, name)
 	c.finishArtifactState(c.artifactState(name))
 	return nil
+}
+
+// lockedScope lets the event bus consult the scope under the RunContext lock,
+// since AllowDiscoveredHost mutates the scope concurrently.
+type lockedScope struct{ c *RunContext }
+
+func (l lockedScope) IsAllowed(target string) bool {
+	l.c.mu.RLock()
+	defer l.c.mu.RUnlock()
+	return l.c.Scope.IsAllowed(target)
+}
+
+// EnableEvents turns on the experimental discovery event bus (off by
+// default): artifacts listed in events.ArtifactEventTypes are additionally
+// emitted as events, persisted to 00_meta/events.jsonl and gated by the
+// effective scope. It requires a scope and a real (non-dry) run, and is a
+// no-op otherwise.
+func (c *RunContext) EnableEvents() error {
+	if c.Scope == nil || c.Run == nil || c.DryRun {
+		return nil
+	}
+	bus, err := events.New(events.Options{MetaDir: c.Run.MetaDir, Scope: lockedScope{c}})
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.events = bus
+	c.mu.Unlock()
+	return nil
+}
+
+// EventBus returns the discovery event bus, or nil when events are disabled.
+func (c *RunContext) EventBus() *events.Bus {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.events
+}
+
+func (c *RunContext) emitArtifactEvents(name string, artifact Artifact) {
+	bus := c.EventBus()
+	typ, ok := events.ArtifactEventTypes[name]
+	if bus == nil || !ok || artifact.Type != "text" {
+		return
+	}
+	if _, err := events.EmitLines(bus, c.Run.Path(artifact.Path), typ, name); err != nil {
+		c.EmitWarning(fmt.Sprintf("events: %v", err))
+	}
+	bus.Wait()
 }
 
 func (c *RunContext) GetArtifact(name string) (Artifact, bool) {
