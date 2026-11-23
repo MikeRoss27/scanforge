@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Local vulnerability intel (`scanforge intel update|status`): NVD, CISA KEV and EPSS cached as files with provenance; `techcve` uses it when present and labels matches `exact-cpe-range` / `version-range` / `name-only` (name-only is never confirmed)
 - `scanforge mcp` (stdio) and `scanforge api` (loopback HTTP): read-only access to runs, assets, findings and evidence; active scan tools are disabled unless `--allow-active` is given together with a strict `--scope` file, and every active call is audit-logged (see `docs/MCP.md`, `docs/API.md`)
 
+- Opt-in recursive discovery (`--recursive`, `--recursive-depth` default 2, `--recursive-budget` default 200, config `recursive:`): artifacts of existing modules are emitted as `DNS_NAME`/`OPEN_PORT`/`LIVE_URL`/`JS_URL`/`API_ROUTE` events; a new in-scope name found late triggers a bounded dnsx -> httpx pass, a new live URL a katana depth-1 pass. Out-of-scope discoveries are dropped and logged to `scope-rejections.jsonl`, never auto-allowed; follow-ups run through the injected executor and `AddArtifact`, outputs go to `07_recursive/` (see `docs/RECURSIVE.md`)
+
 ### Changed
 
 - Go toolchain bumped to 1.27 (`go.mod`, CI, release workflow); CI lint pinned to golangci-lint v2.15.0
