@@ -79,7 +79,7 @@ its targets.`,
 		Example: `  scanforge run example.com
   scanforge run --targets targets.txt --profile web
   scanforge run example.com --dry-run
-  scanforge run example.com --scope scope.txt --workflow workflows/web-recon.yaml
+  scanforge run example.com -s scope.txt --workflow web-recon.yaml
   scanforge run example.com --preset web --rps 10 --concurrency 4`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
