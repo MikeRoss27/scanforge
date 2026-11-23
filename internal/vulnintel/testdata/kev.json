@@ -1,0 +1,14 @@
+{
+  "title": "CISA Catalog of Known Exploited Vulnerabilities",
+  "catalogVersion": "2025.01.14",
+  "dateReleased": "2025-01-14T15:00:00.000Z",
+  "count": 2,
+  "vulnerabilities": [
+    {"cveID": "CVE-2019-0003", "vendorProject": "Apache", "product": "HTTP Server",
+     "vulnerabilityName": "Apache HTTP Server Privilege Escalation", "dateAdded": "2022-01-01",
+     "dueDate": "2022-01-22", "knownRansomwareCampaignUse": "Unknown"},
+    {"cveID": "CVE-2021-9999", "vendorProject": "Other", "product": "Thing",
+     "vulnerabilityName": "Other", "dateAdded": "2022-02-01", "dueDate": "2022-02-22",
+     "knownRansomwareCampaignUse": "Known"}
+  ]
+}
