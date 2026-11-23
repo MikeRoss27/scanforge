@@ -1,6 +1,6 @@
 module github.com/MikeRoss27/scanforge
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/charmbracelet/lipgloss v1.1.0

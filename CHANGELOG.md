@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Local vulnerability intel (`scanforge intel update|status`): NVD, CISA KEV and EPSS cached as files with provenance; `techcve` uses it when present and labels matches `exact-cpe-range` / `version-range` / `name-only` (name-only is never confirmed)
 - `scanforge mcp` (stdio) and `scanforge api` (loopback HTTP): read-only access to runs, assets, findings and evidence; active scan tools are disabled unless `--allow-active` is given together with a strict `--scope` file, and every active call is audit-logged (see `docs/MCP.md`, `docs/API.md`)
 
+### Changed
+
+- Go toolchain bumped to 1.27 (`go.mod`, CI, release workflow); CI lint pinned to golangci-lint v2.15.0
+- Fixed existing golangci-lint findings (unchecked errors, unused types)
+
 ### Notes
 
 - Findings keep leaked secret values in full (they are bounty evidence); only the operator's own credentials are masked in API/MCP output

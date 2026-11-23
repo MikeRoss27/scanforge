@@ -21,7 +21,7 @@ ScanForge is a Go CLI that orchestrates external recon/security tools into a sin
 - `make run` (alias `make dev`) executes the CLI via `go run` without producing a binary; pass extra arguments with `ARGS` (e.g. `make run ARGS="plan example.com --preset deep"`).
 - `make check` is the pre-push gate: `fmt-check` (fails on unformatted files without rewriting them) + `vet` + `lint` + `test`.
 - `make tidy` runs `go mod tidy`; `make cover` writes `coverage.out` and prints the per-function summary (removed by `make clean`); `make tools` installs the golangci-lint version pinned by CI.
-- `make lint` runs `golangci-lint`; `.golangci.yml` uses the v2 config format (`version: "2"`). CI pins golangci-lint v2.12.2, so a local install of any v2.x works (`make tools` installs that exact version).
+- `make lint` runs `golangci-lint`; `.golangci.yml` uses the v2 config format (`version: "2"`). CI pins golangci-lint v2.15.0, so a local install of any v2.x works (`make tools` installs that exact version).
 - `go run ./cmd/scanforge --help` runs the CLI without creating a binary.
 - CI (`.github/workflows/ci.yml`) runs `go vet ./...`, `go test -race ./...`, a coverage run, and `go build`; `make test` (`go test ./...`) is the fast local equivalent.
 - `go test ./internal/orchestrator -run TestOrchestratorSuccess` runs one focused test.
@@ -29,7 +29,7 @@ ScanForge is a Go CLI that orchestrates external recon/security tools into a sin
 - `docker compose run scanforge run example.com --profile web` exercises the containerized workflow. Only target hosts explicitly listed in the confirmed/mounted scope file.
 - External tool versions are pinned in `.tools-version` (single source shared by `install.sh`, `install.ps1` and the `Dockerfile`); update it when bumping a tool.
 
-Go 1.25.x is expected, as declared in `go.mod` and CI.
+Go 1.27.x is expected, as declared in `go.mod` and CI.
 
 ## Coding Style & Naming Conventions
 

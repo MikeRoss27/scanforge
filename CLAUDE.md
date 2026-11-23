@@ -19,7 +19,7 @@ single authorized pentest/recon pipeline, with strict scope enforcement between 
 - `docker-compose run scanforge run example.com --profile web` — containerized run (only against
   targets listed in the mounted scope file).
 
-Go 1.25.x is required (see `go.mod`). CI (`.github/workflows/ci.yml`) runs `go test ./...` then
+Go 1.27.x is required (see `go.mod`). CI (`.github/workflows/ci.yml`) runs `go test ./...` then
 `go build -o scanforge ./cmd/scanforge` on `ubuntu-latest`.
 
 ## Architecture
