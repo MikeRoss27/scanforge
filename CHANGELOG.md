@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `scanforge resume <run-id>`, `scanforge status <run-id>` and `scanforge runs list`: file-based checkpoints in the existing manifest (per-module status, input hash, atomic writes). Resume skips completed modules whose inputs (scope, params, tool version, required artifacts) are unchanged and never widens the scope (see `docs/RESUME.md`)
+- Global scheduler (`internal/scheduler`): concurrency, requests-per-second, command budget and timeout caps via a `limits:` config section and `--concurrency/--rps/--max-requests/--command-timeout`; counts launched commands, not HTTP requests
+- Typed discovery event bus (`internal/events`) with deterministic IDs, dedup, depth/budget limits and mandatory scope gating, persisted to `00_meta/events.jsonl`; demo wiring behind the off-by-default `--events` flag
+- YAML workflows (`--workflow file.yaml`, `scanforge workflow validate`, `plan --workflow`): validated against the module registry, no shell steps, compiled to the existing DAG (see `docs/WORKFLOWS.md`)
+- Local vulnerability intel (`scanforge intel update|status`): NVD, CISA KEV and EPSS cached as files with provenance; `techcve` uses it when present and labels matches `exact-cpe-range` / `version-range` / `name-only` (name-only is never confirmed)
+- `scanforge mcp` (stdio) and `scanforge api` (loopback HTTP): read-only access to runs, assets, findings and evidence; active scan tools are disabled unless `--allow-active` is given together with a strict `--scope` file, and every active call is audit-logged (see `docs/MCP.md`, `docs/API.md`)
+
+### Changed
+
+- Go toolchain bumped to 1.27 (`go.mod`, CI, release workflow); CI lint pinned to golangci-lint v2.15.0
+- Go modules updated (chromedp v0.24, cdproto v0.160.8, goja, ws); `jsverify` ported to chromedp's generic API
+- Pinned external tools bumped: subfinder v2.17.0, dnsx v1.3.1, httpx v1.12.0, naabu v2.7.0, katana v1.8.0, nuclei v3.11.1, tlsx v1.5.0, ffuf v2.3.0 (SecLists, gau, shuffledns, massdns, wafw00f unchanged)
+- Fixed existing golangci-lint findings (unchecked errors, unused types)
+
+### Fixed
+
+- `nuclei` no longer fails when a WAF is detected: it was passed `-random-agent`, a flag that does not exist in nuclei v3 ("flag provided but not defined"). It now sets a random browser-like `User-Agent` header, as `ffuf` and `katana` do
+
+### Notes
+
+- Findings keep leaked secret values in full (they are bounty evidence); only the operator's own credentials are masked in API/MCP output
+
 ## [0.10.0] - 2026-11-23
 
 ### Added

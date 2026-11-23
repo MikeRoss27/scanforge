@@ -1,0 +1,30 @@
+{
+  "resultsPerPage": 1,
+  "startIndex": 2,
+  "totalResults": 3,
+  "format": "NVD_CVE",
+  "version": "2.0",
+  "timestamp": "2025-01-15T10:00:01.000",
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2019-0003",
+        "published": "2019-02-01T10:00:00.000",
+        "lastModified": "2020-01-01T10:00:00.000",
+        "descriptions": [{"lang": "en", "value": "Apache httpd privilege escalation example."}],
+        "metrics": {
+          "cvssMetricV31": [
+            {"cvssData": {"baseScore": 7.8, "baseSeverity": "HIGH"}}
+          ]
+        },
+        "configurations": [
+          {"nodes": [{"operator": "OR", "cpeMatch": [
+            {"vulnerable": true, "criteria": "cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*",
+             "versionStartIncluding": "2.4.0", "versionEndIncluding": "2.4.38"},
+            {"vulnerable": true, "criteria": "cpe:2.3:a:apache:http_server:2.2.34:*:*:*:*:*:*:*"}
+          ]}]}
+        ]
+      }
+    }
+  ]
+}

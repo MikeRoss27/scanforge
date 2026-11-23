@@ -30,17 +30,17 @@ func TestProbeHostDetectsWordPress(t *testing.T) {
 	var mux http.ServeMux
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.RawQuery == "feed=rss2" {
-			io.WriteString(w, wpFeed)
+			_, _ = io.WriteString(w, wpFeed)
 			return
 		}
-		io.WriteString(w, wpHomepage)
+		_, _ = io.WriteString(w, wpHomepage)
 	})
 	mux.HandleFunc("/readme.html", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, wpReadme)
+		_, _ = io.WriteString(w, wpReadme)
 	})
 	mux.HandleFunc("/wp-json/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, wpJSON)
+		_, _ = io.WriteString(w, wpJSON)
 	})
 	server := httptest.NewServer(&mux)
 	defer server.Close()
@@ -63,7 +63,7 @@ func TestProbeHostDetectsWordPress(t *testing.T) {
 
 func TestProbeHostIgnoresNonWordPress(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "<html><head><title>static</title></head><body>plain site</body></html>")
+		_, _ = io.WriteString(w, "<html><head><title>static</title></head><body>plain site</body></html>")
 	}))
 	defer server.Close()
 
@@ -85,7 +85,7 @@ func TestProbeHostRunsSignalsConcurrently(t *testing.T) {
 	const perRequestDelay = 150 * time.Millisecond
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(perRequestDelay)
-		io.WriteString(w, "<html>not wordpress</html>")
+		_, _ = io.WriteString(w, "<html>not wordpress</html>")
 	}))
 	defer server.Close()
 

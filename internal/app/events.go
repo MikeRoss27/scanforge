@@ -50,10 +50,11 @@ func (s *runSession) finalizeManifest(results []*modules.Result, runErr error) e
 	}
 
 	for _, result := range results {
-		s.scanRun.Manifest.Modules = append(s.scanRun.Manifest.Modules, storage.ModuleResult{
-			Name:   result.Name,
-			Status: result.Status,
-		})
+		// The orchestrator already persisted a full checkpoint per module;
+		// only fall back to a bare record when none exists.
+		if _, ok := s.scanRun.Module(result.Name); !ok {
+			s.scanRun.SetModule(storage.ModuleResult{Name: result.Name, Status: result.Status})
+		}
 		for key, value := range result.OutputFiles {
 			s.scanRun.Manifest.Outputs[key] = value
 		}

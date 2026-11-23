@@ -19,7 +19,7 @@ single authorized pentest/recon pipeline, with strict scope enforcement between 
 - `docker-compose run scanforge run example.com --profile web` — containerized run (only against
   targets listed in the mounted scope file).
 
-Go 1.25.x is required (see `go.mod`). CI (`.github/workflows/ci.yml`) runs `go test ./...` then
+Go 1.27.x is required (see `go.mod`). CI (`.github/workflows/ci.yml`) runs `go test ./...` then
 `go build -o scanforge ./cmd/scanforge` on `ubuntu-latest`.
 
 ## Architecture
@@ -81,6 +81,15 @@ without network access). `App.Run` selects the executor based on `--dry-run`. Mo
 through the injected `Executor` rather than calling `os/exec` directly, so dry-run and command
 logging stay centralized.
 
+### Newer subsystems
+
+- `internal/scheduler`: `WrapExecutor` decorates the `runner.Executor` with concurrency, rps, command budget and timeouts (config `limits:`). Version probes use the unwrapped executor.
+- `internal/events`: typed discovery bus complementing the DAG; scope check is mandatory and first; dedup by deterministic ID. Only demo-wired (`--events`).
+- `internal/workflows`: YAML → validated compile to the same module selection as a profile; step policy (retries/timeout/on_error/when) is a module wrapper, the orchestrator is unchanged. No shell steps.
+- `internal/vulnintel`: NVD/KEV/EPSS file cache (`~/.cache/scanforge/vulnintel`, network only on `scanforge intel update`); consumed by `techcve`.
+- `internal/runindex`, `internal/active`, `internal/mcp`, `internal/api`: read access to runs plus gated active scans. Active mode needs `--allow-active` and a strict `--scope` file; scans run as child processes; audit log is JSONL.
+- Secrets rule: findings keep leaked target secrets in full (bounty evidence); only operator credentials (auth keys, `-H` headers, proxy creds) are masked in logs and API/MCP output.
+
 ### Layering
 
 `cmd/scanforge/main.go` → `internal/cli` (cobra commands, flag parsing) → `internal/app` (`App.Run`,
@@ -98,7 +107,7 @@ checks), `internal/auth` (API key management for tools that need them).
 
 Each run under `runs/<target>/<timestamp>/`:
 ```
-00_meta/       manifest.json, commands.log, effective-scope.txt, scope-rejections.jsonl
+00_meta/       manifest.json, commands.log, effective-scope.txt, scope-rejections.jsonl, events.jsonl (with --events)
 01_subdomains/ subfinder + dnsx results
 02_http/       httpx probes, tlsx enrichment
 03_ports/      naabu results, nmap XML
@@ -109,7 +118,10 @@ report.json    normalized findings model
 report.md      human-readable summary
 ```
 The manifest records status (`completed`/`partial`/`failed`), per-module results, and scope
-provenance (`scope_source`, `scope_mode`) for audit.
+provenance (`scope_source`, `scope_mode`) for audit. It is also the checkpoint store: each module
+has a status and an `input_hash`, written atomically, which `scanforge resume` uses to skip
+unchanged completed modules (`internal/orchestrator/checkpoint.go`, `internal/storage/runindex.go`).
+Persistence is file-based by design (no SQLite).
 
 ## Coding conventions
 

@@ -92,31 +92,31 @@ func TestWordPressChainEndToEnd(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.RawQuery {
 		case "feed=rss2":
-			io.WriteString(w, wpFeed)
+			_, _ = io.WriteString(w, wpFeed)
 		case "author=1":
 			w.Header().Set("Location", "/author/site-admin/")
 			w.WriteHeader(http.StatusMovedPermanently)
 		default:
-			io.WriteString(w, wpHome)
+			_, _ = io.WriteString(w, wpHome)
 		}
 	})
-	mux.HandleFunc("/readme.html", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, wpReadme) })
+	mux.HandleFunc("/readme.html", func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, wpReadme) })
 	mux.HandleFunc("/wp-json/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, wpJSON)
+		_, _ = io.WriteString(w, wpJSON)
 	})
 	mux.HandleFunc("/wp-json/wp/v2/users", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, wpUsersJSON)
+		_, _ = io.WriteString(w, wpUsersJSON)
 	})
 	mux.HandleFunc("/xmlrpc.php", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/xml")
-		io.WriteString(w, wpListMethods)
+		_, _ = io.WriteString(w, wpListMethods)
 	})
-	mux.HandleFunc("/wp-content/plugins/contact-form-7/readme.txt", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, pluginReadmeCF7) })
-	mux.HandleFunc("/wp-content/themes/astra/style.css", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, themeStyleAstra) })
-	mux.HandleFunc("/wp-content/debug.log", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, debugLog) })
-	mux.HandleFunc("/wp-config.php.bak", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, configBackup) })
+	mux.HandleFunc("/wp-content/plugins/contact-form-7/readme.txt", func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, pluginReadmeCF7) })
+	mux.HandleFunc("/wp-content/themes/astra/style.css", func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, themeStyleAstra) })
+	mux.HandleFunc("/wp-content/debug.log", func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, debugLog) })
+	mux.HandleFunc("/wp-config.php.bak", func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, configBackup) })
 	server := httptest.NewServer(mux)
 	defer server.Close()
 

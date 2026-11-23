@@ -20,9 +20,9 @@ func TestForModulesMapsSharedAndTransitiveDependencies(t *testing.T) {
 
 func TestExpectedVersionUsesInjectedManifest(t *testing.T) {
 	previous := PinnedVersions
-	PinnedVersions = "SUBFINDER_VERSION=v2.15.0,DNSX_VERSION=v1.3.0"
+	PinnedVersions = "SUBFINDER_VERSION=v2.17.0,DNSX_VERSION=v1.3.1"
 	t.Cleanup(func() { PinnedVersions = previous })
-	if got := ExpectedVersion("SUBFINDER_VERSION"); got != "2.15.0" {
+	if got := ExpectedVersion("SUBFINDER_VERSION"); got != "2.17.0" {
 		t.Fatalf("unexpected version: %q", got)
 	}
 }

@@ -174,7 +174,7 @@ func verifyAll(ctx context.Context, runCtx *modules.RunContext, browser string, 
 	// Force the browser to actually start before replaying anything: a
 	// broken binary or a wedged X server surfaces here with the underlying
 	// error (including the OS exit status) instead of failing every replay.
-	if err := chromedp.Run(browserCtx, chromedp.Navigate("about:blank")); err != nil {
+	if err := chromedp.Do(browserCtx, chromedp.Navigate("about:blank")); err != nil {
 		return nil, fmt.Errorf("browser failed to start: %w", err)
 	}
 
@@ -224,9 +224,7 @@ func (c *dialogCapture) handle(tabCtx context.Context, message string) {
 	c.pending.Add(1)
 	go func() {
 		defer c.pending.Add(-1)
-		_ = chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
-			return page.HandleJavaScriptDialog(false).Do(ctx)
-		}))
+		_, _ = chromedp.Call(tabCtx, page.HandleJavaScriptDialog, page.HandleJavaScriptDialogParams{Accept: false})
 	}()
 }
 
@@ -258,10 +256,10 @@ func (c *dialogCapture) waitForDismissals() {
 // event never fires cannot block the replay (or the whole scan) indefinitely.
 // The parent tab context is unaffected: pending dialogs and later steps still
 // run on it.
-func runBounded(parent context.Context, timeout time.Duration, actions ...chromedp.Action) error {
+func runBounded(parent context.Context, timeout time.Duration, actions ...chromedp.Action[chromedp.Void]) error {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	return chromedp.Run(ctx, actions...)
+	return chromedp.Do(ctx, actions...)
 }
 
 // replayOne drives a single payload against one page and returns the verdict.
@@ -280,19 +278,20 @@ func replayOne(browserCtx context.Context, item finding, pageURL, payload string
 	defer tabCancel()
 
 	var capture dialogCapture
-	chromedp.ListenTarget(tabCtx, func(ev interface{}) {
+	if err := chromedp.Listen(tabCtx, func(ev any) {
 		if dlg, ok := ev.(*page.EventJavascriptDialogOpening); ok {
 			// Dismissing unblocks the page; the recorded message is what we
 			// check, and confirm()/prompt() variants would wait forever.
 			capture.handle(tabCtx, dlg.Message)
 		}
-	})
+	}); err != nil {
+		out.Verdict = "unreachable"
+		out.Evidence = "failed to listen for dialogs: " + err.Error()
+		return out
+	}
 	defer capture.waitForDismissals()
 
-	installErr := chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
-		_, err := page.AddScriptToEvaluateOnNewDocument(hooks).Do(ctx)
-		return err
-	}))
+	_, installErr := chromedp.Call(tabCtx, page.AddScriptToEvaluateOnNewDocument, page.AddScriptToEvaluateOnNewDocumentParams{Source: hooks})
 	if installErr != nil {
 		out.Verdict = "unreachable"
 		out.Evidence = "failed to install hooks: " + installErr.Error()
@@ -320,7 +319,10 @@ func replayOne(browserCtx context.Context, item finding, pageURL, payload string
 	for _, variant := range attackURLs(pageURL, payload) {
 		if err := runBounded(tabCtx, navTimeout,
 			chromedp.Navigate(variant),
-			chromedp.Evaluate(attackJS, nil),
+			chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+				_, err := chromedp.Evaluate[any](attackJS)(ctx, t)
+				return err
+			}),
 		); err != nil {
 			continue
 		}
@@ -386,8 +388,8 @@ func isOurVariant(pageURL, payload, final string) bool {
 
 // currentURL reads the tab's location; empty on error.
 func currentURL(tabCtx context.Context) string {
-	var url string
-	if err := chromedp.Run(tabCtx, chromedp.Evaluate(`document.URL`, &url)); err != nil {
+	url, err := chromedp.Run(tabCtx, chromedp.Evaluate[string](`document.URL`))
+	if err != nil {
 		return ""
 	}
 	return url
@@ -399,15 +401,14 @@ func currentURL(tabCtx context.Context) string {
 // marker, and an empty string when nothing fired.
 func settle(tabCtx context.Context, capture *dialogCapture, payload string) string {
 	deadline := time.Now().Add(settleTimeout)
-	var sf struct {
+	type hookState struct {
 		Hits []string `json:"hits"`
 	}
 	for time.Now().Before(deadline) {
 		if capture.containsMarker() {
 			return "executed"
 		}
-		sf.Hits = nil
-		if err := chromedp.Run(tabCtx, chromedp.Evaluate(`window.__sf`, &sf)); err == nil {
+		if sf, err := chromedp.Run(tabCtx, chromedp.Evaluate[hookState](`window.__sf`)); err == nil {
 			for _, hit := range sf.Hits {
 				if strings.Contains(hit, markerPrefix) {
 					return "sink-reached"

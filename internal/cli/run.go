@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/app"
+	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/console"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/spf13/cobra"
@@ -14,6 +15,7 @@ import (
 func NewRunCommand(application *app.App) *cobra.Command {
 	var profile string
 	var preset string
+	var workflowFile string
 	var scopeFile string
 	var scopeMode string
 	var scopeAdd []string
@@ -25,6 +27,7 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var quiet bool
 
 	var proxy string
+	var eventsEnabled bool
 	var headers []string
 
 	var nucleiSeverity string
@@ -40,6 +43,11 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var nucleiFullScan bool
 
 	var nmapConcurrency int
+
+	var limitConcurrency int
+	var limitRPS float64
+	var limitMaxRequests int
+	var limitCommandTimeout time.Duration
 
 	var ffufWordlist string
 	var ffufFilterCodes string
@@ -62,10 +70,17 @@ func NewRunCommand(application *app.App) *cobra.Command {
 the selected profile or preset. The effective scope is built from scope.txt
 and every artifact is filtered against it before downstream modules consume
 it. Results are written to runs/<target>/<timestamp>/ with a consolidated
-report (report.json / report.md).`,
+report (report.json / report.md).
+
+An interrupted run can be continued with 'scanforge resume'. Use --workflow
+to run a validated YAML workflow instead of a profile, and --concurrency,
+--rps, --max-requests and --command-timeout to cap how hard the run hits
+its targets.`,
 		Example: `  scanforge run example.com
   scanforge run --targets targets.txt --profile web
-  scanforge run example.com --dry-run`,
+  scanforge run example.com --dry-run
+  scanforge run example.com -s scope.txt --workflow web-recon.yaml
+  scanforge run example.com --preset web --rps 10 --concurrency 4`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --profile takes precedence; --preset is shorthand for one of
@@ -81,6 +96,7 @@ report (report.json / report.md).`,
 				Target:       target,
 				TargetsFile:  targetsFile,
 				Profile:      profile,
+				Workflow:     workflowFile,
 				Scope:        scopeFile,
 				ScopeMode:    scopeMode,
 				ScopeAdd:     scopeAdd,
@@ -90,6 +106,7 @@ report (report.json / report.md).`,
 				Verbosity:    console.ParseVerbosity(verbosityCount, quiet),
 				Proxy:        proxy,
 				Headers:      headers,
+				Events:       eventsEnabled,
 				Nuclei: modules.NucleiOptions{
 					Severity:               nucleiSeverity,
 					ExcludeSeverity:        nucleiExcludeSeverity,
@@ -104,6 +121,12 @@ report (report.json / report.md).`,
 					FullScan:               nucleiFullScan,
 				},
 				NmapConcurrency: nmapConcurrency,
+				Limits: config.Limits{
+					Concurrency:    limitConcurrency,
+					RPS:            limitRPS,
+					MaxRequests:    limitMaxRequests,
+					CommandTimeout: limitCommandTimeout,
+				},
 				Ffuf: modules.FfufOptions{
 					Wordlist:    ffufWordlist,
 					FilterCodes: ffufFilterCodes,
@@ -122,6 +145,7 @@ report (report.json / report.md).`,
 	}
 
 	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan profile to run (default from config)")
+	cmd.Flags().StringVar(&workflowFile, "workflow", "", "YAML workflow file replacing the profile (see docs/WORKFLOWS.md)")
 	cmd.Flags().StringVar(&preset, "preset", "", "Built-in preset (safe, recon, web, ports, vuln, deep, wp)")
 	cmd.Flags().StringVar(&targetsFile, "targets", "", "Read one target per line from a file (replaces [target])")
 	cmd.Flags().StringVarP(&scopeFile, "scope", "s", "", "Scope file (default from config)")
@@ -133,6 +157,7 @@ report (report.json / report.md).`,
 	cmd.Flags().CountVarP(&verbosityCount, "verbose", "v", "Increase verbosity: -v detailed modules, -vv commands, -vvv redirections")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Only findings, warnings, errors and the summary")
 
+	cmd.Flags().BoolVar(&eventsEnabled, "events", false, "Experimental: emit discovery events (subdomains -> DNS_NAME) to 00_meta/events.jsonl, scope-gated")
 	cmd.Flags().StringVar(&proxy, "proxy", "", "Route HTTP-capable modules through a proxy, e.g. Caido/Burp at http://127.0.0.1:8080")
 	cmd.Flags().StringArrayVarP(&headers, "header", "H", nil, "Custom HTTP header sent with every request, e.g. 'Authorization: Bearer <token>' (repeatable)")
 
@@ -148,6 +173,10 @@ report (report.json / report.md).`,
 	cmd.Flags().BoolVar(&nucleiIncludeCustom, "nuclei-include-custom", false, "Nuclei: also run the bundled ScanForge custom templates")
 	cmd.Flags().BoolVar(&nucleiFullScan, "nuclei-full-scan", false, "Nuclei: run every template against every host instead of nuclei's technology-aware automatic scan (-as); much slower, raise --nuclei-timeout to match")
 
+	cmd.Flags().IntVar(&limitConcurrency, "concurrency", 0, "Global cap on commands running at once (overrides limits.concurrency; 0 = config/unlimited)")
+	cmd.Flags().Float64Var(&limitRPS, "rps", 0, "Global cap on command launches per second; also lowers tools' own rate flags (overrides limits.rps)")
+	cmd.Flags().IntVar(&limitMaxRequests, "max-requests", 0, "Global budget of commands per run; later commands fail once spent (overrides limits.max_requests)")
+	cmd.Flags().DurationVar(&limitCommandTimeout, "command-timeout", 0, "Upper bound for every command's timeout, e.g. 20m (overrides limits.command_timeout)")
 	cmd.Flags().IntVar(&nmapConcurrency, "nmap-concurrency", 0, "Max concurrent nmap processes (default 4; lower to reduce noise)")
 
 	cmd.Flags().StringVar(&ffufWordlist, "ffuf-wordlist", "", "Path to an ffuf wordlist (default: auto-detect)")

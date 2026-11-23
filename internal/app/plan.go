@@ -1,18 +1,23 @@
 package app
 
 import (
+	"fmt"
+
 	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/orchestrator"
+	"github.com/MikeRoss27/scanforge/internal/workflows"
 )
 
 type PlanOptions struct {
 	Target      string
 	TargetsFile string
 	Profile     string
-	Scope       string
-	ScopeMode   string
-	ScopeAdd    []string
-	Exclusions  []string
+	// Workflow is a YAML workflow path replacing the profile.
+	Workflow   string
+	Scope      string
+	ScopeMode  string
+	ScopeAdd   []string
+	Exclusions []string
 	// WP adds the WordPress engagement chain to the resolved profile.
 	WP bool
 }
@@ -54,9 +59,20 @@ func (a *App) Plan(opts PlanOptions) ([]*PlanResult, error) {
 		profileName = cfg.DefaultProfile
 	}
 
+	var compiled *workflows.Compiled
+	if opts.Workflow != "" {
+		if err := checkWorkflowExclusive(opts.Profile, opts.WP); err != nil {
+			return nil, err
+		}
+		if compiled, err = loadWorkflow(cfg, opts.Workflow); err != nil {
+			return nil, fmt.Errorf("workflow: %w", err)
+		}
+		profileName = workflowProfilePrefix + compiled.Name
+	}
+
 	var results []*PlanResult
 	for _, target := range targets {
-		result, err := a.planOne(cfg, target, profileName, opts)
+		result, err := a.planOne(cfg, target, profileName, opts, compiled)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +81,7 @@ func (a *App) Plan(opts PlanOptions) ([]*PlanResult, error) {
 	return results, nil
 }
 
-func (a *App) planOne(cfg *config.Config, target, profileName string, opts PlanOptions) (*PlanResult, error) {
+func (a *App) planOne(cfg *config.Config, target, profileName string, opts PlanOptions, compiled *workflows.Compiled) (*PlanResult, error) {
 	effective, err := resolveScope(
 		cfg,
 		target,
@@ -78,11 +94,16 @@ func (a *App) planOne(cfg *config.Config, target, profileName string, opts PlanO
 		return nil, err
 	}
 
-	names, err := cfg.ProfileModules(profileName)
-	if err != nil {
-		return nil, err
+	var names []string
+	if compiled != nil {
+		names = compiled.Modules
+	} else {
+		names, err = cfg.ProfileModules(profileName)
+		if err != nil {
+			return nil, err
+		}
+		names = applyWordPress(names, opts.WP, false)
 	}
-	names = applyWordPress(names, opts.WP, false)
 	selected, err := buildRegistry(cfg).Resolve(names)
 	if err != nil {
 		return nil, err

@@ -13,6 +13,7 @@ import (
 func NewPlanCommand(application *app.App) *cobra.Command {
 	var profile string
 	var preset string
+	var workflowFile string
 	var scopeFile string
 	var scopeMode string
 	var scopeAdd []string
@@ -28,7 +29,8 @@ execution waves (which modules run, in what order, and what each one
 requires) without executing anything. Use it to sanity-check a profile
 before running a scan.`,
 		Example: `  scanforge plan example.com --preset deep
-  scanforge plan --targets targets.txt --profile web`,
+  scanforge plan --targets targets.txt --profile web
+  scanforge plan example.com --workflow workflows/web-recon.yaml`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --profile takes precedence; --preset is shorthand for one of
@@ -41,7 +43,7 @@ before running a scan.`,
 				target = args[0]
 			}
 			plans, err := application.Plan(app.PlanOptions{
-				Target: target, TargetsFile: targetsFile, Profile: profile, Scope: scopeFile,
+				Target: target, TargetsFile: targetsFile, Profile: profile, Workflow: workflowFile, Scope: scopeFile,
 				ScopeMode: scopeMode, ScopeAdd: scopeAdd, Exclusions: exclusions, WP: wp,
 			})
 			if err != nil {
@@ -55,6 +57,7 @@ before running a scan.`,
 		},
 	}
 	cmd.Flags().StringVarP(&profile, "profile", "p", "", "Scan profile to inspect (default from config)")
+	cmd.Flags().StringVar(&workflowFile, "workflow", "", "YAML workflow file to inspect instead of a profile")
 	cmd.Flags().StringVar(&preset, "preset", "", "User-oriented preset (safe, recon, web, ports, vuln, deep, wp)")
 	cmd.Flags().BoolVar(&wp, "wp", false, "Add the WordPress engagement chain to the resolved profile")
 	cmd.Flags().StringVar(&targetsFile, "targets", "", "File with one target per line (multi-target engagement; exclusive with a positional target)")

@@ -18,6 +18,7 @@ import (
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/runner"
+	"github.com/MikeRoss27/scanforge/internal/vulnintel"
 	"gopkg.in/yaml.v3"
 )
 
@@ -56,6 +57,11 @@ type finding struct {
 	EPSS           float64 `json:"epss,omitempty"`
 	EPSSPercentile float64 `json:"epss_percentile,omitempty"`
 	KEV            bool    `json:"kev,omitempty"`
+	// Set only for findings coming from the local vulnintel cache.
+	MatchQuality string `json:"match_quality,omitempty"`
+	Confirmed    *bool  `json:"confirmed,omitempty"`
+	IntelSource  string `json:"intel_source,omitempty"`
+	IntelFetched string `json:"intel_fetched_at,omitempty"`
 }
 
 type techHit struct {
@@ -64,9 +70,37 @@ type techHit struct {
 	version string
 }
 
-type Module struct{}
+// IntelMatcher is the subset of vulnintel.DB used by the module.
+type IntelMatcher interface {
+	Match(vulnintel.Query) []vulnintel.Candidate
+}
 
+// maxNameOnlyPerHit bounds unconfirmed leads reported per detected technology.
+const maxNameOnlyPerHit = 10
+
+// Module correlates detected technologies with CVEs. When a local vulnintel
+// cache exists (see `scanforge intel update`) it is consulted first; the
+// bundled dataset is always applied as well and covers the no-cache case.
+type Module struct {
+	intel IntelMatcher
+}
+
+// New returns a module that uses the default vulnintel cache when present.
 func New() *Module { return &Module{} }
+
+// NewWithIntel injects an intel matcher (nil disables the cache lookup).
+func NewWithIntel(intel IntelMatcher) *Module { return &Module{intel: intel} }
+
+// resolveIntel returns the injected matcher or the default on-disk cache.
+func (m *Module) resolveIntel() IntelMatcher {
+	if m.intel != nil {
+		return m.intel
+	}
+	if db := vulnintel.OpenIfPresent(); db != nil {
+		return db
+	}
+	return nil
+}
 
 func (m *Module) Name() string { return "techcve" }
 func (m *Module) Description() string {
@@ -108,7 +142,34 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 
 	var findings []finding
 	dedup := make(map[string]struct{})
+	intel := m.resolveIntel()
 	for _, hit := range hits {
+		if intel != nil && hit.version != "" {
+			named := 0
+			for _, cand := range intel.Match(vulnintel.Query{Product: hit.tech, Version: hit.version}) {
+				key := hit.host + "|" + cand.CVEID + "|" + hit.tech
+				if _, ok := dedup[key]; ok {
+					continue
+				}
+				if !cand.Confirmed {
+					if named >= maxNameOnlyPerHit {
+						continue
+					}
+					named++
+				}
+				dedup[key] = struct{}{}
+				findings = append(findings, intelFinding(hit, cand))
+				if cand.Confirmed {
+					runCtx.EmitFinding(modules.Finding{
+						Module:   "techcve",
+						Severity: intelSeverity(cand),
+						Title:    "Possible " + cand.CVEID + " (" + cand.Quality + ")",
+						Target:   hit.host,
+						Detail:   hit.tech + " " + hit.version,
+					})
+				}
+			}
+		}
 		for _, entry := range entries {
 			if entry.Tech != normalizeTech(hit.tech) {
 				continue
@@ -407,4 +468,60 @@ func scanTextLines(path string, consume func(string)) error {
 		}
 	}
 	return scanner.Err()
+}
+
+// intelFinding converts a vulnintel candidate. Unconfirmed (name-only)
+// candidates are recorded as leads and flagged confirmed=false.
+func intelFinding(hit techHit, c vulnintel.Candidate) finding {
+	confirmed := c.Confirmed
+	f := finding{
+		Host:           hit.host,
+		Tech:           hit.tech,
+		Version:        hit.version,
+		CVEID:          c.CVEID,
+		Title:          firstSentence(c.Description, c.CVEID),
+		Severity:       intelSeverity(c),
+		CVSS:           c.CVSS,
+		Reference:      "https://nvd.nist.gov/vuln/detail/" + c.CVEID,
+		EPSS:           c.EPSS,
+		EPSSPercentile: c.EPSSPercentile,
+		KEV:            c.KEV,
+		MatchQuality:   c.Quality,
+		Confirmed:      &confirmed,
+		IntelSource:    c.Source,
+		IntelFetched:   c.FetchedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+	if !confirmed {
+		f.Note = "Unconfirmed lead: matched on product name only (no version evidence); verify manually."
+	}
+	return f
+}
+
+func intelSeverity(c vulnintel.Candidate) string {
+	if !c.Confirmed {
+		return "info"
+	}
+	switch {
+	case c.CVSS >= 9:
+		return "critical"
+	case c.CVSS >= 7:
+		return "high"
+	case c.CVSS >= 4 || c.CVSS == 0:
+		return "medium"
+	}
+	return "low"
+}
+
+func firstSentence(text, fallback string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return fallback
+	}
+	if i := strings.Index(text, ". "); i > 0 {
+		text = text[:i+1]
+	}
+	if len(text) > 160 {
+		text = text[:157] + "..."
+	}
+	return text
 }
