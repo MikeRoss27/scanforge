@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -286,9 +287,9 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	}
 
 	var findings []finding
-	var attempted, fetched int
+	var attempted, fetched, hardFailed int
 	if !runCtx.DryRun && len(urls) > 0 {
-		findings, attempted, fetched, err = scanURLs(ctx, runCtx, urls)
+		findings, attempted, fetched, hardFailed, err = scanURLs(ctx, runCtx, urls)
 		if err != nil {
 			return nil, err
 		}
@@ -333,12 +334,16 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 
 	status := "completed"
 	var reason string
-	if attempted > 0 && fetched == 0 {
+	if attempted > 0 && fetched == 0 && hardFailed == 0 {
+		// Every candidate was a 404/redirect/HTML catch-all: the guessed
+		// files simply do not exist, which is not a module failure.
+		reason = fmt.Sprintf("none of the %d candidate JS URL(s) served JavaScript (404, redirect or HTML catch-all)", attempted)
+	} else if attempted > 0 && fetched == 0 {
 		// Every JS file failed to fetch: zero secrets found here means
 		// nothing was actually scanned, not that the bundle was clean. A
 		// WAF/rate-limit blocking every request is the common cause.
 		status = "partial"
-		reason = fmt.Sprintf("all %d JS file(s) failed to fetch (network error, proxy issue, or every request blocked)", attempted)
+		reason = fmt.Sprintf("all %d JS file(s) failed to fetch (%d network error/blocked; proxy issue or WAF?)", attempted, hardFailed)
 	}
 
 	return &modules.Result{
@@ -360,10 +365,10 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 // the findings plus how many fetches were attempted and how many actually
 // succeeded, so the caller can tell "nothing to find" apart from "every
 // request failed".
-func scanURLs(ctx context.Context, runCtx *modules.RunContext, urls []string) ([]finding, int, int, error) {
-	client, err := buildClient(runCtx.Proxy)
+func scanURLs(ctx context.Context, runCtx *modules.RunContext, urls []string) ([]finding, int, int, int, error) {
+	client, err := buildClient(runCtx.Proxy, runCtx.IsInScope)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, 0, 0, 0, err
 	}
 	defer closeClient(client)
 
@@ -378,10 +383,11 @@ func scanURLs(ctx context.Context, runCtx *modules.RunContext, urls []string) ([
 	}
 
 	var (
-		mu                 sync.Mutex
-		findings           []finding
-		chased             int
-		attempted, fetched int
+		mu                             sync.Mutex
+		findings                       []finding
+		chased                         int
+		attempted, fetched, hardFailed int
+		failSamples                    []string
 	)
 
 	for len(queue) > 0 {
@@ -409,6 +415,15 @@ func scanURLs(ctx context.Context, runCtx *modules.RunContext, urls []string) ([
 
 				body, err := fetch(ctx, client, target, runCtx.Headers)
 				if err != nil {
+					var fe *fetchStatusError
+					if errors.As(err, &fe) && fe.isHardFailure() {
+						mu.Lock()
+						hardFailed++
+						if len(failSamples) < 3 {
+							failSamples = append(failSamples, fmt.Sprintf("%s (%s)", target, fe))
+						}
+						mu.Unlock()
+					}
 					return
 				}
 				mu.Lock()
@@ -458,7 +473,11 @@ func scanURLs(ctx context.Context, runCtx *modules.RunContext, urls []string) ([
 		queue = append(queue, next...)
 	}
 
-	return findings, attempted, fetched, nil
+	if hardFailed > 0 && fetched == 0 {
+		runCtx.EmitWarning(fmt.Sprintf("jssecrets: %d/%d JS fetch(es) blocked or unreachable, e.g. %s",
+			hardFailed, attempted, strings.Join(failSamples, "; ")))
+	}
+	return findings, attempted, fetched, hardFailed, nil
 }
 
 // chaseImports extracts absolute URLs of lazily loaded JS chunks referenced by
@@ -476,7 +495,7 @@ func chaseImports(baseURL, body string) []string {
 	return candidates
 }
 
-func buildClient(proxy string) (*http.Client, error) {
+func buildClient(proxy string, inScope func(string) bool) (*http.Client, error) {
 	transport := &http.Transport{}
 	if proxy != "" {
 		parsed, err := url.Parse(proxy)
@@ -485,7 +504,22 @@ func buildClient(proxy string) (*http.Client, error) {
 		}
 		transport.Proxy = http.ProxyURL(parsed)
 	}
-	return &http.Client{Timeout: requestTimeout, Transport: transport}, nil
+	return &http.Client{
+		Timeout:   requestTimeout,
+		Transport: transport,
+		// A redirect is a new request to a host the scope never vetted
+		// (CDN, SSO, third-party): refuse to leave scope, like every other
+		// fetch in the pipeline.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			if inScope != nil && !inScope(req.URL.String()) {
+				return fmt.Errorf("redirect to out-of-scope URL %q refused", req.URL.String())
+			}
+			return nil
+		},
+	}, nil
 }
 
 // closeClient releases the transport's idle keep-alive connections. Called
@@ -498,37 +532,90 @@ func closeClient(client *http.Client) {
 	}
 }
 
+// fetchStatusError records why a fetch yielded no JavaScript. Status 0 means
+// a transport failure (DNS, TLS, timeout, refused redirect); otherwise it is
+// the HTTP status, or 200 with Reason set when the body was not JavaScript.
+type fetchStatusError struct {
+	Status int
+	Reason string
+}
+
+func (e *fetchStatusError) Error() string {
+	if e.Reason != "" {
+		return e.Reason
+	}
+	return fmt.Sprintf("HTTP %d", e.Status)
+}
+
+// isHardFailure reports whether the failure suggests the file may exist but
+// was unreachable (network error, auth/WAF block, rate limit, server error).
+// A plain 404/410 or an HTML catch-all just means the guessed URL is not a
+// real JS file, which is not a module failure.
+func (e *fetchStatusError) isHardFailure() bool {
+	switch {
+	case e.Status == 0, e.Status == 401, e.Status == 403, e.Status == 429, e.Status >= 500:
+		return true
+	}
+	return false
+}
+
 func fetch(ctx context.Context, client *http.Client, target string, headers []string) (string, error) {
-	body, ok := fetchBody(ctx, client, target, headers)
-	if !ok {
-		return "", fmt.Errorf("unreachable or non-200 response for %q", target)
+	body, status, err := fetchBodyStatus(ctx, client, target, headers)
+	if err != nil {
+		return "", err
+	}
+	if looksLikeHTML(body) {
+		// SPA catch-alls and soft-404 pages answer 200 for any path, even
+		// *.js; scanning that HTML as a bundle yields bogus findings.
+		return "", &fetchStatusError{Status: status, Reason: "200 but HTML, not JavaScript"}
 	}
 	return body, nil
+}
+
+// looksLikeHTML reports whether body starts like an HTML document.
+func looksLikeHTML(body string) bool {
+	head := strings.ToLower(strings.TrimSpace(body))
+	if len(head) > 256 {
+		head = head[:256]
+	}
+	return strings.HasPrefix(head, "<!doctype html") || strings.HasPrefix(head, "<html") || strings.HasPrefix(head, "<head") || strings.HasPrefix(head, "<body")
 }
 
 // fetchBody GETs target and returns the body plus whether the request
 // succeeded with a 200 response.
 func fetchBody(ctx context.Context, client *http.Client, target string, headers []string) (string, bool) {
+	body, _, err := fetchBodyStatus(ctx, client, target, headers)
+	return body, err == nil
+}
+
+// fetchBodyStatus is fetchBody with the failure cause preserved as a
+// *fetchStatusError, so callers can tell a blocked request from a 404.
+func fetchBodyStatus(ctx context.Context, client *http.Client, target string, headers []string) (string, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return "", false
+		return "", 0, &fetchStatusError{Reason: err.Error()}
 	}
 	applyHeaders(req, headers)
+	// Go's default User-Agent is blocked outright by many WAFs/CDNs, which
+	// made every fetch fail while a browser loads the same file fine.
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", modules.RandomUserAgent())
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", false
+		return "", 0, &fetchStatusError{Reason: err.Error()}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", false
+		return "", resp.StatusCode, &fetchStatusError{Status: resp.StatusCode}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
-		return "", false
+		return "", 0, &fetchStatusError{Reason: err.Error()}
 	}
-	return string(body), true
+	return string(body), resp.StatusCode, nil
 }
 
 func applyHeaders(req *http.Request, headers []string) {
@@ -802,7 +889,7 @@ func collectJSURLs(runCtx *modules.RunContext, crawledPath string) (urls []strin
 		seen[u] = struct{}{}
 	}
 	add := func(candidate string) {
-		if candidate == "" || !isJavaScriptURL(candidate) {
+		if candidate == "" || !isJavaScriptURL(candidate) || !runCtx.IsInScope(candidate) {
 			return
 		}
 		if _, dup := seen[candidate]; dup {
@@ -865,7 +952,8 @@ func readFfufURLs(path string) ([]string, error) {
 	}
 	var doc struct {
 		Results []struct {
-			URL string `json:"url"`
+			URL    string `json:"url"`
+			Status int    `json:"status"`
 		} `json:"results"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {
@@ -873,6 +961,11 @@ func readFfufURLs(path string) ([]string, error) {
 	}
 	urls := make([]string, 0, len(doc.Results))
 	for _, r := range doc.Results {
+		// Only 2xx responses serve content. Redirects (catch-all 302s on
+		// mail/autodiscover hosts) and 403s are fuzzing noise, not JS files.
+		if r.Status < 200 || r.Status >= 300 {
+			continue
+		}
 		urls = append(urls, r.URL)
 	}
 	return urls, nil

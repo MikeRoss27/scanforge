@@ -62,7 +62,7 @@ func TestRunBuildsKatanaCommandWithProxyAndHeaders(t *testing.T) {
 	}
 	cmd := executor.commands[0]
 	args := strings.Join(cmd.Args, " ")
-	for _, want := range []string{"-list", inputPath, "-silent", "-depth", "2", "-proxy", "http://127.0.0.1:8080", "-H", "Cookie: session=abc"} {
+	for _, want := range []string{"-list", inputPath, "-silent", "-depth", "2", "-jc", "-proxy", "http://127.0.0.1:8080", "-H", "Cookie: session=abc"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("args %q missing %q", args, want)
 		}

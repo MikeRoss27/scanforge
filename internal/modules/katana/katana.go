@@ -58,7 +58,9 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		}, nil
 	}
 
-	args := []string{"-list", inputFile, "-silent", "-depth", "2"}
+	// -jc parses JavaScript files for endpoints, so the crawl reaches
+	// bundles/chunks referenced from scripts instead of only HTML links.
+	args := []string{"-list", inputFile, "-silent", "-depth", "2", "-jc"}
 	if waf := runCtx.GetWAFInfo(); waf.Detected {
 		// Throttle the crawl (requests/sec) and lower concurrency instead of
 		// katana's defaults, so the crawl doesn't look like a burst of
