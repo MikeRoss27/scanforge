@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Tool versions recorded in checkpoints and the asset history are now reduced to a stable version token (raw banners such as wafw00f's random ASCII art changed every run, so `--incremental` always restarted from scratch and `resume` hashes were unstable)
+- Asset history: `host:port` keys (assets on non-standard ports) are checked against the scope by their host part instead of being dropped and re-added as new every run
 - `nuclei` no longer fails when a WAF is detected: it was passed `-random-agent`, a flag that does not exist in nuclei v3 ("flag provided but not defined"). It now sets a random browser-like `User-Agent` header, as `ffuf` and `katana` do
 
 ### Notes

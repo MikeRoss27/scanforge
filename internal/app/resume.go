@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -308,7 +309,37 @@ func detectToolVersions(ctx context.Context, executor runner.Executor, cfg *conf
 		}
 		stdout, _ := os.ReadFile(out)
 		stderr, _ := os.ReadFile(errFile)
-		versions[name] = strings.TrimSpace(string(stdout) + "\n" + string(stderr))
+		if v := normalizeToolVersion(string(stdout) + "\n" + string(stderr)); v != "" {
+			versions[name] = v
+		}
 	}
 	return versions
+}
+
+var (
+	ansiRe    = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+	versionRe = regexp.MustCompile(`v?\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.]+)?`)
+)
+
+// normalizeToolVersion reduces a tool's raw version output (banners, ASCII
+// art, ANSI colours, log prefixes) to a stable version token. Raw banners are
+// not stable between runs (wafw00f prints random art), which would otherwise
+// change every input hash and defeat resume and incremental scans. It returns
+// "" when no version number can be found.
+func normalizeToolVersion(raw string) string {
+	raw = ansiRe.ReplaceAllString(raw, "")
+	lines := strings.Split(raw, "\n")
+	for _, line := range lines {
+		if strings.Contains(strings.ToLower(line), "version") {
+			if m := versionRe.FindString(line); m != "" {
+				return m
+			}
+		}
+	}
+	for _, line := range lines {
+		if m := versionRe.FindString(line); m != "" {
+			return m
+		}
+	}
+	return ""
 }

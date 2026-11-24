@@ -152,7 +152,7 @@ func (h *History) FilterScope(sc *scope.Scope) int {
 	}
 	dropped := 0
 	for k, rec := range h.Records {
-		if rec.Host == "" || !sc.IsAllowed(rec.Host) {
+		if rec.Host == "" || !hostAllowed(sc, rec.Host) {
 			delete(h.Records, k)
 			dropped++
 		}
@@ -405,4 +405,17 @@ func Append(path string, recs []Record) error {
 		return fmt.Errorf("replace asset history: %w", err)
 	}
 	return nil
+}
+
+// hostAllowed reports whether the scope covers host. Scope entries cover
+// hosts, not ports, so a bare "host:port" key (an asset reported on a
+// non-standard port) is checked by its host part too.
+func hostAllowed(sc *scope.Scope, host string) bool {
+	if sc.IsAllowed(host) {
+		return true
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil && h != "" {
+		return sc.IsAllowed(h)
+	}
+	return false
 }

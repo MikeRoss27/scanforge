@@ -216,6 +216,22 @@ func TestFilterScopeDropsOutOfScopeAndUnscopedEntries(t *testing.T) {
 	}
 }
 
+func TestFilterScopeKeepsHostPortKeysByHost(t *testing.T) {
+	h := &History{Records: map[string]Record{}, runs: map[string]bool{}}
+	for _, r := range []Record{
+		{Type: TypeSubdomain, Value: "a.example.com:8080", Host: "a.example.com:8080"},
+		{Type: TypeSubdomain, Value: "evil.org:8080", Host: "evil.org:8080"},
+	} {
+		h.Records[key(r.Type, r.Value)] = r
+	}
+	if dropped := h.FilterScope(mustScope(t)); dropped != 1 {
+		t.Fatalf("dropped = %d, want 1 (only the out-of-scope host)", dropped)
+	}
+	if _, ok := h.Lookup(TypeSubdomain, "a.example.com:8080"); !ok {
+		t.Fatalf("in-scope host:port key was dropped: %v", h.Records)
+	}
+}
+
 func TestLoadSkipsMalformedLinesAndMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	if h, err := Load(filepath.Join(dir, "none.jsonl")); err != nil || len(h.Records) != 0 {
