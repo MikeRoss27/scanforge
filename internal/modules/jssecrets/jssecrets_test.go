@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -792,4 +793,64 @@ func TestScanBodyKeepsUUIDCredentialCandidate(t *testing.T) {
 		}
 	}
 	t.Fatalf("UUID credential candidate missing: %+v", findings)
+}
+
+func TestFetchRejectsHTMLCatchAll(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("<!DOCTYPE html><html><body>app</body></html>"))
+	}))
+	defer srv.Close()
+	client, err := buildClient("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fetch(context.Background(), client, srv.URL+"/x.js", nil); err == nil {
+		t.Fatal("HTML served for a .js URL must not be treated as JavaScript")
+	}
+}
+
+func TestClientRefusesOutOfScopeRedirect(t *testing.T) {
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("var a=1;"))
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/a.js", http.StatusFound)
+	}))
+	defer srv.Close()
+	client, err := buildClient("", func(u string) bool { return strings.HasPrefix(u, srv.URL) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fetch(context.Background(), client, srv.URL+"/a.js", nil); err == nil {
+		t.Fatal("redirect leaving scope must be refused")
+	}
+}
+
+func TestFetchFailureClassification(t *testing.T) {
+	for status, hard := range map[int]bool{404: false, 410: false, 302: false, 403: true, 429: true, 503: true} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+		}))
+		client, _ := buildClient("", nil)
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		_, err := fetch(context.Background(), client, srv.URL, nil)
+		srv.Close()
+		var fe *fetchStatusError
+		if !errors.As(err, &fe) || fe.isHardFailure() != hard {
+			t.Errorf("status %d: hard failure = %v, want %v (err=%v)", status, fe != nil && fe.isHardFailure(), hard, err)
+		}
+	}
+}
+
+func TestReadFfufURLsKeepsOnly2xx(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ffuf.json")
+	data := `{"results":[{"url":"http://a/ok.js","status":200},{"url":"http://a/r.js","status":302},{"url":"http://a/f.js","status":403}]}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	urls, err := readFfufURLs(path)
+	if err != nil || len(urls) != 1 || urls[0] != "http://a/ok.js" {
+		t.Fatalf("got %v, %v", urls, err)
+	}
 }
