@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pinned external tools bumped: subfinder v2.17.0, dnsx v1.3.1, httpx v1.12.0, naabu v2.7.0, katana v1.8.0, nuclei v3.11.1, tlsx v1.5.0, ffuf v2.3.0 (SecLists, gau, shuffledns, massdns, wafw00f unchanged)
 - Fixed existing golangci-lint findings (unchecked errors, unused types)
 
+- Docs: `docs/USAGE.md`, `docs/fr/*` and `docs/zh/*` (usage guide and README) now cover resume/status/runs list, `--workflow` and `workflow validate`, the `limits:` config and scheduler flags, `intel update|status`, `scanforge mcp`/`scanforge api`, `--events`, the secrets rule and Go 1.27; Chinese translations of `docs/RESUME.md`, `WORKFLOWS.md`, `MCP.md` and `API.md` added under `docs/zh/`
+- SecLists DNS wordlist pin bumped to `2026.2` (the file is byte-identical to 2026.1, so `SECLISTS_DNS_SHA256` is unchanged; hash recomputed from the real download)
+- Docker image base moved from Debian 12 (bookworm) to Debian 13 (trixie): `golang:1.27-trixie` build stage, `debian:trixie-slim` runtime stage
+
 ### Fixed
 
 - `nuclei` no longer fails when a WAF is detected: it was passed `-random-agent`, a flag that does not exist in nuclei v3 ("flag provided but not defined"). It now sets a random browser-like `User-Agent` header, as `ffuf` and `katana` do
