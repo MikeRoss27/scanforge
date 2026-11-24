@@ -197,6 +197,7 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge scan TARGET` | Alias of `run`. |
 | `scanforge diff RUN1 RUN2` | Delta (assets/ports/vulns) between two runs of the same target. |
 | `scanforge export RUN --format sarif\|defectdojo` | Exports a run report for CI (SARIF) or DefectDojo (generic findings). |
+| `scanforge assets TARGET [--new\|--gone] [--json]` | Lists the per-target asset history (`runs/<target>/assets.jsonl`) used by `--incremental` (see `INCREMENTAL.md`). |
 | `scanforge resume RUN-ID` | Resumes an interrupted run, re-running only what did not complete or whose inputs changed (see `RESUME.md`). |
 | `scanforge status RUN-ID [--json]` | Shows each module's checkpoint state and the run's scope provenance. |
 | `scanforge runs list [--target T] [--json]` | Lists the runs of the workspace, newest first. |
@@ -263,6 +264,49 @@ JavaScript...) stay in full in findings, since they are the evidence for a
 report. Only the operator's own credentials (API keys from `auth`, the `ai:`
 key, proxy/header values passed to a scan) are masked in logs and in API/MCP
 output.
+
+## Incremental scans and recursive discovery
+
+Detailed guides (written in French): [INCREMENTAL](INCREMENTAL.md),
+[RECURSIVE](RECURSIVE.md).
+
+After every completed (non dry-run) run, ScanForge appends the observed assets
+to `runs/<target>/assets.jsonl` (`new`, `unchanged`, `changed`, `gone`).
+`--incremental` makes nuclei, ffuf, katana and jssecrets look only at new or
+changed URLs; history entries are re-filtered against the current scope, and
+everything is treated as new when the scope or a tool version changed.
+`resume` of an incremental run stays incremental.
+
+```bash
+scanforge run example.com --preset web --incremental
+scanforge assets example.com --new
+scanforge assets example.com --gone --json
+```
+
+`--recursive` (off by default) emits discovery events from the artifacts of
+existing modules: a new in-scope name found late (JS, crawl) gets a bounded
+`dnsx` then `httpx` pass, a new live URL a `katana` depth-1 pass. Out-of-scope
+discoveries are dropped and logged to `00_meta/scope-rejections.jsonl`;
+follow-up commands go through the scheduler and count against
+`--max-requests`. Events land in `00_meta/events.jsonl` and follow-up output
+in `07_recursive/`.
+
+```bash
+scanforge run example.com --preset web --recursive
+scanforge run example.com --preset web --recursive --recursive-depth 3 --recursive-budget 100
+```
+
+```yaml
+recursive:
+  enabled: false
+  depth: 2     # maximum discovery depth (default 2)
+  budget: 200  # maximum follow-up commands per run (default 200)
+```
+
+In `deep`/`full` (and any profile with `naabu`), `httpx` now runs after
+`naabu` and also probes the scope-filtered non-standard `host:port` targets
+(8080, 8443, 3000...), so the downstream web modules cover services beyond
+80/443.
 
 ## Triage of findings
 

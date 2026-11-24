@@ -21,6 +21,8 @@
 - [使用指南](USAGE.md)：安装、配置、命令与示例。
 - [范围管理](SCOPE.md)：隐式模式、文件、排除项与 CI。
 - [架构](ARCHITECTURE.md)：DAG、产物、集中过滤与输出。
+- [增量扫描](INCREMENTAL.md)：资产历史与 `--incremental`。
+- [递归发现](RECURSIVE.md)：`--recursive`。
 - [恢复与检查点](RESUME.md)：中断并恢复运行。
 - [工作流](WORKFLOWS.md)：YAML 工作流。
 - [MCP 服务器](MCP.md) 与 [本地 API](API.md)：从 AI 代理驱动 ScanForge。
@@ -43,6 +45,9 @@
 - **YAML 工作流**：`--workflow file.yaml` 定义步骤、依赖、超时、重试与错误策略；执行前校验（`scanforge workflow validate`），无任意 shell，范围过滤保持不变。
 - **资源限制**：`--concurrency`、`--rps`、`--max-requests` 和 `--command-timeout`（或配置中的 `limits:`）限制一次运行的激进程度。
 - **发现事件（实验性）**：`--events` 将经范围过滤的发现事件（如子域名为 `DNS_NAME`）写入 `00_meta/events.jsonl`。
+- **增量扫描**：`--incremental` 将本次运行与每个目标的资产历史（`runs/<target>/assets.jsonl`）比较，使 nuclei、ffuf、katana 和 jssecrets 只处理新增或变化的 URL；`scanforge assets <target> [--new|--gone]` 列出历史。
+- **递归发现（可选）**：`--recursive`（配合 `--recursive-depth` / `--recursive-budget`）通过有界的 dnsx/httpx/katana 流程跟进较晚（JS、爬取）发现的范围内新名称与 URL；范围外的发现会被丢弃并记录。
+- **非标准 Web 端口**：在 `deep`/`full` 中，`httpx` 还会探测 `naabu` 发现且经范围过滤的 `host:port` 目标（8080、8443、3000 等）。
 - **代理访问（MCP + API）**：`scanforge mcp` 与 `scanforge api` 提供运行、资产、发现结果与证据。主动扫描默认关闭，需要 `--allow-active` 加严格的范围文件；每次主动调用都会被审计。目标泄露的密钥在发现结果中保持完整，仅操作者自己的凭据会在日志及 API/MCP 输出中被遮蔽。
 - **完全可配置的 Nuclei**：通过专用参数控制严重级别、标签、速率限制、整体超时、自定义模板和模板更新。
 - **Nmap 并行化**：有界工作线程池（`--nmap-concurrency`），替代逐主机顺序扫描。

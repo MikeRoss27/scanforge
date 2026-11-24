@@ -16,6 +16,7 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 - [Architecture](docs/ARCHITECTURE.md): DAG, artifacts, central filtering and outputs.
 - [Resume & checkpoints](docs/RESUME.md): interrupt and resume runs (French).
 - [Incremental scans](docs/INCREMENTAL.md): asset history and `--incremental` (French).
+- [Recursive discovery](docs/RECURSIVE.md): `--recursive` (French).
 - [Workflows](docs/WORKFLOWS.md): YAML workflows (French).
 - [MCP server](docs/MCP.md) and [local API](docs/API.md): drive ScanForge from agents (French).
 - [Contribution guide](AGENTS.md): repository structure, style and validations.
@@ -41,6 +42,9 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 - **YAML workflows**: `--workflow file.yaml` defines steps, dependencies, timeouts, retries and error policy; validated before execution, no arbitrary shell, same scope enforcement.
 - **Resource limits**: `--concurrency`, `--rps`, `--max-requests` and `--command-timeout` (or `limits:` in the config) cap how hard a run hits targets.
 - **Discovery events (experimental)**: `--events` emits scope-gated discovery events (e.g. subdomains as `DNS_NAME`) to `00_meta/events.jsonl`.
+- **Incremental scans**: `--incremental` compares the run to a per-target asset history (`runs/<target>/assets.jsonl`) so nuclei, ffuf, katana and jssecrets only look at new or changed URLs; `scanforge assets <target> [--new|--gone]` lists the history.
+- **Recursive discovery (opt-in)**: `--recursive` (with `--recursive-depth` / `--recursive-budget`) follows new in-scope names and URLs found late (JS, crawl) with bounded dnsx/httpx/katana passes; out-of-scope discoveries are dropped and logged.
+- **Non-standard web ports**: in `deep`/`full`, `httpx` also probes the scope-filtered `host:port` targets found by `naabu` (8080, 8443, 3000...).
 - **Agent access (MCP + API)**: `scanforge mcp` and `scanforge api` expose runs, assets, findings and evidence. Active scans are off by default and require `--allow-active` plus a strict scope file; every active call is audited.
 - **Fully configurable Nuclei**: severity, tags, rate-limit, overall timeout, custom templates and template updates via dedicated flags.
 - **Parallelized Nmap**: bounded worker pool (`--nmap-concurrency`) instead of sequential host-by-host scans.

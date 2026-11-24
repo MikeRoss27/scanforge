@@ -21,6 +21,8 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
 - [Guide d'utilisation](USAGE.md) : installation, configuration, commandes et exemples.
 - [Gestion du scope](SCOPE.md) : modes implicites, fichiers, exclusions et CI.
 - [Architecture](ARCHITECTURE.md) : DAG, artefacts, filtrage central et sorties.
+- [Scans incrémentaux](../INCREMENTAL.md) : historique des assets et `--incremental`.
+- [Découverte récursive](../RECURSIVE.md) : `--recursive`.
 - [Reprise et checkpoints](../RESUME.md) : interrompre et reprendre un run.
 - [Workflows](../WORKFLOWS.md) : workflows YAML.
 - [Serveur MCP](../MCP.md) et [API locale](../API.md) : piloter ScanForge depuis des agents.
@@ -46,6 +48,9 @@ Grâce à son architecture pilotée par les artefacts, ScanForge enchaîne intel
 - **Workflows YAML** : `--workflow fichier.yaml` définit étapes, dépendances, timeouts, retries et politique d'erreur ; validé avant exécution (`scanforge workflow validate`), sans shell arbitraire, même filtrage de scope.
 - **Limites de ressources** : `--concurrency`, `--rps`, `--max-requests` et `--command-timeout` (ou `limits:` dans la config) bornent l'agressivité d'un run.
 - **Événements de découverte (expérimental)** : `--events` écrit des événements de découverte filtrés par le scope (ex. sous-domaines en `DNS_NAME`) dans `00_meta/events.jsonl`.
+- **Scans incrémentaux** : `--incremental` compare le run à un historique d'assets par cible (`runs/<cible>/assets.jsonl`) pour que nuclei, ffuf, katana et jssecrets ne traitent que les URLs nouvelles ou modifiées ; `scanforge assets <cible> [--new|--gone]` liste l'historique.
+- **Découverte récursive (opt-in)** : `--recursive` (avec `--recursive-depth` / `--recursive-budget`) suit les nouveaux noms et URLs dans le scope trouvés tard (JS, crawl) par des passes dnsx/httpx/katana bornées ; les découvertes hors scope sont abandonnées et journalisées.
+- **Ports web non standard** : en `deep`/`full`, `httpx` sonde aussi les cibles `hôte:port` trouvées par `naabu` et filtrées par le scope (8080, 8443, 3000...).
 - **Accès agents (MCP + API)** : `scanforge mcp` et `scanforge api` exposent runs, actifs, findings et preuves. Les scans actifs sont désactivés par défaut et exigent `--allow-active` plus un fichier de scope strict ; chaque appel actif est audité. Les secrets divulgués par la cible restent intégraux dans les findings ; seuls les identifiants de l'opérateur sont masqués dans les logs et sorties API/MCP.
 - **Nuclei entièrement paramétrable** : sévérité, tags, rate-limit, timeout global, templates personnalisés et mise à jour des templates via des flags dédiés.
 - **Nmap parallélisé** : pool de workers borné (`--nmap-concurrency`) au lieu d'un scan séquentiel hôte par hôte.

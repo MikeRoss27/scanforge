@@ -161,6 +161,7 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge plan TARGET` | 显示范围与 DAG 波次。 |
 | `scanforge run TARGET` | 运行已授权的配置文件。 |
 | `scanforge scan TARGET` | `run` 的别名。 |
+| `scanforge assets TARGET [--new\|--gone] [--json]` | 列出某目标的资产历史（`runs/<target>/assets.jsonl`），供 `--incremental` 使用（见 `INCREMENTAL.md`）。 |
 | `scanforge resume RUN-ID` | 恢复被中断的运行，仅重新执行未完成或输入已变化的部分（见 `RESUME.md`）。 |
 | `scanforge status RUN-ID [--json]` | 显示每个模块的检查点状态和范围来源。 |
 | `scanforge runs list [--target T] [--json]` | 按从新到旧列出工作区中的运行。 |
@@ -207,6 +208,34 @@ scanforge api --listen 127.0.0.1:8787 --token-file ./token
 通过 MCP/API 的主动扫描默认禁用，需要 `--allow-active` 并配合严格的 `--scope` 文件；每次主动调用都会写入审计日志。除非使用 `--unsafe-bind`，API 仅监听回环地址。
 
 **密钥规则：** 目标泄露的密钥值（AWS 密钥、JavaScript 中发现的令牌等）在发现结果中保持完整，因为它们是报告的证据。只有操作者自己的凭据（`auth` 的 API 密钥、`ai:` 密钥、传给扫描的代理/请求头值）会在日志以及 API/MCP 输出中被遮蔽。
+
+## 增量扫描与递归发现
+
+详细指南：[INCREMENTAL](INCREMENTAL.md)、[RECURSIVE](RECURSIVE.md)（中文译文）。
+
+每次完成的运行（非 dry-run）结束后，ScanForge 会把观察到的资产追加到 `runs/<target>/assets.jsonl`（`new`、`unchanged`、`changed`、`gone`）。`--incremental` 让 nuclei、ffuf、katana 和 jssecrets 只处理新增或变化的 URL；历史条目会根据当前范围重新过滤，当范围或工具版本变化时，一切都视为新增。对增量运行执行 `resume` 仍保持增量。
+
+```bash
+scanforge run example.com --preset web --incremental
+scanforge assets example.com --new
+scanforge assets example.com --gone --json
+```
+
+`--recursive`（默认关闭）会从现有模块的产物发出发现事件：较晚（JS、爬取）发现的范围内新名称会触发有界的 `dnsx` 再 `httpx` 流程，新的存活 URL 会触发深度为 1 的 `katana`。范围外的发现会被丢弃并记录到 `00_meta/scope-rejections.jsonl`；后续命令经过调度器并计入 `--max-requests`。事件写入 `00_meta/events.jsonl`，后续输出位于 `07_recursive/`。
+
+```bash
+scanforge run example.com --preset web --recursive
+scanforge run example.com --preset web --recursive --recursive-depth 3 --recursive-budget 100
+```
+
+```yaml
+recursive:
+  enabled: false
+  depth: 2     # 最大发现深度（默认 2）
+  budget: 200  # 每次运行的最大后续命令数（默认 200）
+```
+
+在 `deep`/`full`（以及任何包含 `naabu` 的配置文件）中，`httpx` 现在在 `naabu` 之后运行，并且还会探测经范围过滤的非标准 `host:port` 目标（8080、8443、3000 等），使下游 Web 模块覆盖 80/443 之外的服务。
 
 ## 发现结果分诊
 
