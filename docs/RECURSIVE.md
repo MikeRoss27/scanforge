@@ -77,4 +77,7 @@ une après la fin du DAG, ce qui garde l'ordre déterministe.
 - `07_recursive/NNN-<valeur>-*` : entrées/sorties de chaque commande de suivi.
   Les artefacts de suivi (`recursive.resolved_hosts`, `recursive.alive_urls`,
   `recursive.crawled_urls`) portent des noms distincts : ils ne remplacent jamais
-  les artefacts du DAG et ne sont pas encore intégrés à `report.json`.
+  les artefacts du DAG. Ils sont intégrés à `report.json` par
+  `report.GenerateReport` (donc visibles par `scanforge diff`, `export`, `triage`
+  et l'historique d'assets), avec le même filtrage de scope et le marqueur
+  `"discovered_by": "recursive"` sur les assets nouveaux. Voir `docs/EVIDENCE.md`.

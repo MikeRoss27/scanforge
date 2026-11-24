@@ -1,0 +1,3 @@
+{"host":"dev.example.com","a":["192.0.2.50"],"cname":["lb.example.net"]}
+{"host":"evil.other.com","a":["198.51.100.9"]}
+{"host":"stale.example.org","a":["198.51.100.10"]}

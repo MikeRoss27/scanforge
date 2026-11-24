@@ -10,6 +10,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+
+	"github.com/MikeRoss27/scanforge/internal/report"
 )
 
 // ID is the stable, deterministic identifier of a finding. It is derived from
@@ -70,6 +72,15 @@ type Finding struct {
 	EPSS        float64  `json:"epss,omitempty"`
 	KEV         bool     `json:"kev,omitempty"`
 	MatchedAt   string   `json:"matched_at"`
+
+	// Evidence layer (docs/EVIDENCE.md), all additive. None of these fields
+	// takes part in Fingerprint, so IDs are unchanged. Status says how far a
+	// finding was verified and is only ever set by the producing/verifying
+	// module: triage and exports read it, never raise it.
+	Provenance    *report.Provenance `json:"provenance,omitempty"`
+	Status        string             `json:"status,omitempty"`
+	Confidence    string             `json:"confidence,omitempty"`
+	EvidenceItems []report.Evidence  `json:"evidence_items,omitempty"`
 }
 
 // Fingerprint computes the deterministic ID from the identity fields. The

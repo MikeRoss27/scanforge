@@ -47,6 +47,11 @@ func FromReport(rep *report.Report) []Finding {
 				EPSS:        vuln.EPSS,
 				KEV:         vuln.KEV,
 				MatchedAt:   vuln.MatchedAt,
+
+				Provenance:    vuln.Provenance,
+				Status:        vuln.Status,
+				Confidence:    vuln.Confidence,
+				EvidenceItems: vuln.EvidenceItems,
 			}
 			f.ID = f.Fingerprint()
 			findings = append(findings, f)
@@ -67,6 +72,12 @@ func FromReport(rep *report.Report) []Finding {
 		}
 		if f.Asset == "" {
 			f.Asset = hostOf(verified.Page)
+		}
+		// Provenance and status come from the replay verdict itself.
+		f.Provenance = rep.ProvenanceFor("jsverify")
+		if status, confidence, ev, ok := rep.VerifiedEvidence(verified); ok {
+			f.Status, f.Confidence = status, confidence
+			f.EvidenceItems = []report.Evidence{ev}
 		}
 		f.ID = f.Fingerprint()
 		findings = append(findings, f)

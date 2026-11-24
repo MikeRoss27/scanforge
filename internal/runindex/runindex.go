@@ -89,8 +89,13 @@ type FindingFilter struct {
 	Asset    string // substring of asset name
 	Source   string
 	Kind     string
-	Limit    int
-	Offset   int
+	// Status filters on the evidence status (potential, version-match,
+	// validated, inconclusive); Confidence on low|medium|high. Findings
+	// without an evidence layer (old reports) match neither.
+	Status     string
+	Confidence string
+	Limit      int
+	Offset     int
 }
 
 // FindingPage is a page of findings.
@@ -328,6 +333,12 @@ func (x *Index) Findings(id string, f FindingFilter) (*FindingPage, error) {
 			continue
 		}
 		if f.Kind != "" && !strings.EqualFold(it.Kind, f.Kind) {
+			continue
+		}
+		if f.Status != "" && !strings.EqualFold(it.Status, f.Status) {
+			continue
+		}
+		if f.Confidence != "" && !strings.EqualFold(it.Confidence, f.Confidence) {
 			continue
 		}
 		kept = append(kept, it)

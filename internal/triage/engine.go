@@ -85,7 +85,7 @@ func (e *Engine) Run(ctx context.Context, in Input) (*Result, error) {
 	}
 
 	// Reconcile: order insights by priority, then assign stable IDs.
-	insights = reconcileInsights(insights)
+	insights = reconcileInsights(applyEvidence(insights, in.Findings))
 	stats.Insights = len(insights)
 
 	manifest := TriageManifest{
@@ -186,13 +186,17 @@ func deterministicInsights(findings []finding.Finding, groups [][]finding.ID, re
 		severityCounts[f.Severity]++
 	}
 
+	summary := fmt.Sprintf("%d findings across %d assets: %d critical, %d high, %d medium, %d low, %d info.",
+		len(findings), countAssets(findings),
+		severityCounts[finding.SevCritical], severityCounts[finding.SevHigh],
+		severityCounts[finding.SevMedium], severityCounts[finding.SevLow],
+		severityCounts[finding.SevInfo])
+	if st := statusSummary(findings); st != "" {
+		summary += " Verification status: " + st + "."
+	}
 	insights := []TriageInsight{{
-		Kind: InsightSummary,
-		Summary: fmt.Sprintf("%d findings across %d assets: %d critical, %d high, %d medium, %d low, %d info.",
-			len(findings), countAssets(findings),
-			severityCounts[finding.SevCritical], severityCounts[finding.SevHigh],
-			severityCounts[finding.SevMedium], severityCounts[finding.SevLow],
-			severityCounts[finding.SevInfo]),
+		Kind:       InsightSummary,
+		Summary:    summary,
 		Priority:   maxPriority(findings),
 		Confidence: 1.0,
 		Source:     SourceDeterministic,

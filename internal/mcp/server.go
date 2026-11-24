@@ -221,18 +221,20 @@ func (s *Server) callTool(name string, raw json.RawMessage) toolResult {
 		return s.encode(p, a.RunID)
 	case "scanforge.get_findings":
 		var a struct {
-			RunID    string `json:"run_id"`
-			Severity string `json:"severity"`
-			Asset    string `json:"asset"`
-			Source   string `json:"source"`
-			Kind     string `json:"kind"`
-			Limit    int    `json:"limit"`
-			Offset   int    `json:"offset"`
+			RunID      string `json:"run_id"`
+			Severity   string `json:"severity"`
+			Asset      string `json:"asset"`
+			Source     string `json:"source"`
+			Kind       string `json:"kind"`
+			Status     string `json:"status"`
+			Confidence string `json:"confidence"`
+			Limit      int    `json:"limit"`
+			Offset     int    `json:"offset"`
 		}
 		if err := decode(raw, &a); err != nil {
 			return errResult(err)
 		}
-		p, err := s.Index.Findings(a.RunID, runindex.FindingFilter{Severity: a.Severity, Asset: a.Asset, Source: a.Source, Kind: a.Kind, Limit: a.Limit, Offset: a.Offset})
+		p, err := s.Index.Findings(a.RunID, runindex.FindingFilter{Severity: a.Severity, Asset: a.Asset, Source: a.Source, Kind: a.Kind, Status: a.Status, Confidence: a.Confidence, Limit: a.Limit, Offset: a.Offset})
 		if err != nil {
 			return errResult(err)
 		}

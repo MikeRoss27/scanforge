@@ -45,6 +45,7 @@ Rules:
 - Do not merge findings that the deterministic relations do not relate.
 - Keep every summary under 200 characters.
 - If you cannot determine something, say so in "uncertainty".
+- Each finding may carry "status" (potential, version-match, validated, inconclusive) and "confidence" (low, medium, high). They are facts set by ScanForge modules: take them into account, never restate a finding as more verified than its status says, and never claim something is validated or exploitable unless its status is "validated".
 
 Respond with a single JSON object, no prose outside it:
 {
