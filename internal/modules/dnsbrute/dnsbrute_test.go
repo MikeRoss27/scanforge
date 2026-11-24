@@ -104,6 +104,25 @@ func TestRunDryRunSucceedsWithoutWordlist(t *testing.T) {
 	}
 }
 
+func TestRunDryRunWithUnwrittenSubdomainsFallsBackToTarget(t *testing.T) {
+	run := testRun(t)
+	runCtx := modules.NewRunContext("example.com", "web", true, run)
+	// Artifact published by a dry-run subfinder: the file was never written.
+	if err := runCtx.AddArtifact("subdomains", modules.Artifact{Name: "subdomains", Type: "text", Path: "01_subdomains/subdomains.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New("shuffledns").Run(context.Background(), runCtx, runner.NewDryRunExecutor(false)); err != nil {
+		t.Fatalf("dry-run must not fail on an unwritten subdomains artifact: %v", err)
+	}
+	log, err := os.ReadFile(run.CommandsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(log), "-d example.com") {
+		t.Fatalf("expected the target as brute-force domain:\n%s", log)
+	}
+}
+
 func testRun(t *testing.T) *storage.Run {
 	t.Helper()
 	root := t.TempDir()
