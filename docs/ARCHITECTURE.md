@@ -15,6 +15,7 @@ subfinder → subdomains ──┤                                  ├→ resol
                          └→ dnsbrute → dnsx (late results) ─┘
 resolved_hosts → httpx → alive_urls
 resolved_hosts → naabu → open_ports → nmap
+open_ports ⇢ httpx (soft: only when naabu is in the profile)
 alive_urls → tlsx / whatweb / wafw00f / katana / ffuf / nuclei
 target → gau → historical_urls
 crawled_urls/historical_urls/discovered_paths → jssecrets → js_secrets → dbdetect → db_fingerprint → dbenum

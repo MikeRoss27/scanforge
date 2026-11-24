@@ -35,3 +35,46 @@ func TestPlanBuildsValidatedReconWaves(t *testing.T) {
 		t.Fatalf("unexpected plan waves: %v", waves)
 	}
 }
+
+func TestPlanOrdersHTTPXAfterNaabuOnlyWhenNaabuSelected(t *testing.T) {
+	tests := []struct {
+		profile        string
+		httpxAfterPort bool
+	}{
+		{"deep", true},
+		{"full", true},
+		{"web", false},
+		{"vuln", false},
+		{"recon", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.profile, func(t *testing.T) {
+			dir := t.TempDir()
+			scopePath := filepath.Join(dir, "scope.txt")
+			configPath := filepath.Join(dir, "scanforge.yaml")
+			if err := os.WriteFile(scopePath, []byte("example.com\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(configPath, []byte("default_scope: "+scopePath+"\ndefault_profile: "+tt.profile+"\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			results, err := New(configPath).Plan(PlanOptions{Target: "example.com"})
+			if err != nil {
+				t.Fatalf("Plan() error = %v", err)
+			}
+			waves := make(map[string]int)
+			for _, step := range results[0].Steps {
+				waves[step.Name] = step.Wave
+			}
+			if tt.httpxAfterPort {
+				if waves["httpx"] <= waves["naabu"] || waves["katana"] <= waves["httpx"] {
+					t.Fatalf("want naabu < httpx < katana, got waves %v", waves)
+				}
+				return
+			}
+			if _, ok := waves["naabu"]; ok {
+				t.Fatalf("profile %s unexpectedly selects naabu", tt.profile)
+			}
+		})
+	}
+}
