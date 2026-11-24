@@ -179,6 +179,8 @@ validation sits between them.**
 - **Scheduler** (`internal/scheduler`) : décorateur d'`Executor` (concurrence, req/s, budget de commandes, timeouts).
 - **Événements** (`internal/events`) : bus typé en complément du DAG, scope vérifié en premier, `00_meta/events.jsonl`.
 - **Découverte récursive** (`internal/discovery`, `--recursive`) : les artefacts du DAG sont émis comme événements (`DNS_NAME`, `OPEN_PORT`, `LIVE_URL`, `JS_URL`, `API_ROUTE`) ; des abonnés mettent en file des passes bornées (dnsx -> httpx, katana profondeur 1) exécutées après le DAG via l'`Executor` injecté et `AddArtifact`. Profondeur et budget bornés, hors-scope jamais sondé. Voir `docs/RECURSIVE.md`.
+- **Preuves** (`internal/report/evidence.go`) : chaque finding porte `provenance`, `confidence`, `status` (`potential`/`version-match`/`validated`/`inconclusive`) et `evidence_items[]`, posés par le parseur du module producteur (additif, `omitempty`). Seul le module qui vérifie relève un statut (`jsverify` -> `validated`) ; triage, exports, MCP et API ne font que le lire. Voir `docs/EVIDENCE.md`.
+- **Découverte récursive dans le rapport** : `report.GenerateReport` fusionne `07_recursive/` via les parseurs existants (scope : listes filtrées + re-vérification contre `effective-scope.txt`), donc `diff`, `export`, `triage` et l'historique d'assets voient les assets trouvés par `--recursive`.
 - **Workflows** (`internal/workflows`) : compilés vers la sélection de modules d'un profil ; le DAG et le filtrage de scope restent inchangés.
 - **Vulnintel** (`internal/vulnintel`) : cache NVD/KEV/EPSS, mis à jour uniquement par `scanforge intel update`.
 - **MCP / API** : lecture des runs, scans actifs désactivés par défaut (`--allow-active` + fichier de scope strict, journal d'audit).
