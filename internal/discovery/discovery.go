@@ -36,6 +36,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +55,10 @@ const (
 	DefaultBudget = 200
 
 	outDir = "07_recursive"
+	// doneFile lists the follow-up jobs already completed in this run
+	// directory, so a resumed run reuses their outputs instead of crawling
+	// and probing again.
+	doneFile = "done.jsonl"
 
 	// Source labels of events emitted by follow-up passes.
 	sourceProbe = "recursive:httpx"
@@ -67,6 +73,9 @@ type Options struct {
 	Budget int
 	// Tool binaries; empty means the tool name.
 	Dnsx, Httpx, Katana string
+	// Notice, when set, receives one human-readable line per follow-up pass
+	// (and a closing summary) so the console can announce them.
+	Notice func(string)
 }
 
 // Defaults fills zero values.
@@ -92,6 +101,9 @@ func (o Options) Defaults() Options {
 // Stats summarizes a discovery run.
 type Stats struct {
 	Jobs, Commands, SkippedBudget, Failed int
+	// DroppedDepth and DroppedEvents count events the bus refused because
+	// they were past --recursive-depth or past its accepted-events cap.
+	DroppedDepth, DroppedEvents int
 }
 
 type jobKind int
@@ -118,6 +130,11 @@ type Engine struct {
 	queue []job
 	stats Stats
 	n     int
+	// done maps a job key to the output prefix of its completed run; replay
+	// is set while a job is served from those outputs (no command runs).
+	done      map[string]string
+	replay    bool
+	curPrefix string // output prefix of the job being run
 }
 
 // New wires the engine to the run's event bus. It fails when events are not
@@ -130,7 +147,8 @@ func New(rc *modules.RunContext, exec runner.Executor, opts Options) (*Engine, e
 	if bus == nil {
 		return nil, errors.New("discovery: event bus is not enabled")
 	}
-	e := &Engine{rc: rc, bus: bus, exec: exec, opts: opts.Defaults()}
+	e := &Engine{rc: rc, bus: bus, exec: exec, opts: opts.Defaults(), done: map[string]string{}}
+	e.loadDone()
 	bus.Subscribe(events.DNSName, e.onDNSName)
 	bus.Subscribe(events.LiveURL, e.onLiveURL)
 	// The scan target is already handled by the DAG: seed it so a crawl
@@ -146,8 +164,11 @@ func New(rc *modules.RunContext, exec runner.Executor, opts Options) (*Engine, e
 // Stats returns a snapshot of the counters.
 func (e *Engine) Stats() Stats {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.stats
+	st := e.stats
+	e.mu.Unlock()
+	bs := e.bus.Stats()
+	st.DroppedDepth, st.DroppedEvents = bs.DepthExceeded, bs.BudgetExhausted
+	return st
 }
 
 // dagResolved are the artifacts whose names the DAG itself resolves and
@@ -159,6 +180,46 @@ var dagResolved = map[string]struct{}{
 	"resolved_hosts":   {},
 	"alive_urls":       {},
 	"target":           {},
+}
+
+func (e *Engine) notice(format string, args ...any) {
+	if e.opts.Notice != nil {
+		e.opts.Notice(fmt.Sprintf(format, args...))
+	}
+}
+
+// webPorts returns the non-default ports of the web services the DAG found
+// alive (alive_urls is already scope-filtered). Late-discovered names are
+// probed on those ports too: apps rarely sit on 80/443 only, and without
+// this a follow-up httpx could never see a vhost served on e.g. :8080.
+func (e *Engine) webPorts() []string {
+	art, ok := e.rc.GetArtifact("alive_urls")
+	if !ok {
+		return nil
+	}
+	lines, err := readLines(e.rc.Run.Path(art.Path))
+	if err != nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var ports []string
+	for _, l := range lines {
+		u, err := url.Parse(l)
+		if err != nil {
+			continue
+		}
+		p := u.Port()
+		if _, dup := seen[p]; p == "" || p == "80" || p == "443" || dup {
+			continue
+		}
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			continue
+		}
+		seen[p] = struct{}{}
+		ports = append(ports, p)
+	}
+	sort.Strings(ports)
+	return ports
 }
 
 func (e *Engine) onDNSName(ev events.Event) {
@@ -191,7 +252,6 @@ func (e *Engine) pop() (job, bool) {
 	}
 	j := e.queue[0]
 	e.queue = e.queue[1:]
-	e.n++
 	return j, true
 }
 
@@ -210,21 +270,38 @@ func (e *Engine) Process(ctx context.Context) error {
 		if !ok {
 			break
 		}
+		verb := "resolve+probe"
+		if j.kind == jobCrawl {
+			verb = "crawl"
+		}
+		if prev, cached := e.done[jobKey(j)]; cached && prev != "" {
+			e.notice("recursive: reuse %s %s (%s)", verb, j.ev.Value, prev)
+		} else if n := e.Stats().Commands; n < e.opts.Budget {
+			e.notice("recursive [%d/%d] %s %s", n+1, e.opts.Budget, verb, j.ev.Value)
+		}
 		// Defense in depth: the bus already checked scope, re-check before
 		// spending a command on the value.
 		if !e.rc.IsInScope(j.ev.Value) {
 			continue
 		}
 		var err error
+		e.replay, e.curPrefix = false, ""
 		switch j.kind {
 		case jobResolveProbe:
 			err = e.resolveProbe(ctx, j)
 		case jobCrawl:
 			err = e.crawl(ctx, j)
 		}
+		if err == nil && !e.replay {
+			if derr := e.markDone(j, e.prefix(j)); derr != nil {
+				e.rc.EmitWarning(fmt.Sprintf("recursive: %v", derr))
+			}
+		}
 		e.mu.Lock()
-		e.stats.Jobs++
-		if err != nil {
+		if !errors.Is(err, errBudget) {
+			e.stats.Jobs++
+		}
+		if err != nil && !errors.Is(err, errBudget) {
 			e.stats.Failed++
 		}
 		e.mu.Unlock()
@@ -237,6 +314,25 @@ func (e *Engine) Process(ctx context.Context) error {
 		}
 	}
 	e.bus.Wait()
+	st := e.Stats()
+	if st.DroppedEvents > 0 {
+		e.rc.EmitWarning(fmt.Sprintf("recursive: %d discoveries dropped, event cap reached (see events.jsonl)", st.DroppedEvents))
+	}
+	if st.Jobs == 0 {
+		e.notice("recursive: no new in-scope discovery to follow up")
+	} else {
+		msg := fmt.Sprintf("recursive: done, %d jobs, %d/%d cmds", st.Jobs, st.Commands, e.opts.Budget)
+		if st.DroppedDepth > 0 {
+			msg += fmt.Sprintf(", %d past depth", st.DroppedDepth)
+		}
+		if st.SkippedBudget > 0 {
+			msg += fmt.Sprintf(", %d over budget", st.SkippedBudget)
+		}
+		if st.Failed > 0 {
+			msg += fmt.Sprintf(", %d failed", st.Failed)
+		}
+		e.notice("%s", msg)
+	}
 	return ctx.Err()
 }
 
@@ -256,16 +352,79 @@ func (e *Engine) spend() error {
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 
+func jobKey(j job) string { return fmt.Sprintf("%d|%s", j.kind, j.ev.Value) }
+
+type doneRecord struct {
+	Key    string `json:"key"`
+	Kind   string `json:"kind"`
+	Value  string `json:"value"`
+	Prefix string `json:"prefix"`
+}
+
+// loadDone reads done.jsonl (a resumed run) and moves the counter past the
+// prefixes already used so new jobs never overwrite earlier outputs.
+func (e *Engine) loadDone() {
+	f, err := os.Open(e.rc.Run.Path(outDir, doneFile))
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+	for sc.Scan() {
+		var r doneRecord
+		if json.Unmarshal(sc.Bytes(), &r) != nil || r.Key == "" || r.Prefix == "" {
+			continue
+		}
+		e.done[r.Key] = r.Prefix
+		if n, err := strconv.Atoi(strings.SplitN(r.Prefix, "-", 2)[0]); err == nil && n > e.n {
+			e.n = n
+		}
+	}
+}
+
+func (e *Engine) markDone(j job, prefix string) error {
+	kind := "resolve-probe"
+	if j.kind == jobCrawl {
+		kind = "crawl"
+	}
+	data, err := json.Marshal(doneRecord{Key: jobKey(j), Kind: kind, Value: j.ev.Value, Prefix: prefix})
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(e.rc.Run.Path(outDir, doneFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
 func (e *Engine) prefix(j job) string {
+	if e.curPrefix != "" {
+		return e.curPrefix
+	}
+	if p, ok := e.done[jobKey(j)]; ok {
+		e.replay, e.curPrefix = true, p
+		return p
+	}
+	e.n++
 	label := unsafeName.ReplaceAllString(j.ev.Value, "_")
 	if len(label) > 60 {
 		label = label[:60]
 	}
-	return fmt.Sprintf("%03d-%s", e.n, label)
+	e.curPrefix = fmt.Sprintf("%03d-%s", e.n, label)
+	return e.curPrefix
 }
 
 // run logs and executes one command through the injected executor.
 func (e *Engine) run(ctx context.Context, cmd runner.Command) error {
+	if e.replay {
+		return nil // outputs of an earlier invocation are reused
+	}
 	if err := e.spend(); err != nil {
 		return err
 	}
@@ -322,6 +481,9 @@ func (e *Engine) resolveProbe(ctx context.Context, j job) error {
 	httpRaw := filepath.Join(outDir, p+"-httpx.jsonl")
 	aliveTxt := filepath.Join(outDir, p+"-alive.txt")
 	args := []string{"-l", e.rc.Run.Path(dnsTxt), "-silent", "-json", "-status-code", "-title", "-tech-detect"}
+	if ports := e.webPorts(); len(ports) > 0 {
+		args = append(args, "-ports", "80,443,"+strings.Join(ports, ","))
+	}
 	args = append(args, e.rc.ProxyArgs("-proxy")...)
 	args = append(args, e.rc.HeaderArgs("-H")...)
 	err = e.run(ctx, runner.Command{

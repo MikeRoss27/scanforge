@@ -179,9 +179,9 @@ as new when the tool versions or the scope changed. Inspect the history with
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Only findings, warnings, errors and the summary")
 
 	cmd.Flags().BoolVar(&eventsEnabled, "events", false, "Experimental: emit discovery events (subdomains -> DNS_NAME) to 00_meta/events.jsonl, scope-gated")
-	cmd.Flags().BoolVar(&recursive, "recursive", false, "Bounded recursive discovery: new in-scope names/URLs found late (JS, crawl) get a dnsx->httpx pass, new live URLs a katana depth-1 pass; out-of-scope discoveries are dropped and logged, never probed (see docs/RECURSIVE.md). Implies --events")
-	cmd.Flags().IntVar(&recursiveDepth, "recursive-depth", 0, "Recursive discovery: max discovery depth (default 2)")
-	cmd.Flags().IntVar(&recursiveBudget, "recursive-budget", 0, "Recursive discovery: max follow-up commands per run (default 200)")
+	cmd.Flags().BoolVar(&recursive, "recursive", false, "Bounded recursive discovery after the DAG: new in-scope names/URLs found late (JS, crawl) get a dnsx->httpx pass, new live URLs a katana depth-1 pass; out-of-scope discoveries are dropped and logged, never probed; kept by resume (see docs/RECURSIVE.md). Implies --events")
+	cmd.Flags().IntVar(&recursiveDepth, "recursive-depth", 0, "Recursive discovery: max discovery depth, events deeper are dropped (default 2)")
+	cmd.Flags().IntVar(&recursiveBudget, "recursive-budget", 0, "Recursive discovery: max follow-up commands (dnsx, httpx, katana) per run (default 200)")
 	cmd.Flags().StringVar(&proxy, "proxy", "", "Route HTTP-capable modules through a proxy, e.g. Caido/Burp at http://127.0.0.1:8080")
 	cmd.Flags().StringArrayVarP(&headers, "header", "H", nil, "Custom HTTP header sent with every request, e.g. 'Authorization: Bearer <token>' (repeatable)")
 

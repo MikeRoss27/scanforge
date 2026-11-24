@@ -105,6 +105,11 @@ func (r *Renderer) renderEvent(ev orchestrator.Event) []string {
 	case orchestrator.WarningEvent:
 		// Warnings always surface (Quiet included).
 		return []string{r.eventLine(TagWarn, singleLine(e.Message))}
+	case orchestrator.NoticeEvent:
+		if r.verbosity < Normal {
+			return nil
+		}
+		return []string{r.eventLine(TagInfo, singleLine(e.Message))}
 	case orchestrator.DeadlockEvent:
 		// Deadlocks always surface (Quiet included).
 		return []string{r.eventLine(TagWarn, singleLine(e.Message))}

@@ -204,6 +204,21 @@ func TestWarningRendersTag(t *testing.T) {
 	}
 }
 
+func TestNoticeRendersInfoAndIsHiddenWhenQuiet(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTestRenderer(t, &buf, nil)
+	r.Handle(orchestrator.NoticeEvent{Message: "recursive [1/50] resolve+probe api.example.com"})
+	if line := buf.String(); !strings.Contains(line, "[INF]") || !strings.Contains(line, "resolve+probe api.example.com") {
+		t.Errorf("notice not rendered: %q", line)
+	}
+	var quiet bytes.Buffer
+	q := newTestRenderer(t, &quiet, func(o *Options) { o.Verbosity = Quiet })
+	q.Handle(orchestrator.NoticeEvent{Message: "recursive: done"})
+	if quiet.Len() != 0 {
+		t.Errorf("quiet mode printed a notice: %q", quiet.String())
+	}
+}
+
 func TestLowSeverityFindingStaysCompact(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTestRenderer(t, &buf, nil)

@@ -1,11 +1,13 @@
 package events
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -73,11 +75,16 @@ type Bus struct {
 	all      []Handler
 	depths   map[string]int // accepted ID -> depth
 	rejected map[string]struct{}
-	queue    []Event
-	pending  int
-	draining bool
-	accepted int
-	stats    Stats
+	// persisted holds IDs already in events.jsonl and persistedRej the
+	// "artifact|value" keys already in scope-rejections.jsonl when the bus was
+	// created (a resumed run): they are delivered again, never re-written.
+	persisted    map[string]struct{}
+	persistedRej map[string]struct{}
+	queue        []Event
+	pending      int
+	draining     bool
+	accepted     int
+	stats        Stats
 }
 
 // New creates a Bus.
@@ -104,6 +111,7 @@ func New(opts Options) (*Bus, error) {
 		depths:   make(map[string]int),
 		rejected: make(map[string]struct{}),
 	}
+	b.persisted, b.persistedRej = loadPersisted(opts.MetaDir)
 	b.cond = sync.NewCond(&b.mu)
 	return b, nil
 }
@@ -173,8 +181,10 @@ func (b *Bus) admit(e *Event) (Disposition, error) {
 	}
 	if !b.opts.Scope.IsAllowed(target) {
 		if _, again := b.rejected[e.ID]; !again {
-			if err := b.logRejection(*e); err != nil {
-				return "", err
+			if _, old := b.persistedRej["event:"+string(e.Type)+"|"+e.Value]; !old {
+				if err := b.logRejection(*e); err != nil {
+					return "", err
+				}
 			}
 			b.rejected[e.ID] = struct{}{}
 		}
@@ -199,8 +209,10 @@ func (b *Bus) admit(e *Event) (Disposition, error) {
 
 	e.Timestamp = b.opts.Now().UTC()
 	e.ScopeVerdict = VerdictAllowed
-	if err := b.appendLine(eventsFile, e); err != nil {
-		return "", fmt.Errorf("events: persist event: %w", err)
+	if _, old := b.persisted[e.ID]; !old {
+		if err := b.appendLine(eventsFile, e); err != nil {
+			return "", fmt.Errorf("events: persist event: %w", err)
+		}
 	}
 	b.seen.add(e.ID)
 	b.depths[e.ID] = e.Depth
@@ -286,4 +298,40 @@ func (b *Bus) logRejection(e Event) error {
 		return fmt.Errorf("events: log scope rejection: %w", err)
 	}
 	return nil
+}
+
+// loadPersisted reads the event IDs and event scope rejections left in
+// metaDir by an earlier invocation of the same run (resume). Unreadable or
+// malformed lines are ignored: at worst a line is written twice.
+func loadPersisted(metaDir string) (ids, rejections map[string]struct{}) {
+	ids = make(map[string]struct{})
+	rejections = make(map[string]struct{})
+	scanJSONL(filepath.Join(metaDir, eventsFile), func(line []byte) {
+		var rec struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(line, &rec) == nil && rec.ID != "" {
+			ids[rec.ID] = struct{}{}
+		}
+	})
+	scanJSONL(filepath.Join(metaDir, rejectionsFile), func(line []byte) {
+		var rec scopeRejection
+		if json.Unmarshal(line, &rec) == nil && strings.HasPrefix(rec.Artifact, "event:") {
+			rejections[rec.Artifact+"|"+rec.Value] = struct{}{}
+		}
+	})
+	return ids, rejections
+}
+
+func scanJSONL(path string, fn func([]byte)) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	for sc.Scan() {
+		fn(sc.Bytes())
+	}
 }
