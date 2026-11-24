@@ -3,7 +3,9 @@ package app
 import (
 	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/modules"
+	"github.com/MikeRoss27/scanforge/internal/modules/asnmap"
 	"github.com/MikeRoss27/scanforge/internal/modules/attacksurface"
+	"github.com/MikeRoss27/scanforge/internal/modules/ctlogs"
 	"github.com/MikeRoss27/scanforge/internal/modules/dbdetect"
 	"github.com/MikeRoss27/scanforge/internal/modules/dbenum"
 	"github.com/MikeRoss27/scanforge/internal/modules/dnsbrute"
@@ -40,6 +42,8 @@ import (
 func buildRegistry(cfg *config.Config) *modules.Registry {
 	registry := modules.NewRegistry()
 	registry.Register(subfinder.New(cfg.ToolPath("subfinder")))
+	registry.Register(ctlogs.New())
+	registry.Register(asnmap.New())
 	registry.Register(dnsbrute.New(cfg.ToolPath("shuffledns")))
 	registry.Register(dnsx.New(cfg.ToolPath("dnsx")))
 	registry.Register(httpx.New(cfg.ToolPath("httpx")))

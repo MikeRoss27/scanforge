@@ -55,6 +55,22 @@ func (r *Report) WriteMarkdown(path string) error {
 			_, _ = fmt.Fprintf(&b, "**Technologies:** %s\n\n", strings.Join(asset.Technologies, ", "))
 		}
 
+		if len(asset.Network) > 0 {
+			b.WriteString("### Network Attribution\n\n")
+			b.WriteString("| IP | ASN | Network | Name | Org | Country | Handle |\n")
+			b.WriteString("|----|-----|---------|------|-----|---------|--------|\n")
+			for _, n := range asset.Network {
+				asn := n.ASN
+				if n.ASName != "" {
+					asn = strings.TrimSpace(asn + " " + n.ASName)
+				}
+				_, _ = fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s |\n",
+					markdownCell(n.IP), markdownCell(asn), markdownCell(n.CIDR), markdownCell(n.Name),
+					markdownCell(n.Org), markdownCell(n.Country), markdownCell(n.Handle))
+			}
+			b.WriteString("\n")
+		}
+
 		if len(asset.Ports) > 0 {
 			b.WriteString("### Open Ports\n\n")
 			var ports []int

@@ -76,6 +76,8 @@ External tools:
 
 Native modules (no external binary):
 
+- **ctlogs** — passive subdomain discovery from Certificate Transparency logs (crt.sh) with timeouts, size cap, retries/backoff and `--proxy` support; names flow through the normal scope filter (out-of-scope names are logged to `scope-rejections.jsonl`, never auto-allowed) and are resolved by `dnsx`
+- **asnmap** — RDAP network attribution (IANA bootstrap, rdap.org fallback) of in-scope resolved IPs: network range, name, organisation, country, registry handle (and the ASN when `dnsx` or RDAP provides it), shown in `report.md`/`report.json`; annotation only, it never adds CIDRs or neighbouring IPs to the scope or produces scan targets
 - **jssecrets** — analyzes JS crawled by `katana` (plus JS URLs from `gau`/`ffuf`) to detect secrets (including AI-provider API keys), cloud buckets, internal hosts, emails and exposed source maps; reports `partial` when every fetch fails instead of a false-clean `completed`
 - **jsverify** — replays `jssecrets` PoC payloads in a headless browser (payload injected via URL parameters, fragment and `postMessage`) and reports executed, sink-reached, not-observed or unreachable verdicts; reports `partial` when the browser is unavailable, fails to launch, or every replay is unreachable
 - **dbdetect** — passively fingerprints Supabase/Firebase/Appwrite/PocketBase backends from already-crawled pages/JS and auto-scopes the discovered backend host
@@ -370,10 +372,10 @@ ports, vulnerabilities by severity, run directory).
 | Name | Modules | Usage |
 | --- | --- | --- |
 | `safe` | subfinder, dnsx, httpx, tlsx | Light exposure check. |
-| `recon` | subfinder, dnsbrute, gau, dnsx, httpx, tlsx | Inventory enriched with historical URLs and DNS bruteforce. |
-| `passive` | subfinder, dnsx, httpx | Minimal historical pipeline. |
+| `recon` | subfinder, ctlogs, dnsbrute, gau, dnsx, asnmap, httpx, tlsx | Inventory enriched with historical URLs and DNS bruteforce. |
+| `passive` | subfinder, ctlogs, dnsx, httpx | Minimal historical pipeline. |
 | `ports` | subfinder, dnsx, naabu, nmap | Open ports then service validation. |
-| `web` | subfinder, dnsbrute, dnsx, httpx, whatweb, wafw00f, katana, jssecrets, dbdetect, dbenum, jsverify, attacksurface, techcve, httpcheck, payloadgen, screenshot, nuclei | Application analysis: attack-surface consolidation, JS secrets + headless verification, backend-as-a-service detection/enumeration, screenshots, tech-to-CVE correlation, header checks and payload generation. |
+| `web` | subfinder, ctlogs, dnsbrute, dnsx, asnmap, httpx, whatweb, wafw00f, katana, jssecrets, dbdetect, dbenum, jsverify, attacksurface, techcve, httpcheck, payloadgen, screenshot, nuclei | Application analysis: attack-surface consolidation, JS secrets + headless verification, backend-as-a-service detection/enumeration, screenshots, tech-to-CVE correlation, header checks and payload generation. |
 | `vuln` | subfinder, dnsbrute, dnsx, httpx, tlsx, katana, jssecrets, dbdetect, dbenum, attacksurface, techcve, nuclei | Targeted vulnerability detection (tech-to-CVE + templates). |
 | `deep` | All modules | Full and noisy pipeline. |
 | `full` | All modules | Full profile, history-compatible. |
@@ -394,6 +396,8 @@ At the end of each scan, a timestamped folder is created under `./runs/`. In add
 - `00_meta/commands.log`: External commands prepared or executed.
 - `00_meta/effective-scope.txt`: Canonical copy of the scope actually applied, with its source and mode recorded in the manifest.
 - `00_meta/scope-rejections.jsonl`: Out-of-scope values rejected, when any.
+- `01_subdomains/ct.txt`: Scope-filtered Certificate Transparency names (module `ctlogs`).
+- `01_subdomains/asn_info.jsonl`: RDAP network attribution of in-scope resolved IPs, rendered in the report (module `asnmap`).
 - `04_surface/attack-surface.txt`: Consolidated candidate URLs for scanning (module `attacksurface`).
 - `04_payloads/`: Generated wordlists for api paths, endpoints, parameters and per-technology endpoints (module `payloadgen`).
 - `04_web/screenshots/`: PNG snapshots of alive URLs (module `screenshot`).

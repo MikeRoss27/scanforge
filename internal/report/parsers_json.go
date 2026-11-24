@@ -349,6 +349,50 @@ func ParseDnsx(path string, report *Report) error {
 	})
 }
 
+// ParseASNInfo attaches the asnmap RDAP records to the assets listed in each
+// record's hosts. Records for hosts that are not already assets are ignored:
+// attribution annotates known in-scope assets and never creates one.
+func ParseASNInfo(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			IP       string   `json:"ip"`
+			Hosts    []string `json:"hosts"`
+			ASN      string   `json:"asn"`
+			ASName   string   `json:"as_name"`
+			CIDR     string   `json:"cidr"`
+			Name     string   `json:"name"`
+			Org      string   `json:"org"`
+			Country  string   `json:"country"`
+			Handle   string   `json:"handle"`
+			Registry string   `json:"registry"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.IP == "" {
+			return
+		}
+		info := NetworkInfo{
+			IP: record.IP, ASN: record.ASN, ASName: record.ASName, CIDR: record.CIDR,
+			Name: record.Name, Org: record.Org, Country: record.Country,
+			Handle: record.Handle, Registry: record.Registry,
+		}
+		for _, host := range record.Hosts {
+			asset, ok := report.Assets[normalizeAssetName(host)]
+			if !ok {
+				continue
+			}
+			known := false
+			for _, n := range asset.Network {
+				if n.IP == info.IP {
+					known = true
+					break
+				}
+			}
+			if !known {
+				asset.Network = append(asset.Network, info)
+			}
+		}
+	})
+}
+
 // ParseTlsx parses the tlsx module's JSONL output (TLS certificate details).
 func ParseTlsx(path string, report *Report) error {
 	return scanJSONLines(path, func(line []byte) {
