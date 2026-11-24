@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Match quality labels, strongest first.
@@ -241,8 +242,15 @@ func evaluate(rec *CVERecord, q Query, qcpe CPE, hasCPE bool, version string) (q
 type DB struct {
 	byProduct map[string][]*CVERecord
 	kev       map[string]KEVRecord
-	epss      map[string]EPSSRecord
 	Meta      Meta
+
+	// EPSS is the largest feed (~86 MB of JSONL) and most runs only need a
+	// handful of its rows, so it is never parsed up front: epssFor builds a
+	// compact CVE -> byte-span index on first use and decodes only the
+	// requested lines. The cache stays JSONL, so existing caches are valid.
+	epssStore *Store
+	epssOnce  sync.Once
+	epssIdx   map[string]epssSpan
 }
 
 // Load reads the cache into memory. A missing cache yields an empty DB.
@@ -251,7 +259,7 @@ func Load(store *Store) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db := &DB{byProduct: map[string][]*CVERecord{}, kev: map[string]KEVRecord{}, epss: map[string]EPSSRecord{}, Meta: meta}
+	db := &DB{byProduct: map[string][]*CVERecord{}, kev: map[string]KEVRecord{}, Meta: meta, epssStore: store}
 	err = readAll(store, SourceNVD, func(r CVERecord) {
 		rec := r
 		seen := map[string]bool{}
@@ -266,9 +274,6 @@ func Load(store *Store) (*DB, error) {
 		return nil, err
 	}
 	if err := readAll(store, SourceKEV, func(r KEVRecord) { db.kev[r.CVEID] = r }); err != nil {
-		return nil, err
-	}
-	if err := readAll(store, SourceEPSS, func(r EPSSRecord) { db.epss[r.CVEID] = r }); err != nil {
 		return nil, err
 	}
 	return db, nil
@@ -323,6 +328,7 @@ func (db *DB) Match(q Query) []Candidate {
 	}
 
 	var out []Candidate
+	var ids []string
 	for _, rec := range records {
 		quality, matched := evaluate(rec, q, qcpe, hasCPE, version)
 		if quality == "" {
@@ -333,10 +339,15 @@ func (db *DB) Match(q Query) []Candidate {
 			Quality: quality, Confirmed: quality != QualityNameOnly, MatchedCPE: matched, Provenance: rec.Provenance,
 		}
 		_, c.KEV = db.kev[rec.ID]
-		if e, ok := db.epss[rec.ID]; ok {
-			c.EPSS, c.EPSSPercentile = e.Score, e.Percentile
-		}
 		out = append(out, c)
+		ids = append(ids, rec.ID)
+	}
+	if scores := db.epssFor(ids); len(scores) > 0 {
+		for i := range out {
+			if e, ok := scores[out[i].CVEID]; ok {
+				out[i].EPSS, out[i].EPSSPercentile = e.Score, e.Percentile
+			}
+		}
 	}
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i], out[j]
