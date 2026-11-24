@@ -61,6 +61,9 @@ func (s *runSession) printIntro(moduleCount int) {
 	})
 	if s.opts.Verbosity >= console.Normal {
 		s.console.Info("scope validated (%s)", s.scopeSummary(s.effective.proposal))
+		if hint, ok := modules.TargetProbe(s.opts.Target); ok {
+			s.console.Info("port hint from target: %s will be probed by httpx (scope stays host-only)", hint)
+		}
 		if moduleCount > 0 {
 			s.console.Info("preparing pipeline with %d modules", moduleCount)
 		}

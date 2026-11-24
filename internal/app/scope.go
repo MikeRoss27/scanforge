@@ -85,6 +85,10 @@ type effectiveScope struct {
 }
 
 func resolveScope(cfg *config.Config, target, explicitPath, modeValue string, additions, exclusions []string) (*effectiveScope, error) {
+	// Scope covers hosts only. A port the user typed in their own target
+	// ("host:8082", "http://host:8082") is a probe hint kept elsewhere (see
+	// modules.TargetPort); only the host takes part in scope resolution.
+	target = modules.ScopeTarget(target)
 	forcesImplicit := modeValue != "" || len(additions) > 0 || len(exclusions) > 0
 	fallbackNote := ""
 

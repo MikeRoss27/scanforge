@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Opt-in recursive discovery (`--recursive`, `--recursive-depth` default 2, `--recursive-budget` default 200, config `recursive:`): artifacts of existing modules are emitted as `DNS_NAME`/`OPEN_PORT`/`LIVE_URL`/`JS_URL`/`API_ROUTE` events; a new in-scope name found late triggers a bounded dnsx -> httpx pass, a new live URL a katana depth-1 pass. Out-of-scope discoveries are dropped and logged to `scope-rejections.jsonl`, never auto-allowed; follow-ups run through the injected executor and `AddArtifact`, outputs go to `07_recursive/` (see `docs/RECURSIVE.md`)
 
+### Fixed
+
+- A target that names a port (`http://127.0.0.1:8082`, `https://example.com:8443`, or the bare `host:8082` form, now accepted) no longer loses it after subfinder/dnsx: the port is kept as an extra httpx probe (`host:port` merged into the httpx input next to the naabu-derived ports; 80/443 are not repeated). It is only a probe hint taken from the user's own argument: scope still covers hosts only (port-scoped scope entries stay rejected with `port-scoped entry ... is not supported`), the host must be in scope and among the scope-filtered resolved hosts, and `plan` shows it on a `PORT` line (also noted in the run header). Malformed ports are still rejected
+- After `scanforge resume` the reported Duration no longer includes the idle time between the interruption and the resume: the manifest accumulates the active time of each execution segment (`active_seconds`, optional, backward compatible; older manifests fall back to completed-started or the last manifest write)
+- The live console no longer prints a higher wave header before a lower one (`wave 6` before `wave 5` in `web`): batches are labelled with their lowest DAG level and a late lower-level header drops its wave number instead of going backwards; execution order is unchanged
+
+### Performance
+
+- `techcve` no longer pays ~2s per run for loading the ~86 MB EPSS cache: EPSS is not parsed at load time any more. On first use a compact CVE-to-line index is built and only the rows of matched CVE IDs are decoded (same JSONL cache, offline, same results). Synthetic 300k-row cache: `vulnintel.Load` 351 ms to 16 us; load plus first match 46 ms
+
 ### Changed
 
 - `httpx` now soft-depends on `open_ports`: when `naabu` is in the profile (deep, full, ports-based custom profiles), httpx runs after it and also probes the scope-filtered non-standard `host:port` targets (8080, 8443, 3000...), so katana/ffuf/nuclei/whatweb/etc. cover web services beyond 80/443. Targets are deduplicated and merged into the existing `alive_urls` artifact (no new producer); profiles without naabu behave as before

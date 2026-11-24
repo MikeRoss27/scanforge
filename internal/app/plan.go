@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
+	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/orchestrator"
 	"github.com/MikeRoss27/scanforge/internal/workflows"
 )
@@ -40,7 +41,11 @@ type PlanResult struct {
 	ScopeMode    string
 	ScopeNote    string
 	ScopeEntries []string
-	Steps        []PlanStep
+	// ProbeHint is the host:port the user named in their target. It is
+	// probed by httpx in addition to the default ports; it is not part of
+	// the scope, which only ever covers the host.
+	ProbeHint string
+	Steps     []PlanStep
 }
 
 // Plan validates the profile DAG and scope for every target and returns one
@@ -120,6 +125,9 @@ func (a *App) planOne(cfg *config.Config, target, profileName string, opts PlanO
 		ScopeMode:    effective.proposal.Mode,
 		ScopeNote:    effective.proposal.Note,
 		ScopeEntries: effective.proposal.Entries,
+	}
+	if hint, ok := modules.TargetProbe(target); ok {
+		result.ProbeHint = hint
 	}
 	for _, step := range rawSteps {
 		result.Steps = append(result.Steps, PlanStep{

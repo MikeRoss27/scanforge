@@ -76,6 +76,10 @@ and every artifact is filtered against it before downstream modules consume
 it. Results are written to runs/<target>/<timestamp>/ with a consolidated
 report (report.json / report.md).
 
+A target may carry a port (http://127.0.0.1:8082, https://example.com:8443 or
+host:8082). The port is kept as an extra httpx probe on top of 80/443; scope
+still covers the host only, and port-scoped scope entries are rejected.
+
 An interrupted run can be continued with 'scanforge resume'. Use --workflow
 to run a validated YAML workflow instead of a profile, and --concurrency,
 --rps, --max-requests and --command-timeout to cap how hard the run hits
@@ -87,6 +91,7 @@ katana and jssecrets only look at new or changed URLs. Everything is treated
 as new when the tool versions or the scope changed. Inspect the history with
 'scanforge assets <target>'.`,
 		Example: `  scanforge run example.com
+  scanforge run http://127.0.0.1:8082 --scope-mode exact --confirm-scope
   scanforge run --targets targets.txt --profile web
   scanforge run example.com --dry-run
   scanforge run example.com --incremental

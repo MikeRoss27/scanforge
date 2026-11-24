@@ -4,6 +4,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/MikeRoss27/scanforge/internal/modules"
 )
 
 // nonStandardPortTargets returns the host:port lines of an open_ports
@@ -39,6 +41,49 @@ func mergeProbeTargets(base, extra []string) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+// targetHintProbe returns the "host:port" probe the user asked for in their
+// own target argument (e.g. http://127.0.0.1:8082), or ok=false. The port is
+// only a hint: the host must be in scope (scope stays host-based) and must be
+// one of the already scope-filtered resolved hosts, so a target port can never
+// introduce a host the pipeline did not already accept. The default 80/443 are
+// covered by httpx itself and are not repeated.
+func targetHintProbe(runCtx *modules.RunContext, hostsPath string) (string, bool) {
+	hostPort, ok := modules.TargetProbe(runCtx.Target)
+	if !ok {
+		return "", false
+	}
+	if port, _ := modules.TargetPort(runCtx.Target); port == 80 || port == 443 {
+		return "", false
+	}
+	if !runCtx.IsInScope(hostPort) {
+		return "", false
+	}
+	host, err := modules.TargetHost(runCtx.Target)
+	if err != nil {
+		return "", false
+	}
+	data, err := os.ReadFile(hostsPath)
+	if err != nil {
+		return "", false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.EqualFold(strings.Trim(strings.TrimSpace(line), "[]"), host) {
+			return hostPort, true
+		}
+	}
+	return "", false
+}
+
+// appendProbeTarget writes inputPath plus extra to outPath (deduplicated).
+func appendProbeTarget(inputPath, outPath, extra string) error {
+	data, err := os.ReadFile(inputPath)
+	if err != nil {
+		return err
+	}
+	merged := mergeProbeTargets(strings.Split(string(data), "\n"), []string{extra})
+	return os.WriteFile(outPath, []byte(strings.Join(merged, "\n")+"\n"), 0o644)
 }
 
 // writeProbeTargets writes hosts plus non-standard host:port targets to
