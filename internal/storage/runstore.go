@@ -83,6 +83,51 @@ type RunManifest struct {
 	Params      *RunParams `json:"params,omitempty"`
 	ResumeCount int        `json:"resume_count,omitempty"`
 	UpdatedAt   string     `json:"updated_at,omitempty"`
+	// ActiveSeconds accumulates the time the run was actually executing,
+	// summed over the initial run and every resume. Idle time between an
+	// interruption and a resume is not counted. Absent in manifests written
+	// before it existed; see ActiveDuration.
+	ActiveSeconds float64 `json:"active_seconds,omitempty"`
+}
+
+// ActiveDuration is the run's accumulated active time. Manifests that
+// predate ActiveSeconds fall back to completed-started, which is exact for
+// runs that were never resumed.
+func (m RunManifest) ActiveDuration() time.Duration {
+	if m.ActiveSeconds > 0 {
+		return time.Duration(m.ActiveSeconds * float64(time.Second))
+	}
+	return m.wallDuration(m.CompletedAt)
+}
+
+// PriorActiveDuration estimates the active time already spent by earlier
+// segments when a run is resumed. It prefers the recorded accumulation and,
+// for legacy or hard-killed runs that never recorded one, the span up to the
+// completion time or the last manifest write (the last sign of activity).
+func (m RunManifest) PriorActiveDuration() time.Duration {
+	if m.ActiveSeconds > 0 {
+		return m.ActiveDuration()
+	}
+	if d := m.wallDuration(m.CompletedAt); d > 0 {
+		return d
+	}
+	return m.wallDuration(m.UpdatedAt)
+}
+
+// AddActive adds one execution segment to the accumulated active time.
+func (m *RunManifest) AddActive(d time.Duration) {
+	if d > 0 {
+		m.ActiveSeconds += d.Seconds()
+	}
+}
+
+func (m RunManifest) wallDuration(end string) time.Duration {
+	started, err1 := time.Parse(time.RFC3339, m.StartedAt)
+	finished, err2 := time.Parse(time.RFC3339, end)
+	if err1 != nil || err2 != nil || finished.Before(started) {
+		return 0
+	}
+	return finished.Sub(started)
 }
 
 type Run struct {

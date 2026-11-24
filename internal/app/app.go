@@ -4,6 +4,7 @@ package app
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/console"
@@ -139,6 +140,11 @@ type runSession struct {
 	// resume makes the orchestrator reuse unchanged completed modules from
 	// the run's manifest checkpoints.
 	resume bool
+	// segmentStart is when this execution segment (the initial run or one
+	// resume) began; finalizeManifest folds it into the manifest's
+	// accumulated active duration so idle time between interrupt and
+	// resume is never counted.
+	segmentStart time.Time
 	// incremental holds the state of --incremental / the asset history.
 	incremental incrementalState
 	// console owns every terminal write of the run and term describes the

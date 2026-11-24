@@ -451,7 +451,7 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 				names = append(names, m.Name())
 			}
 			if outChan != nil {
-				outChan <- WaveStartEvent{Wave: waveByModule[readyModules[0].Name()], Modules: names}
+				outChan <- WaveStartEvent{Wave: batchWave(names, waveByModule), Modules: names}
 			}
 			for _, m := range readyModules {
 				launch(m)

@@ -67,6 +67,19 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		}
 	}
 
+	// A port the user wrote in their own target (http://host:8082) is an
+	// intentional probe: subfinder/dnsx only carry hosts, so without this the
+	// port would be lost and only 80/443 probed.
+	if !runCtx.DryRun {
+		if hint, ok := targetHintProbe(runCtx, runCtx.Run.Path(inputArt.Path)); ok {
+			merged := runCtx.Run.Path("02_http", "httpx-input.txt")
+			if err := appendProbeTarget(inputFile, merged, hint); err != nil {
+				return nil, fmt.Errorf("failed to add target port to httpx input: %w", err)
+			}
+			inputFile = merged
+		}
+	}
+
 	rawOutputFile := runCtx.Run.Path("02_http", "httpx.jsonl")
 	aliveOutputFile := runCtx.Run.Path("02_http", "alive.txt")
 	stderrFile := runCtx.Run.Path("00_meta", "httpx.stderr.log")
