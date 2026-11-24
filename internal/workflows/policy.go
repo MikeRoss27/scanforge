@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -121,7 +122,13 @@ func evalWhen(rc *modules.RunContext, w *When) (bool, string) {
 	if !w.NonEmpty() {
 		return true, ""
 	}
-	if !artifactNonEmpty(art.Path) {
+	// Artifact paths are relative to the run directory, not to the process
+	// working directory.
+	path := art.Path
+	if rc.Run != nil && path != "" && !filepath.IsAbs(path) {
+		path = rc.Run.Path(path)
+	}
+	if !artifactNonEmpty(path) {
 		return false, fmt.Sprintf("condition not met: artifact %q is empty", name)
 	}
 	return true, ""
