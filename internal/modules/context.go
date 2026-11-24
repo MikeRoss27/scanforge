@@ -66,6 +66,10 @@ type RunContext struct {
 
 	// events is the optional discovery event bus (nil unless --events).
 	events *events.Bus
+	// eventsExtended widens artifact->event emission to every type of
+	// events.ExtractArtifact (recursive discovery); false keeps the demo
+	// mapping of --events alone.
+	eventsExtended bool
 
 	// focus narrows the URL inputs of expensive modules in an incremental
 	// run (nil otherwise). See FocusedInput.
@@ -405,15 +409,32 @@ func (l lockedScope) IsAllowed(target string) bool {
 // effective scope. It requires a scope and a real (non-dry) run, and is a
 // no-op otherwise.
 func (c *RunContext) EnableEvents() error {
+	return c.EnableEventsWith(EventsOptions{})
+}
+
+// EventsOptions tunes EnableEventsWith. Zero values mean the bus defaults.
+type EventsOptions struct {
+	// MaxDepth and Budget bound discovery chains and accepted events.
+	MaxDepth, Budget int
+	// Extended emits DNS_NAME, OPEN_PORT, LIVE_URL, JS_URL and API_ROUTE
+	// events from every supported artifact (see events.ExtractArtifact)
+	// instead of only subdomains -> DNS_NAME.
+	Extended bool
+}
+
+// EnableEventsWith is EnableEvents with explicit bus limits and the extended
+// artifact mapping used by recursive discovery. Same no-op conditions.
+func (c *RunContext) EnableEventsWith(o EventsOptions) error {
 	if c.Scope == nil || c.Run == nil || c.DryRun {
 		return nil
 	}
-	bus, err := events.New(events.Options{MetaDir: c.Run.MetaDir, Scope: lockedScope{c}})
+	bus, err := events.New(events.Options{MetaDir: c.Run.MetaDir, Scope: lockedScope{c}, MaxDepth: o.MaxDepth, Budget: o.Budget})
 	if err != nil {
 		return err
 	}
 	c.mu.Lock()
 	c.events = bus
+	c.eventsExtended = o.Extended
 	c.mu.Unlock()
 	return nil
 }
@@ -427,8 +448,28 @@ func (c *RunContext) EventBus() *events.Bus {
 
 func (c *RunContext) emitArtifactEvents(name string, artifact Artifact) {
 	bus := c.EventBus()
+	if bus == nil {
+		return
+	}
+	c.mu.RLock()
+	extended := c.eventsExtended
+	c.mu.RUnlock()
+	if extended && events.HasExtractor(name) {
+		found, err := events.ExtractArtifact(name, c.Run.Path(artifact.Path))
+		if err != nil {
+			c.EmitWarning(fmt.Sprintf("events: %v", err))
+		}
+		for _, x := range found {
+			if _, err := bus.Publish(events.Event{Type: x.Type, Value: x.Value, ScopeRef: x.ScopeRef, Source: name}); err != nil {
+				c.EmitWarning(fmt.Sprintf("events: %v", err))
+				break
+			}
+		}
+		bus.Wait()
+		return
+	}
 	typ, ok := events.ArtifactEventTypes[name]
-	if bus == nil || !ok || artifact.Type != "text" {
+	if !ok || artifact.Type != "text" {
 		return
 	}
 	if _, err := events.EmitLines(bus, c.Run.Path(artifact.Path), typ, name); err != nil {

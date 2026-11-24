@@ -29,6 +29,27 @@ type Config struct {
 	// Limits holds the global resource limits applied to every command of a
 	// run. Zero values mean unlimited.
 	Limits Limits `yaml:"limits"`
+	// Recursive configures the opt-in recursive discovery loop (see
+	// docs/RECURSIVE.md). Off unless enabled here or with --recursive.
+	Recursive Recursive `yaml:"recursive"`
+}
+
+// Recursive configures recursive discovery. Zero Depth/Budget mean the
+// built-in defaults (2 and 200).
+type Recursive struct {
+	Enabled bool `yaml:"enabled"`
+	// Depth is the maximum discovery depth.
+	Depth int `yaml:"depth"`
+	// Budget is the maximum number of follow-up commands per run.
+	Budget int `yaml:"budget"`
+}
+
+// Validate rejects negative values.
+func (r Recursive) Validate() error {
+	if r.Depth < 0 || r.Budget < 0 {
+		return fmt.Errorf("recursive depth and budget must not be negative")
+	}
+	return nil
 }
 
 // Limits configures the global resource scheduler.
