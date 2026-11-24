@@ -15,7 +15,7 @@ tout est lu depuis `manifest.json`, `report.json` et les artefacts `01_` à `06_
 | `scanforge.list_runs` | lecture | Liste les runs (filtre `target`, `limit`) |
 | `scanforge.get_run` | lecture | Statut, modules, provenance du scope, compteurs |
 | `scanforge.get_assets` | lecture | Assets (ports, HTTP, TLS, technos) |
-| `scanforge.get_findings` | lecture | Findings, plus sévères d'abord (filtres `severity`, `asset`, `source`, `kind`) |
+| `scanforge.get_findings` | lecture | Findings, plus sévères d'abord (filtres `severity`, `asset`, `source`, `kind`, `status`, `confidence` ; chaque finding porte `provenance`, `status`, `confidence`, `evidence_items`, voir `docs/EVIDENCE.md`) |
 | `scanforge.get_evidence` | lecture | Preuve d'un `finding_id`, ou tranche d'un fichier d'artefact (`file`, `offset`, `max_bytes`) |
 | `scanforge.plan_scan` | lecture | Vagues du pipeline validé ; ne crée aucun run |
 | `scanforge.start_authorized_scan` | **actif** | Lance `scanforge run` (désactivé par défaut) |

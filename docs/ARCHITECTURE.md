@@ -13,6 +13,8 @@ Main chains:
                          ┌→ dnsx (passive input) ───────────┐
 subfinder → subdomains ──┤                                  ├→ resolved_hosts
                          └→ dnsbrute → dnsx (late results) ─┘
+ctlogs → ct_subdomains ⇢ dnsx (merged like brute_subdomains; scope-filtered)
+dnsx_raw + resolved_hosts → asnmap → asn_info (RDAP annotation, report only)
 resolved_hosts → httpx → alive_urls
 resolved_hosts → naabu → open_ports → nmap
 open_ports ⇢ httpx (soft: only when naabu is in the profile)
@@ -36,6 +38,19 @@ DNSX resolves passive discoveries while DNS bruteforce runs. Once the optional
 producer finishes, DNSX resolves only its additional hosts, merges both JSONL
 streams and publishes the final scoped artifact. A failed optional producer
 wakes the waiter so the passive branch can still continue.
+
+`ctlogs` (crt.sh Certificate Transparency lookup) is a native passive module
+that does not produce a second `subdomains` artifact: it publishes the scoped
+`ct_subdomains` artifact, which DNSX waits for and resolves exactly like
+`brute_subdomains` before merging into the single `resolved_hosts`. OSINT
+output is a lead, never an authorization: names pass through the same central
+scope filter and rejected ones land in `scope-rejections.jsonl`. `asnmap`
+queries RDAP (IANA bootstrap, `rdap.org` fallback) for the public IPs of hosts
+already present in the scope-filtered `resolved_hosts` and writes
+`asn_info.jsonl`, which the report attaches to each asset. It only annotates:
+it never extends the scope or emits targets. Both modules use the injectable
+`modules.Fetcher` (timeouts, size caps, retries/backoff, `--proxy`); on a dry
+run they only record the planned request in `commands.log`.
 
 `scanforge plan TARGET --preset deep` displays the validated waves without
 running any tool or creating a run.
@@ -179,6 +194,8 @@ validation sits between them.**
 - **Scheduler** (`internal/scheduler`) : décorateur d'`Executor` (concurrence, req/s, budget de commandes, timeouts).
 - **Événements** (`internal/events`) : bus typé en complément du DAG, scope vérifié en premier, `00_meta/events.jsonl`.
 - **Découverte récursive** (`internal/discovery`, `--recursive`) : les artefacts du DAG sont émis comme événements (`DNS_NAME`, `OPEN_PORT`, `LIVE_URL`, `JS_URL`, `API_ROUTE`) ; des abonnés mettent en file des passes bornées (dnsx -> httpx, katana profondeur 1) exécutées après le DAG via l'`Executor` injecté et `AddArtifact`. Profondeur et budget bornés, hors-scope jamais sondé. Voir `docs/RECURSIVE.md`.
+- **Preuves** (`internal/report/evidence.go`) : chaque finding porte `provenance`, `confidence`, `status` (`potential`/`version-match`/`validated`/`inconclusive`) et `evidence_items[]`, posés par le parseur du module producteur (additif, `omitempty`). Seul le module qui vérifie relève un statut (`jsverify` -> `validated`) ; triage, exports, MCP et API ne font que le lire. Voir `docs/EVIDENCE.md`.
+- **Découverte récursive dans le rapport** : `report.GenerateReport` fusionne `07_recursive/` via les parseurs existants (scope : listes filtrées + re-vérification contre `effective-scope.txt`), donc `diff`, `export`, `triage` et l'historique d'assets voient les assets trouvés par `--recursive`.
 - **Workflows** (`internal/workflows`) : compilés vers la sélection de modules d'un profil ; le DAG et le filtrage de scope restent inchangés.
 - **Vulnintel** (`internal/vulnintel`) : cache NVD/KEV/EPSS, mis à jour uniquement par `scanforge intel update`.
 - **MCP / API** : lecture des runs, scans actifs désactivés par défaut (`--allow-active` + fichier de scope strict, journal d'audit).

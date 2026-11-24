@@ -55,6 +55,22 @@ func (r *Report) WriteMarkdown(path string) error {
 			_, _ = fmt.Fprintf(&b, "**Technologies:** %s\n\n", strings.Join(asset.Technologies, ", "))
 		}
 
+		if len(asset.Network) > 0 {
+			b.WriteString("### Network Attribution\n\n")
+			b.WriteString("| IP | ASN | Network | Name | Org | Country | Handle |\n")
+			b.WriteString("|----|-----|---------|------|-----|---------|--------|\n")
+			for _, n := range asset.Network {
+				asn := n.ASN
+				if n.ASName != "" {
+					asn = strings.TrimSpace(asn + " " + n.ASName)
+				}
+				_, _ = fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s |\n",
+					markdownCell(n.IP), markdownCell(asn), markdownCell(n.CIDR), markdownCell(n.Name),
+					markdownCell(n.Org), markdownCell(n.Country), markdownCell(n.Handle))
+			}
+			b.WriteString("\n")
+		}
+
 		if len(asset.Ports) > 0 {
 			b.WriteString("### Open Ports\n\n")
 			var ports []int
@@ -117,6 +133,7 @@ func (r *Report) WriteMarkdown(path string) error {
 					markdownCell(v.MatchedAt), markdownCell(v.Evidence), markdownCell(priorityHint(v)))
 			}
 			b.WriteString("\n")
+			writeEvidenceLines(&b, asset.Vulnerabilities)
 		}
 	}
 
@@ -141,6 +158,60 @@ func (r *Report) WriteMarkdown(path string) error {
 	}
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
+}
+
+// EvidenceLine renders the compact one-line evidence summary of a
+// vulnerability (status, confidence, source, what was verified). It returns ""
+// for findings that carry no evidence layer (reports from older runs).
+func EvidenceLine(v *Vulnerability) string {
+	if v.Status == "" && v.Confidence == "" && v.Provenance == nil && len(v.EvidenceItems) == 0 {
+		return ""
+	}
+	parts := []string{}
+	if v.Status != "" {
+		parts = append(parts, "status "+v.Status)
+	}
+	if v.Confidence != "" {
+		parts = append(parts, "confidence "+v.Confidence)
+	}
+	if v.Provenance != nil {
+		src := v.Provenance.Module
+		if v.Provenance.ToolVersion != "" {
+			src += " " + v.Provenance.ToolVersion
+		}
+		parts = append(parts, "source "+src)
+	}
+	line := strings.Join(parts, ", ")
+	for _, ev := range v.EvidenceItems {
+		line += "; " + ev.Kind
+		if ev.Artifact != "" {
+			line += " in " + ev.Artifact
+		}
+		if ev.VerifiedBy != "" {
+			line += " (verified: " + ev.VerifiedBy + ")"
+		}
+	}
+	return line
+}
+
+// writeEvidenceLines emits one "Evidence" bullet per annotated finding under
+// the vulnerability table.
+func writeEvidenceLines(b *strings.Builder, vulns []*Vulnerability) {
+	wrote := false
+	for _, v := range vulns {
+		line := EvidenceLine(v)
+		if line == "" {
+			continue
+		}
+		if !wrote {
+			b.WriteString("**Evidence:**\n\n")
+			wrote = true
+		}
+		_, _ = fmt.Fprintf(b, "- %s: %s\n", mdInline(v.TemplateID), mdInline(line))
+	}
+	if wrote {
+		b.WriteString("\n")
+	}
 }
 
 func markdownCell(value string) string {

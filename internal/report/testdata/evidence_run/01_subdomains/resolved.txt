@@ -1,0 +1,2 @@
+app.example.com
+wp.example.com

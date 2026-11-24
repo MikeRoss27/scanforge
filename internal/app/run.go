@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/console"
@@ -67,6 +68,7 @@ func (a *App) runOne(ctx context.Context, opts RunOptions) error {
 // executeAndFinish runs the pipeline, then finalizes the manifest, reports
 // and summary. Shared by `run` and `resume`.
 func (s *runSession) executeAndFinish(ctx context.Context) error {
+	s.segmentStart = time.Now()
 	results, runErr := s.execute(ctx)
 
 	manifestErr := s.finalizeManifest(results, runErr)
@@ -268,6 +270,9 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 		versions := detectToolVersions(ctx, runner.NewRealExecutor(false), s.cfg, s.moduleNames)
 		toolVersion = func(name string) string { return versions[name] }
 		s.incremental.toolVersions = versions
+		if len(versions) > 0 {
+			s.scanRun.Manifest.ToolVersions = versions
+		}
 	}
 	focus := s.prepareIncremental()
 	// Buffered so a module emitting a burst of findings (e.g. nuclei) doesn't

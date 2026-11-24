@@ -1,0 +1,3 @@
+{"url":"https://app.example.com/static/app.js","page":"https://app.example.com/","kind":"dom-sink","pattern":"innerHTML","severity":"medium","payload":"<img src=x onerror=alert(1)>","verdict":"executed","evidence":"dialog alert(1) fired"}
+{"url":"https://app.example.com/static/app.js","page":"https://app.example.com/","kind":"dom-sink","pattern":"eval","severity":"medium","payload":"1+1","verdict":"sink-reached","evidence":"eval called with attacker string"}
+{"url":"https://app.example.com/static/other.js","page":"https://app.example.com/","kind":"dom-sink","pattern":"document.write","severity":"medium","payload":"x","verdict":"not-observed"}

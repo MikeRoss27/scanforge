@@ -16,7 +16,7 @@ const SchemaVersion = 1
 
 // PromptVersion identifies the LLM prompt and output schema. Bumping it
 // invalidates cached insights.
-const PromptVersion = "triage-v1"
+const PromptVersion = "triage-v2"
 
 // MaxBundleFindings caps how many findings are sent to the LLM. Deterministic
 // insights always cover every finding; the bundle only feeds the LLM.

@@ -1,0 +1,11 @@
+{
+  "handle": "203.0.113.0 - 203.0.113.191",
+  "startAddress": "203.0.113.0",
+  "endAddress": "203.0.113.191",
+  "ipVersion": "v4",
+  "name": "EXAMPLE-NET",
+  "country": "AU",
+  "entities": [
+    {"handle": "ORG-EX1", "roles": ["registrant"], "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["org", {}, "text", ["Example Networks Pty"]]]]}
+  ]
+}

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/ascii"
 	"github.com/MikeRoss27/scanforge/internal/console"
@@ -62,6 +61,9 @@ func (s *runSession) printIntro(moduleCount int) {
 	})
 	if s.opts.Verbosity >= console.Normal {
 		s.console.Info("scope validated (%s)", s.scopeSummary(s.effective.proposal))
+		if hint, ok := modules.TargetProbe(s.opts.Target); ok {
+			s.console.Info("port hint from target: %s will be probed by httpx (scope stays host-only)", hint)
+		}
 		if moduleCount > 0 {
 			s.console.Info("preparing pipeline with %d modules", moduleCount)
 		}
@@ -135,11 +137,9 @@ func buildSummary(scanRun *storage.Run, results []*modules.Result, rep *report.R
 		ReportMD:   displayPath(filepath.Join(scanRun.RootDir, "report.md")),
 		TriageHint: triageConfigured,
 	}
-	if started, err := time.Parse(time.RFC3339, manifest.StartedAt); err == nil {
-		if completed, err := time.Parse(time.RFC3339, manifest.CompletedAt); err == nil {
-			summary.Duration = completed.Sub(started)
-		}
-	}
+	// Active time only: a resumed run must not count the idle gap between
+	// the interruption and the resume.
+	summary.Duration = manifest.ActiveDuration()
 
 	summary.Modules = len(results)
 	for _, res := range results {

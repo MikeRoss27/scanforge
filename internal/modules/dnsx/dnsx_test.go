@@ -137,6 +137,43 @@ func TestRunResolvesPassiveHostsBeforeBruteforceFinishes(t *testing.T) {
 	}
 }
 
+// TestRunMergesCertificateTransparencyNames proves ctlogs feeds the existing
+// subdomain flow through dnsx (no second "subdomains" producer): CT names are
+// resolved after the passive input and land in the single resolved_hosts file.
+func TestRunMergesCertificateTransparencyNames(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"00_meta", "01_subdomains"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := &storage.Run{RootDir: root, MetaDir: filepath.Join(root, "00_meta"), CommandsLog: filepath.Join(root, "00_meta", "commands.log")}
+	writeFile(t, run.Path("01_subdomains", "subfinder.txt"), "example.com\n")
+	writeFile(t, run.Path("01_subdomains", "ct.txt"), "example.com\nstaging.example.com\n")
+	runCtx := modules.NewRunContext("example.com", "recon", false, run)
+	runCtx.ExpectArtifact("ct_subdomains")
+	if err := runCtx.AddArtifact("subdomains", modules.Artifact{Name: "subdomains", Type: "text", Path: "01_subdomains/subfinder.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCtx.AddArtifact("ct_subdomains", modules.Artifact{Name: "ct_subdomains", Type: "text", Path: "01_subdomains/ct.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	executor := &stagedExecutor{firstRun: make(chan struct{})}
+	if _, err := New("dnsx").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := os.ReadFile(run.Path("01_subdomains", "dnsx.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "example.com\nstaging.example.com\n"; string(resolved) != want {
+		t.Fatalf("resolved hosts = %q, want %q", resolved, want)
+	}
+	if len(executor.inputs) != 2 || executor.inputs[1] != run.Path("01_subdomains", "ct.txt") {
+		t.Fatalf("dnsx inputs = %v", executor.inputs)
+	}
+}
+
 // TestRunPublishesIPLiteralWithoutInvokingDNSX reproduces the real bug: a
 // bare-IP target (e.g. DVWA at http://127.0.0.1:4280) used to vanish
 // silently - dnsx has nothing to resolve on an address that is already an

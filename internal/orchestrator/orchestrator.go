@@ -148,6 +148,9 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	var recursiveEngine *discovery.Engine
 	if opts.Recursive {
 		ro := opts.RecursiveOptions.Defaults()
+		if outChan != nil {
+			opts.RecursiveOptions.Notice = func(m string) { outChan <- NoticeEvent{Message: m} }
+		}
 		if err := runCtx.EnableEventsWith(modules.EventsOptions{MaxDepth: ro.MaxDepth, Extended: true}); err != nil {
 			return nil, fmt.Errorf("enable recursive discovery: %w", err)
 		}
@@ -451,7 +454,7 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 				names = append(names, m.Name())
 			}
 			if outChan != nil {
-				outChan <- WaveStartEvent{Wave: waveByModule[readyModules[0].Name()], Modules: names}
+				outChan <- WaveStartEvent{Wave: batchWave(names, waveByModule), Modules: names}
 			}
 			for _, m := range readyModules {
 				launch(m)

@@ -1,0 +1,1 @@
+{"url":"https://app.example.com","check":"missing-csp","severity":"low","detail":"no Content-Security-Policy header"}

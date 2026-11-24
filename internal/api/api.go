@@ -182,6 +182,7 @@ func (s *Server) getFindings(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	p, err := s.Index.Findings(s.runID(r), runindex.FindingFilter{
 		Severity: q.Get("severity"), Asset: q.Get("asset"), Source: q.Get("source"), Kind: q.Get("kind"),
+		Status: q.Get("status"), Confidence: q.Get("confidence"),
 		Limit: intQ(r, "limit"), Offset: intQ(r, "offset"),
 	})
 	if err != nil {

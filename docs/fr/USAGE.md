@@ -199,6 +199,7 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge plan TARGET` | Affiche le scope et les vagues du DAG. |
 | `scanforge run TARGET` | Exécute un profil autorisé. |
 | `scanforge scan TARGET` | Alias de `run`. |
+| `scanforge assets CIBLE [--new\|--gone] [--json]` | Liste l'historique des assets d'une cible (`runs/<cible>/assets.jsonl`) utilisé par `--incremental` (voir `../INCREMENTAL.md`). |
 | `scanforge resume RUN-ID` | Reprend un run interrompu en ne relançant que ce qui n'est pas terminé ou dont les entrées ont changé (voir `../RESUME.md`). |
 | `scanforge status RUN-ID [--json]` | Affiche l'état de checkpoint de chaque module et la provenance du scope. |
 | `scanforge runs list [--target T] [--json]` | Liste les runs du workspace, du plus récent au plus ancien. |
@@ -267,6 +268,49 @@ journalisé. L'API n'écoute que sur loopback sauf `--unsafe-bind`.
 car ce sont les preuves du rapport. Seuls les identifiants de l'opérateur (clés
 d'`auth`, clé `ai:`, proxy/en-têtes passés à un scan) sont masqués dans les
 logs et les sorties API/MCP.
+
+## Scans incrémentaux et découverte récursive
+
+Guides détaillés : [INCREMENTAL](../INCREMENTAL.md), [RECURSIVE](../RECURSIVE.md).
+
+Après chaque run terminé (hors dry-run), ScanForge ajoute les assets observés à
+`runs/<cible>/assets.jsonl` (`new`, `unchanged`, `changed`, `gone`).
+`--incremental` fait que nuclei, ffuf, katana et jssecrets ne traitent que les
+URLs nouvelles ou modifiées ; les entrées de l'historique sont re-filtrées
+contre le scope courant, et tout est traité comme nouveau si le scope ou la
+version d'un outil a changé. `resume` d'un run incrémental reste incrémental.
+
+```bash
+scanforge run example.com --preset web --incremental
+scanforge assets example.com --new
+scanforge assets example.com --gone --json
+```
+
+`--recursive` (désactivé par défaut) émet des événements de découverte à partir
+des artefacts des modules existants : un nouveau nom dans le scope trouvé tard
+(JS, crawl) déclenche une passe bornée `dnsx` puis `httpx`, une nouvelle URL
+vivante une passe `katana` de profondeur 1. Les découvertes hors scope sont
+abandonnées et journalisées dans `00_meta/scope-rejections.jsonl` ; les
+commandes de suivi passent par le scheduler et comptent dans `--max-requests`.
+Les événements vont dans `00_meta/events.jsonl`, les sorties de suivi dans
+`07_recursive/`.
+
+```bash
+scanforge run example.com --preset web --recursive
+scanforge run example.com --preset web --recursive --recursive-depth 3 --recursive-budget 100
+```
+
+```yaml
+recursive:
+  enabled: false
+  depth: 2     # profondeur maximale de découverte (défaut 2)
+  budget: 200  # commandes de suivi maximales par run (défaut 200)
+```
+
+En `deep`/`full` (et tout profil contenant `naabu`), `httpx` s'exécute désormais
+après `naabu` et sonde aussi les cibles `hôte:port` non standard filtrées par le
+scope (8080, 8443, 3000...) : les modules web en aval couvrent ainsi les
+services au-delà de 80/443.
 
 ## Triage des findings
 

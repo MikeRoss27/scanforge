@@ -57,6 +57,12 @@ type WarningEvent struct {
 	Message string
 }
 
+// NoticeEvent is an informational line about orchestrator-level work that is
+// not a module (e.g. the recursive discovery follow-up passes).
+type NoticeEvent struct {
+	Message string
+}
+
 // FindingEvent is emitted the moment a module discovers a vulnerability or
 // exposure, ahead of the module's own completion (which can be minutes away
 // for long-running scanners like nuclei).
@@ -86,4 +92,5 @@ func (ModuleDoneEvent) isEvent()     {}
 func (ModuleProgressEvent) isEvent() {}
 func (DeadlockEvent) isEvent()       {}
 func (WarningEvent) isEvent()        {}
+func (NoticeEvent) isEvent()         {}
 func (FindingEvent) isEvent()        {}

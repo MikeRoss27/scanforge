@@ -40,6 +40,11 @@ type persistedOptions struct {
 	NmapConcurrency int                      `json:"nmap_concurrency,omitempty"`
 	WordPress       modules.WordPressOptions `json:"wordpress"`
 	Incremental     bool                     `json:"incremental,omitempty"`
+	// Recursive discovery settings: a resumed run must keep the loop the
+	// original run was started with (the resume command has no such flags).
+	Recursive       bool `json:"recursive,omitempty"`
+	RecursiveDepth  int  `json:"recursive_depth,omitempty"`
+	RecursiveBudget int  `json:"recursive_budget,omitempty"`
 }
 
 func persistParams(opts RunOptions, moduleNames []string) (*storage.RunParams, error) {
@@ -49,6 +54,9 @@ func persistParams(opts RunOptions, moduleNames []string) (*storage.RunParams, e
 		NmapConcurrency: opts.NmapConcurrency,
 		WordPress:       opts.WordPress,
 		Incremental:     opts.Incremental,
+		Recursive:       opts.Recursive,
+		RecursiveDepth:  opts.RecursiveDepth,
+		RecursiveBudget: opts.RecursiveBudget,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode run parameters: %w", err)
@@ -150,10 +158,16 @@ func (a *App) prepareResume(cfg *config.Config, run *storage.Run, opts ResumeOpt
 		NmapConcurrency: persisted.NmapConcurrency,
 		WordPress:       persisted.WordPress,
 		Incremental:     persisted.Incremental,
+		Recursive:       persisted.Recursive,
+		RecursiveDepth:  persisted.RecursiveDepth,
+		RecursiveBudget: persisted.RecursiveBudget,
 	}
 
 	m2 := &run.Manifest
 	m2.Status = "running"
+	// Carry the active time already spent so the resumed run only adds its
+	// own segment (backward compatible with manifests lacking the field).
+	m2.ActiveSeconds = m2.PriorActiveDuration().Seconds()
 	m2.CompletedAt = ""
 	m2.ResumeCount++
 	if err := run.WriteManifest(); err != nil {

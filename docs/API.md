@@ -26,7 +26,7 @@ scanforge api [--listen 127.0.0.1:8787] [--token-file ./token] [--allow-active -
 | GET | `/v1/runs?target=&limit=` | non |
 | GET | `/v1/runs/{cible}/{horodatage}` | non |
 | GET | `/v1/runs/{cible}/{horodatage}/assets?filter=&limit=&offset=` | non |
-| GET | `/v1/runs/{cible}/{horodatage}/findings?severity=&asset=&source=&kind=&limit=&offset=` | non |
+| GET | `/v1/runs/{cible}/{horodatage}/findings?severity=&asset=&source=&kind=&status=&confidence=&limit=&offset=` | non |
 | GET | `/v1/runs/{cible}/{horodatage}/evidence?finding_id=` ou `?file=06_vulns/x.jsonl&offset=&max_bytes=` | non |
 | POST | `/v1/plan` `{"target","profile","wp"}` | oui |
 | POST | `/v1/scans` `{"target","profile","dry_run"}` (202) | oui |

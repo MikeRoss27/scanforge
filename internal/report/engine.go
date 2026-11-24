@@ -26,6 +26,9 @@ func GenerateReport(runDir string, manifest *storage.RunManifest) (*Report, erro
 		rep.CompletedAt = t
 	}
 	rep.Status = manifest.Status
+	var asnPath string
+	rep.runDir = runDir
+	rep.toolVersions = manifest.ToolVersions
 
 	for key, relPath := range manifest.Outputs {
 		// Only ever parse files inside the run directory. relPath comes from
@@ -46,6 +49,10 @@ func GenerateReport(runDir string, manifest *storage.RunManifest) (*Report, erro
 			err = ParseHttpx(absPath, rep)
 		case "dnsx_raw":
 			err = ParseDnsx(absPath, rep)
+		case "asn_info":
+			// Needs the assets built by the other parsers; applied below
+			// so the result never depends on map iteration order.
+			asnPath = absPath
 		case "tls_raw":
 			err = ParseTlsx(absPath, rep)
 		case "nmap_xml":
@@ -90,6 +97,21 @@ func GenerateReport(runDir string, manifest *storage.RunManifest) (*Report, erro
 		if err != nil {
 			warnings = append(warnings, fmt.Errorf("failed to parse %s: %w", key, err))
 		}
+	}
+
+	if asnPath != "" {
+		if err := ParseASNInfo(asnPath, rep); err != nil {
+			warnings = append(warnings, fmt.Errorf("failed to parse asn_info: %w", err))
+		}
+	}
+
+	// Link replay verdicts to the findings they replayed. Done after every
+	// parser ran, so the result does not depend on manifest map order.
+	rep.applyReplayVerdicts()
+
+	// Fold the --recursive follow-up passes (07_recursive/) into the report.
+	if err := foldRecursive(runDir, rep); err != nil {
+		warnings = append(warnings, fmt.Errorf("failed to fold recursive discovery: %w", err))
 	}
 
 	return rep, errors.Join(warnings...)

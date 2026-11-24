@@ -77,4 +77,65 @@ une après la fin du DAG, ce qui garde l'ordre déterministe.
 - `07_recursive/NNN-<valeur>-*` : entrées/sorties de chaque commande de suivi.
   Les artefacts de suivi (`recursive.resolved_hosts`, `recursive.alive_urls`,
   `recursive.crawled_urls`) portent des noms distincts : ils ne remplacent jamais
-  les artefacts du DAG et ne sont pas encore intégrés à `report.json`.
+  les artefacts du DAG. Ils sont intégrés à `report.json` par
+  `report.GenerateReport` (donc visibles par `scanforge diff`, `export`, `triage`
+  et l'historique d'assets), avec le même filtrage de scope et le marqueur
+  `"discovered_by": "recursive"` sur les assets nouveaux. Voir `docs/EVIDENCE.md`.
+
+## Reprise (`resume`) et `--incremental`
+
+- `scanforge resume` conserve `--recursive`, `--recursive-depth` et `--recursive-budget`
+  (stockés dans les paramètres du manifeste). Les passes de suivi terminées sont
+  listées dans `07_recursive/done.jsonl` : à la reprise elles sont rejouées depuis
+  leurs sorties (aucune commande, annoncées `recursive: reuse ...`), ce qui
+  reconstruit la chaîne d'événements ; seules les passes interrompues ou nouvelles
+  sont exécutées, avec une numérotation qui ne réécrit pas les sorties existantes.
+  `events.jsonl` et `scope-rejections.jsonl` ne reçoivent pas de lignes en double.
+- `--incremental` fonctionne avec `--recursive`. Les passes de suivi ne sont pas
+  restreintes par le focus incrémental : elles sont refaites à chaque run (nouveau
+  répertoire) dans la limite du budget.
+
+## Ports
+
+Le `httpx` de suivi sonde 80/443 plus les ports web des `alive_urls` du DAG
+(ex. 8080, 8443) : une application hébergée sur un port non standard est ainsi vue
+sur le nouveau nom. Sans `alive_urls`, httpx garde ses ports par défaut.
+
+## Console
+
+Chaque passe est annoncée (`[INF] recursive [3/50] crawl http://...`, `[n/budget]`
+= prochaine commande / budget), puis un résumé : jobs, commandes, événements
+au-delà de la profondeur, dépassements de budget, échecs. Masqué avec `--quiet`.
+
+## Validation de bout en bout (labo loopback)
+
+Validé avec un vrai `scanforge run localhost --preset deep --scope scope.txt
+--confirm-scope --recursive --recursive-depth 2 --recursive-budget 50` (scope
+`localhost`, `*.localhost`, `127.0.0.1`) contre un petit serveur HTTP Python sur
+`127.0.0.1:8080` qui sert, selon l'en-tête `Host`, la même racine pour tous les
+noms et une chaîne `api.lab.localhost` -> `l1.lab.localhost` -> `l2.lab.localhost`
+-> `l3.lab.localhost` (liens `http://evil.example.org/...` à chaque niveau, JS avec
+URL absolues `evil.example.org`, `internal.corp.evil...`). `api.lab.localhost` n'est
+atteint par le crawl du DAG (katana, profondeur 2) qu'en tant que lien, jamais
+chargé ; il est donc « découvert tardivement ».
+
+Constats :
+
+- `api.lab.localhost` (DNS_NAME depuis `crawled_urls`) -> dnsx + httpx
+  (`07_recursive/001-*`), live URL `:8080` -> katana depth 1 (`003-*`), qui révèle
+  `l1`/`l2` (profondeur 2) -> dnsx + httpx ; leurs `LIVE_URL` (profondeur 3) sont
+  abandonnées : `l3` n'est jamais sondé (4 événements « past depth » dans le
+  résumé). Avec `--recursive-depth 1 --recursive-budget 3` la boucle s'arrête après
+  3 commandes avec l'avertissement de budget.
+- Hors scope : `evil.example.org` apparaît dans la sortie katana de suivi et est
+  retiré par `AddArtifact` (`scope-rejections.jsonl`, artefact
+  `recursive.crawled_urls`) ; `internal.corp` (JS, `event:DNS_NAME`) est rejeté par
+  le bus. Aucune commande de `commands.log` ne cible un hôte hors scope et aucun
+  fichier de `07_recursive/` ne le contient.
+- `scanforge resume` : 0 commande de suivi relancée, `events.jsonl` inchangé (62
+  lignes avant et après) ; `--incremental --recursive` : le run se termine
+  normalement.
+- Le sous-domaine passif (subfinder) renvoie du bruit réel pour `localhost` ;
+  le labo répond donc la racine pour tout nom inconnu.
+- Limite connue : le mode `domain` implicite refuse un nom à un seul label
+  (`localhost`) ; le labo utilise donc `--scope` avec un fichier.

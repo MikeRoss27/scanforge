@@ -50,6 +50,7 @@ type Renderer struct {
 
 	mu           sync.Mutex
 	lastPhase    string
+	lastWave     int
 	pendingPhase string // phase waiting for its first visible line
 	pendingWave  int
 	progress     *progressTracker
@@ -177,6 +178,15 @@ func (r *Renderer) flushPhaseLocked() {
 		return
 	}
 	r.lastPhase = phase
+	// Wave numbers are static DAG levels, not barriers: a module of a lower
+	// level can start after a higher-level one (it waited on an optional
+	// artifact). Never print a number lower than one already shown, so the
+	// header sequence reads in order; the label is dropped instead.
+	if wave < r.lastWave {
+		wave = 0
+	} else {
+		r.lastWave = wave
+	}
 	r.writeLineLocked(r.phaseHeader(phase, wave))
 }
 

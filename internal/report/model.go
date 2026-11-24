@@ -18,6 +18,13 @@ type Report struct {
 	// Screenshots lists the captured snapshots, paths relative to
 	// 04_web/screenshots/ (httpx -srd nests them per host).
 	Screenshots []string `json:"screenshots,omitempty"`
+
+	// Unexported generation context, never serialized: the run directory
+	// (to make evidence artifact paths run-relative), the detected tool
+	// versions (provenance) and the jsverify output path.
+	runDir       string
+	toolVersions map[string]string
+	jsVerifyPath string
 }
 
 // VerifiedFinding is the outcome of replaying one jssecrets PoC payload in a
@@ -47,6 +54,25 @@ type Asset struct {
 	WAFs            []string         `json:"wafs,omitempty"`
 	Vulnerabilities []*Vulnerability `json:"vulnerabilities,omitempty"`
 	Paths           []PathEntry      `json:"paths,omitempty"`
+	// Network is the RDAP registration data of the asset's resolved IPs
+	// (asnmap). It annotates only: it never adds scope or scan targets.
+	Network []NetworkInfo `json:"network,omitempty"`
+	// DiscoveredBy is "recursive" for assets that only exist thanks to the
+	// --recursive follow-up passes (07_recursive/); empty otherwise.
+	DiscoveredBy string `json:"discovered_by,omitempty"`
+}
+
+// NetworkInfo attributes one resolved IP to its registered network.
+type NetworkInfo struct {
+	IP       string `json:"ip"`
+	ASN      string `json:"asn,omitempty"`
+	ASName   string `json:"as_name,omitempty"`
+	CIDR     string `json:"cidr,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Org      string `json:"org,omitempty"`
+	Country  string `json:"country,omitempty"`
+	Handle   string `json:"handle,omitempty"`
+	Registry string `json:"registry,omitempty"`
 }
 
 // PathEntry is one path discovered under an asset. StatusCode and
@@ -110,6 +136,18 @@ type Vulnerability struct {
 	EPSS           float64  `json:"epss,omitempty"`
 	EPSSPercentile float64  `json:"epss_percentile,omitempty"`
 	KEV            bool     `json:"kev,omitempty"`
+
+	// Provenance, Confidence, Status and EvidenceItems are the additive
+	// evidence layer (docs/EVIDENCE.md). They are all omitempty, so reports
+	// written before this layer existed load and re-serialize unchanged.
+	// `source` stays the module name string for backward compatibility;
+	// Provenance carries the structured form. `evidence` stays the legacy
+	// free-form string; EvidenceItems (`evidence_items`) carries the
+	// structured entries.
+	Provenance    *Provenance `json:"provenance,omitempty"`
+	Confidence    string      `json:"confidence,omitempty"`
+	Status        string      `json:"status,omitempty"`
+	EvidenceItems []Evidence  `json:"evidence_items,omitempty"`
 }
 
 func NewReport(target, profile string) *Report {

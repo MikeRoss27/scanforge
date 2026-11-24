@@ -1,0 +1,1 @@
+{"template-id":"exposed-admin-panel","matched-at":"https://app.example.com/admin","host":"app.example.com","extractor":["admin-v1"],"info":{"name":"Admin panel exposed","severity":"medium","tags":["panel"]}}

@@ -204,7 +204,7 @@ func ParseNuclei(path string, report *Report) error {
 		}
 
 		asset := report.GetOrCreateAsset(host)
-		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+		vuln := &Vulnerability{
 			Source:      "nuclei",
 			TemplateID:  record.TemplateID,
 			Title:       title,
@@ -216,7 +216,14 @@ func ParseNuclei(path string, report *Report) error {
 			CVEs:        record.Info.Classification.CVE,
 			CWEs:        record.Info.Classification.CWE,
 			References:  record.Info.References,
-		})
+		}
+		report.annotate(vuln, "nuclei", StatusPotential, ConfidenceMedium, Evidence{
+			Kind:       EvidenceTemplateMatch,
+			Summary:    "nuclei template " + record.TemplateID + " matched at " + record.MatchedAt,
+			Excerpt:    vuln.Evidence,
+			VerifiedBy: "template matcher fired on the HTTP response; not independently verified",
+		}, path)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, vuln)
 	}
 	return scanner.Err()
 }
@@ -236,6 +243,8 @@ func parseVersionCVE(path string, report *Report, source string) error {
 	return scanJSONLines(path, func(line []byte) {
 		var record struct {
 			Host           string  `json:"host"`
+			Tech           string  `json:"tech"`
+			Version        string  `json:"version"`
 			CVEID          string  `json:"cve_id"`
 			Title          string  `json:"title"`
 			Severity       string  `json:"severity"`
@@ -245,12 +254,15 @@ func parseVersionCVE(path string, report *Report, source string) error {
 			EPSS           float64 `json:"epss"`
 			EPSSPercentile float64 `json:"epss_percentile"`
 			KEV            bool    `json:"kev"`
+			MatchQuality   string  `json:"match_quality"`
+			Confirmed      *bool   `json:"confirmed"`
+			IntelSource    string  `json:"intel_source"`
 		}
 		if json.Unmarshal(line, &record) != nil || record.Host == "" || record.CVEID == "" {
 			return
 		}
 		asset := report.GetOrCreateAsset(normalizeAssetName(record.Host))
-		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+		vuln := &Vulnerability{
 			Source:         source,
 			TemplateID:     record.CVEID,
 			Title:          record.Title,
@@ -262,8 +274,44 @@ func parseVersionCVE(path string, report *Report, source string) error {
 			EPSS:           record.EPSS,
 			EPSSPercentile: record.EPSSPercentile,
 			KEV:            record.KEV,
-		})
+		}
+		status, confidence, verifiedBy := versionCVEStatus(record.MatchQuality, record.Confirmed, record.Tech, record.Version)
+		summary := "detected " + strings.TrimSpace(record.Tech+" "+record.Version) + " against " + record.CVEID
+		if record.IntelSource != "" {
+			summary += " (intel: " + record.IntelSource + ")"
+		}
+		report.annotate(vuln, source, status, confidence, Evidence{
+			Kind:       EvidenceVersionMatch,
+			Summary:    summary,
+			Excerpt:    strings.TrimSpace(record.Tech + " " + record.Version),
+			VerifiedBy: verifiedBy,
+		}, path)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, vuln)
 	})
+}
+
+// versionCVEStatus maps a version-based CVE correlation onto the evidence
+// model. Name-only matches (vulnintel quality "name-only", confirmed=false)
+// are leads, never version matches. Records without match_quality come from
+// the bundled dataset, whose entries only match inside an explicit
+// min/max affected version range.
+func versionCVEStatus(quality string, confirmed *bool, tech, ver string) (status, confidence, verifiedBy string) {
+	detected := strings.TrimSpace(tech + " " + ver)
+	if (confirmed != nil && !*confirmed) || quality == "name-only" {
+		return StatusPotential, ConfidenceLow,
+			"only the product name matched (no version evidence); unconfirmed lead, nothing exercised"
+	}
+	switch quality {
+	case "exact-cpe-range":
+		return StatusVersionMatch, ConfidenceHigh,
+			"detected version " + detected + " lies in the affected range of the CVE's exact vendor/product CPE; the vulnerability itself was not exercised"
+	case "version-range":
+		return StatusVersionMatch, ConfidenceMedium,
+			"detected version " + detected + " lies in the affected range matched on product name; the vulnerability itself was not exercised"
+	default:
+		return StatusVersionMatch, ConfidenceMedium,
+			"detected version " + detected + " lies in the affected version range of the bundled dataset; the vulnerability itself was not exercised"
+	}
 }
 
 // ParseHTTPChecks parses the httpcheck module's hardening-gap findings.
@@ -283,14 +331,21 @@ func ParseHTTPChecks(path string, report *Report) error {
 			return
 		}
 		asset := report.GetOrCreateAsset(host)
-		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+		vuln := &Vulnerability{
 			Source:      "httpcheck",
 			TemplateID:  record.Check,
 			Title:       httpCheckTitle(record.Check),
 			Severity:    record.Severity,
 			MatchedAt:   record.URL,
 			Description: record.Detail,
-		})
+		}
+		report.annotate(vuln, "httpcheck", StatusValidated, ConfidenceHigh, Evidence{
+			Kind:       EvidenceObservation,
+			Summary:    record.Check + " at " + record.URL,
+			Excerpt:    record.Detail,
+			VerifiedBy: "header/cookie state read directly from the HTTP response fetched by httpcheck (a hardening gap, not an exploit)",
+		}, path)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, vuln)
 	})
 }
 
@@ -345,6 +400,50 @@ func ParseDnsx(path string, report *Report) error {
 		if record.ASN != nil {
 			value := strings.TrimSpace(strings.Join([]string{record.ASN.Number, record.ASN.Name, record.ASN.Country}, " "))
 			asset.ASN = appendUnique(asset.ASN, value)
+		}
+	})
+}
+
+// ParseASNInfo attaches the asnmap RDAP records to the assets listed in each
+// record's hosts. Records for hosts that are not already assets are ignored:
+// attribution annotates known in-scope assets and never creates one.
+func ParseASNInfo(path string, report *Report) error {
+	return scanJSONLines(path, func(line []byte) {
+		var record struct {
+			IP       string   `json:"ip"`
+			Hosts    []string `json:"hosts"`
+			ASN      string   `json:"asn"`
+			ASName   string   `json:"as_name"`
+			CIDR     string   `json:"cidr"`
+			Name     string   `json:"name"`
+			Org      string   `json:"org"`
+			Country  string   `json:"country"`
+			Handle   string   `json:"handle"`
+			Registry string   `json:"registry"`
+		}
+		if json.Unmarshal(line, &record) != nil || record.IP == "" {
+			return
+		}
+		info := NetworkInfo{
+			IP: record.IP, ASN: record.ASN, ASName: record.ASName, CIDR: record.CIDR,
+			Name: record.Name, Org: record.Org, Country: record.Country,
+			Handle: record.Handle, Registry: record.Registry,
+		}
+		for _, host := range record.Hosts {
+			asset, ok := report.Assets[normalizeAssetName(host)]
+			if !ok {
+				continue
+			}
+			known := false
+			for _, n := range asset.Network {
+				if n.IP == info.IP {
+					known = true
+					break
+				}
+			}
+			if !known {
+				asset.Network = append(asset.Network, info)
+			}
 		}
 	})
 }
@@ -421,18 +520,39 @@ func ParseJSSecrets(path string, report *Report) error {
 		if record.Snippet != "" {
 			evidence = record.Snippet
 		}
+		excerpt := evidence
 		if len(record.Payloads) > 0 {
 			evidence += "\n\nPoC payloads:\n- " + strings.Join(record.Payloads, "\n- ")
 		}
-		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+		vuln := &Vulnerability{
 			Source:     "jssecrets",
 			TemplateID: record.Pattern,
 			Title:      jsFindingTitle(record.Kind, record.Pattern),
 			Severity:   record.Severity,
 			MatchedAt:  record.URL,
 			Evidence:   evidence,
-		})
+		}
+		// The matched value is kept in full: it is proof of the leak.
+		report.annotate(vuln, "jssecrets", StatusPotential, jsConfidence(record.Kind), Evidence{
+			Kind:       EvidenceStaticMatch,
+			Summary:    "pattern " + record.Pattern + " (" + record.Kind + ") matched in " + record.URL,
+			Excerpt:    excerpt,
+			VerifiedBy: "pattern matched statically in the downloaded JavaScript; not tested against any service or replayed in a browser",
+		}, path)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, vuln)
 	})
+}
+
+// jsConfidence rates a static JavaScript match: code-pattern kinds (sinks)
+// say nothing about reachability, so they are low; literal values found in
+// the served file are medium.
+func jsConfidence(kind string) string {
+	switch kind {
+	case "dom-sink", "node-sink", "proto-pollution", "postmessage", "env-leak":
+		return ConfidenceLow
+	default:
+		return ConfidenceMedium
+	}
 }
 
 func jsFindingTitle(kind, pattern string) string {
@@ -464,6 +584,7 @@ func jsFindingTitle(kind, pattern string) string {
 // Only actionable outcomes (executed, sink-reached) are kept so the report
 // highlights confirmed sinks rather than the full not-observed backlog.
 func ParseJSVerify(path string, report *Report) error {
+	report.jsVerifyPath = path
 	return scanJSONLines(path, func(line []byte) {
 		var record VerifiedFinding
 		if json.Unmarshal(line, &record) != nil || record.URL == "" {
@@ -572,14 +693,21 @@ func ParseWPUsers(path string, report *Report) error {
 			return
 		}
 		asset := report.GetOrCreateAsset(host)
-		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+		vuln := &Vulnerability{
 			Source:      "wpusers",
 			TemplateID:  "wp-user-enumerated",
 			Title:       "WordPress user enumerated",
 			Severity:    "info",
 			MatchedAt:   record.URL,
 			Description: record.Login,
-		})
+		}
+		report.annotate(vuln, "wpusers", StatusValidated, normalizeConfidence(record.Confidence, ConfidenceMedium), Evidence{
+			Kind:       EvidenceObservation,
+			Summary:    "login " + record.Login + " disclosed via " + firstNonEmpty(record.Source, "WordPress endpoint"),
+			Excerpt:    record.Login,
+			VerifiedBy: "login returned by the target's own endpoint during enumeration",
+		}, path)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, vuln)
 	})
 }
 
@@ -587,11 +715,12 @@ func ParseWPUsers(path string, report *Report) error {
 func ParseWPExposure(path string, report *Report) error {
 	return scanJSONLines(path, func(line []byte) {
 		var record struct {
-			URL      string `json:"url"`
-			Check    string `json:"check"`
-			Severity string `json:"severity"`
-			Title    string `json:"title"`
-			Detail   string `json:"detail"`
+			URL        string `json:"url"`
+			Check      string `json:"check"`
+			Severity   string `json:"severity"`
+			Title      string `json:"title"`
+			Detail     string `json:"detail"`
+			Confidence string `json:"confidence"`
 		}
 		if json.Unmarshal(line, &record) != nil || record.URL == "" || record.Check == "" {
 			return
@@ -601,14 +730,21 @@ func ParseWPExposure(path string, report *Report) error {
 			return
 		}
 		asset := report.GetOrCreateAsset(host)
-		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+		vuln := &Vulnerability{
 			Source:      "wpexposure",
 			TemplateID:  record.Check,
 			Title:       record.Title,
 			Severity:    record.Severity,
 			MatchedAt:   record.URL,
 			Description: record.Detail,
-		})
+		}
+		report.annotate(vuln, "wpexposure", StatusValidated, normalizeConfidence(record.Confidence, ConfidenceMedium), Evidence{
+			Kind:       EvidenceObservation,
+			Summary:    record.Check + " at " + record.URL,
+			Excerpt:    record.Detail,
+			VerifiedBy: "resource fetched (HTTP 200) and its body contained the expected content marker",
+		}, path)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, vuln)
 	})
 }
 
@@ -636,14 +772,21 @@ func ParseWPXMLRPC(path string, report *Report) error {
 			detail += "; pingback=" + map[bool]string{true: "yes", false: "no"}[record.Pingback]
 		}
 		asset := report.GetOrCreateAsset(host)
-		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+		vuln := &Vulnerability{
 			Source:      "wpxmlrpc",
 			TemplateID:  "xmlrpc-enabled",
 			Title:       "XML-RPC endpoint enabled",
 			Severity:    "medium",
 			MatchedAt:   record.URL,
 			Description: detail,
-		})
+		}
+		report.annotate(vuln, "wpxmlrpc", StatusValidated, ConfidenceHigh, Evidence{
+			Kind:       EvidenceObservation,
+			Summary:    "xmlrpc.php answered at " + record.URL,
+			Excerpt:    detail,
+			VerifiedBy: "endpoint answered an XML-RPC method listing request; abuse (multicall/pingback) was not attempted",
+		}, path)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, vuln)
 	})
 }
 
@@ -665,7 +808,7 @@ func ParseWPBrute(path string, report *Report) error {
 			return
 		}
 		asset := report.GetOrCreateAsset(host)
-		asset.Vulnerabilities = append(asset.Vulnerabilities, &Vulnerability{
+		vuln := &Vulnerability{
 			Source:      "wpbrute",
 			TemplateID:  "wp-credentials-validated",
 			Title:       "WordPress credentials validated",
@@ -673,6 +816,13 @@ func ParseWPBrute(path string, report *Report) error {
 			MatchedAt:   record.URL,
 			Evidence:    record.Username,
 			Description: "method: " + record.Method,
-		})
+		}
+		report.annotate(vuln, "wpbrute", StatusValidated, ConfidenceHigh, Evidence{
+			Kind:       EvidenceAuth,
+			Summary:    "authentication succeeded for " + record.Username + " via " + record.Method,
+			Excerpt:    record.Username,
+			VerifiedBy: "a login attempt with these credentials was accepted by the target",
+		}, path)
+		asset.Vulnerabilities = append(asset.Vulnerabilities, vuln)
 	})
 }

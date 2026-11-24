@@ -27,8 +27,14 @@ func NewPlanCommand(application *app.App) *cobra.Command {
 		Long: `Validates the profile, scope and module dependencies, then prints the
 execution waves (which modules run, in what order, and what each one
 requires) without executing anything. Use it to sanity-check a profile
-before running a scan.`,
+before running a scan.
+
+A port written in the target (http://127.0.0.1:8082, https://example.com:8443
+or host:8082) is shown as PORT and probed by httpx on top of 80/443. It is only
+a probe hint: scope still covers the host and a port-scoped scope entry is
+rejected.`,
 		Example: `  scanforge plan example.com --preset deep
+  scanforge plan http://127.0.0.1:8082 --scope-mode exact
   scanforge plan --targets targets.txt --profile web
   scanforge plan example.com --workflow workflows/web-recon.yaml`,
 		Args: cobra.MaximumNArgs(1),
@@ -80,6 +86,9 @@ func printPlanPanel(out io.Writer, plan *app.PlanResult) {
 	fmt.Fprintf(&info, "%s\n", kv("SOURCE", ui.Dim(fmt.Sprintf("%s (mode %s)", plan.ScopeSource, plan.ScopeMode))))
 	for _, entry := range plan.ScopeEntries {
 		fmt.Fprintf(&info, "%-10s %s\n", "", ui.Dim("• "+entry))
+	}
+	if plan.ProbeHint != "" {
+		fmt.Fprintf(&info, "%s\n", kv("PORT", ui.Dim(plan.ProbeHint+" probed by httpx (hint from target; scope stays host-only)")))
 	}
 	if plan.ScopeNote != "" {
 		fmt.Fprintf(&info, "%s\n", kv("NOTE", ui.Yellow(plan.ScopeNote)))
