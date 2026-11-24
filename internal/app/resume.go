@@ -154,6 +154,9 @@ func (a *App) prepareResume(cfg *config.Config, run *storage.Run, opts ResumeOpt
 
 	m2 := &run.Manifest
 	m2.Status = "running"
+	// Carry the active time already spent so the resumed run only adds its
+	// own segment (backward compatible with manifests lacking the field).
+	m2.ActiveSeconds = m2.PriorActiveDuration().Seconds()
 	m2.CompletedAt = ""
 	m2.ResumeCount++
 	if err := run.WriteManifest(); err != nil {

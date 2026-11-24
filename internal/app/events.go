@@ -22,7 +22,12 @@ func (s *runSession) consumeEvents(eventChan <-chan orchestrator.Event, done <-c
 // finalizeManifest records completion time, per-module results and the run
 // status (completed/partial/failed) in the run manifest.
 func (s *runSession) finalizeManifest(results []*modules.Result, runErr error) error {
-	s.scanRun.Manifest.CompletedAt = time.Now().Format(time.RFC3339)
+	now := time.Now()
+	s.scanRun.Manifest.CompletedAt = now.Format(time.RFC3339)
+	if !s.segmentStart.IsZero() {
+		s.scanRun.Manifest.AddActive(now.Sub(s.segmentStart))
+		s.segmentStart = time.Time{}
+	}
 	completedModules, notApplicable := 0, 0
 	for _, result := range results {
 		switch {

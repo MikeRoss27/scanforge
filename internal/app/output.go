@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/ascii"
 	"github.com/MikeRoss27/scanforge/internal/console"
@@ -135,11 +134,9 @@ func buildSummary(scanRun *storage.Run, results []*modules.Result, rep *report.R
 		ReportMD:   displayPath(filepath.Join(scanRun.RootDir, "report.md")),
 		TriageHint: triageConfigured,
 	}
-	if started, err := time.Parse(time.RFC3339, manifest.StartedAt); err == nil {
-		if completed, err := time.Parse(time.RFC3339, manifest.CompletedAt); err == nil {
-			summary.Duration = completed.Sub(started)
-		}
-	}
+	// Active time only: a resumed run must not count the idle gap between
+	// the interruption and the resume.
+	summary.Duration = manifest.ActiveDuration()
 
 	summary.Modules = len(results)
 	for _, res := range results {
