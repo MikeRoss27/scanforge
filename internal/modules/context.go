@@ -67,6 +67,10 @@ type RunContext struct {
 	// events is the optional discovery event bus (nil unless --events).
 	events *events.Bus
 
+	// focus narrows the URL inputs of expensive modules in an incremental
+	// run (nil otherwise). See FocusedInput.
+	focus InputFocus
+
 	onFinding func(Finding)
 	onWarn    func(string)
 	// onProgress optionally receives live module progress for the volatile

@@ -59,6 +59,7 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var wpPasswords string
 	var wpBruteMethod string
 	var wpBruteforceMax int
+	var incremental bool
 
 	cmd := &cobra.Command{
 		Use:         "run [target]",
@@ -75,10 +76,17 @@ report (report.json / report.md).
 An interrupted run can be continued with 'scanforge resume'. Use --workflow
 to run a validated YAML workflow instead of a profile, and --concurrency,
 --rps, --max-requests and --command-timeout to cap how hard the run hits
-its targets.`,
+its targets.
+
+With --incremental, the run is compared to the per-target asset history
+(runs/<target>/assets.jsonl, updated after every completed run): nuclei, ffuf,
+katana and jssecrets only look at new or changed URLs. Everything is treated
+as new when the tool versions or the scope changed. Inspect the history with
+'scanforge assets <target>'.`,
 		Example: `  scanforge run example.com
   scanforge run --targets targets.txt --profile web
   scanforge run example.com --dry-run
+  scanforge run example.com --incremental
   scanforge run example.com -s scope.txt --workflow web-recon.yaml
   scanforge run example.com --preset web --rps 10 --concurrency 4`,
 		Args: cobra.MaximumNArgs(1),
@@ -107,6 +115,7 @@ its targets.`,
 				Proxy:        proxy,
 				Headers:      headers,
 				Events:       eventsEnabled,
+				Incremental:  incremental,
 				Nuclei: modules.NucleiOptions{
 					Severity:               nucleiSeverity,
 					ExcludeSeverity:        nucleiExcludeSeverity,
@@ -154,6 +163,7 @@ its targets.`,
 	cmd.Flags().StringArrayVar(&exclusions, "exclude", nil, "Exclude an entry from implicit scope (repeatable)")
 	cmd.Flags().BoolVar(&confirmScope, "confirm-scope", false, "Confirm the effective scope non-interactively (required in CI)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print commands without executing them")
+	cmd.Flags().BoolVar(&incremental, "incremental", false, "Only run nuclei, ffuf, katana and jssecrets on new or changed URLs compared to runs/<target>/assets.jsonl (everything is new when tool versions or scope changed; see docs/INCREMENTAL.md)")
 	cmd.Flags().CountVarP(&verbosityCount, "verbose", "v", "Increase verbosity: -v detailed modules, -vv commands, -vvv redirections")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Only findings, warnings, errors and the summary")
 

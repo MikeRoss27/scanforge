@@ -48,6 +48,10 @@ type RunOptions struct {
 	// Events enables the experimental discovery event bus (off by default).
 	Events bool
 
+	// Incremental compares the run to the per-target asset history and lets
+	// nuclei, ffuf, katana and jssecrets focus on new or changed URLs.
+	Incremental bool
+
 	// Proxy routes HTTP-capable modules through an intercepting proxy such
 	// as Caido or Burp Suite (e.g. http://127.0.0.1:8080).
 	Proxy string
@@ -129,6 +133,8 @@ type runSession struct {
 	// resume makes the orchestrator reuse unchanged completed modules from
 	// the run's manifest checkpoints.
 	resume bool
+	// incremental holds the state of --incremental / the asset history.
+	incremental incrementalState
 	// console owns every terminal write of the run and term describes the
 	// output destination it renders for.
 	console *console.Renderer

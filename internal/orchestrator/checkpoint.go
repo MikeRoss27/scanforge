@@ -146,6 +146,14 @@ func moduleParams(name string, opts Options) any {
 	case strings.HasPrefix(name, "wp"):
 		params["wordpress"] = opts.WordPress
 	}
+	if opts.InputFocus != nil {
+		switch name {
+		case "nuclei", "ffuf", "katana", "jssecrets":
+			// A result computed under another incremental focus (or none)
+			// must not be reused on resume.
+			params["incremental_focus"] = opts.InputFocus.Digest()
+		}
+	}
 	if opts.Config != nil {
 		if timeout := opts.Config.ModuleTimeouts[name]; timeout > 0 {
 			params["timeout"] = timeout.String()

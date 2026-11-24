@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - YAML workflows (`--workflow file.yaml`, `scanforge workflow validate`, `plan --workflow`): validated against the module registry, no shell steps, compiled to the existing DAG (see `docs/WORKFLOWS.md`)
 - Local vulnerability intel (`scanforge intel update|status`): NVD, CISA KEV and EPSS cached as files with provenance; `techcve` uses it when present and labels matches `exact-cpe-range` / `version-range` / `name-only` (name-only is never confirmed)
 - `scanforge mcp` (stdio) and `scanforge api` (loopback HTTP): read-only access to runs, assets, findings and evidence; active scan tools are disabled unless `--allow-active` is given together with a strict `--scope` file, and every active call is audit-logged (see `docs/MCP.md`, `docs/API.md`)
+- Incremental scans: `scanforge run TARGET --incremental` compares the run to a file-based, append-only asset history (`runs/<target>/assets.jsonl`, written atomically after every completed non-dry run from the consolidated report) and lets nuclei, ffuf, katana and jssecrets only look at new or changed URLs; history entries are re-filtered against the current scope before use, and everything is treated as new when the scope hash or tool versions changed. New `scanforge assets <target> [--new|--gone|--json]` inspects the history (see `docs/INCREMENTAL.md`)
 
 ### Changed
 

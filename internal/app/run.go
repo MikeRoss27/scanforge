@@ -70,6 +70,7 @@ func (s *runSession) executeAndFinish(ctx context.Context) error {
 
 	manifestErr := s.finalizeManifest(results, runErr)
 	rep := s.generateReports()
+	s.recordAssets(rep)
 	s.printSummary(results, rep, runErr)
 
 	if !s.opts.DryRun {
@@ -259,7 +260,9 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 	if !s.opts.DryRun {
 		versions := detectToolVersions(ctx, runner.NewRealExecutor(false), s.cfg, s.moduleNames)
 		toolVersion = func(name string) string { return versions[name] }
+		s.incremental.toolVersions = versions
 	}
+	focus := s.prepareIncremental()
 	// Buffered so a module emitting a burst of findings (e.g. nuclei) doesn't
 	// block on the renderer catching up.
 	eventChan := make(chan orchestrator.Event, 64)
@@ -295,6 +298,7 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 			WordPress:       s.opts.WordPress,
 			Resume:          s.resume,
 			ToolVersion:     toolVersion,
+			InputFocus:      focus,
 			Events:          s.opts.Events,
 		}, eventChan)
 	}()

@@ -61,6 +61,10 @@ type Options struct {
 	// module; it is folded into the module's input hash. Empty means
 	// unknown.
 	ToolVersion func(module string) string
+	// InputFocus, when set (scanforge run --incremental), narrows the URL
+	// inputs of nuclei, ffuf, katana and jssecrets to new or changed URLs.
+	// It never widens anything: inputs stay scope-filtered.
+	InputFocus modules.InputFocus
 }
 
 // ErrRunAborted is returned when the run was intentionally aborted by the
@@ -132,6 +136,9 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	runCtx.Ffuf = opts.Ffuf
 	runCtx.NmapConcurrency = opts.NmapConcurrency
 	runCtx.WordPress = opts.WordPress
+	if opts.InputFocus != nil {
+		runCtx.SetInputFocus(opts.InputFocus)
+	}
 	if opts.Events {
 		if err := runCtx.EnableEvents(); err != nil {
 			return nil, fmt.Errorf("enable events: %w", err)

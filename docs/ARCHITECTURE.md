@@ -175,6 +175,7 @@ validation sits between them.**
 ## Persistance, reprise et accès agents
 
 - **Persistance par fichiers** : le manifest (`00_meta/manifest.json`) est aussi le store de checkpoints (statut + `input_hash` par module, écriture atomique). Pas de base SQLite : les runs restent lisibles, copiables et versionnables. Voir `docs/RESUME.md`.
+- **Historique d'assets** (`internal/assets`) : `runs/<cible>/assets.jsonl`, append-only, écrit atomiquement en fin de run complet à partir du rapport consolidé (`internal/report`). `--incremental` installe un `modules.InputFocus` sur le `RunContext` ; nuclei, ffuf, katana et jssecrets lisent leur entrée via `RunContext.FocusedInput`, qui ne fait que retirer des lignes d'un artefact déjà filtré par le scope. Le digest du focus entre dans le hash d'entrée des checkpoints (`internal/orchestrator/checkpoint.go`). Voir `docs/INCREMENTAL.md`.
 - **Scheduler** (`internal/scheduler`) : décorateur d'`Executor` (concurrence, req/s, budget de commandes, timeouts).
 - **Événements** (`internal/events`) : bus typé en complément du DAG, scope vérifié en premier, `00_meta/events.jsonl`.
 - **Workflows** (`internal/workflows`) : compilés vers la sélection de modules d'un profil ; le DAG et le filtrage de scope restent inchangés.

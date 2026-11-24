@@ -38,6 +38,7 @@ type persistedOptions struct {
 	Ffuf            modules.FfufOptions      `json:"ffuf"`
 	NmapConcurrency int                      `json:"nmap_concurrency,omitempty"`
 	WordPress       modules.WordPressOptions `json:"wordpress"`
+	Incremental     bool                     `json:"incremental,omitempty"`
 }
 
 func persistParams(opts RunOptions, moduleNames []string) (*storage.RunParams, error) {
@@ -46,6 +47,7 @@ func persistParams(opts RunOptions, moduleNames []string) (*storage.RunParams, e
 		Ffuf:            opts.Ffuf,
 		NmapConcurrency: opts.NmapConcurrency,
 		WordPress:       opts.WordPress,
+		Incremental:     opts.Incremental,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode run parameters: %w", err)
@@ -146,6 +148,7 @@ func (a *App) prepareResume(cfg *config.Config, run *storage.Run, opts ResumeOpt
 		Ffuf:            persisted.Ffuf,
 		NmapConcurrency: persisted.NmapConcurrency,
 		WordPress:       persisted.WordPress,
+		Incremental:     persisted.Incremental,
 	}
 
 	m2 := &run.Manifest
