@@ -15,6 +15,7 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 - [Scope management](docs/SCOPE.md): implicit modes, files, exclusions and CI.
 - [Architecture](docs/ARCHITECTURE.md): DAG, artifacts, central filtering and outputs.
 - [Resume & checkpoints](docs/RESUME.md): interrupt and resume runs (French).
+- [Incremental scans](docs/INCREMENTAL.md): asset history and `--incremental` (French).
 - [Workflows](docs/WORKFLOWS.md): YAML workflows (French).
 - [MCP server](docs/MCP.md) and [local API](docs/API.md): drive ScanForge from agents (French).
 - [Contribution guide](AGENTS.md): repository structure, style and validations.
