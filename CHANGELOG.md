@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Opt-in recursive discovery (`--recursive`, `--recursive-depth` default 2, `--recursive-budget` default 200, config `recursive:`): artifacts of existing modules are emitted as `DNS_NAME`/`OPEN_PORT`/`LIVE_URL`/`JS_URL`/`API_ROUTE` events; a new in-scope name found late triggers a bounded dnsx -> httpx pass, a new live URL a katana depth-1 pass. Out-of-scope discoveries are dropped and logged to `scope-rejections.jsonl`, never auto-allowed; follow-ups run through the injected executor and `AddArtifact`, outputs go to `07_recursive/` (see `docs/RECURSIVE.md`)
 
+### Fixed
+
+- Recursive discovery, validated end to end in a loopback lab (see `docs/RECURSIVE.md`): the follow-up `httpx` only probed ports 80/443, so late-discovered vhosts served on 8080/3000/... were never seen and the katana follow-up never triggered; it now also probes the web ports of the DAG's `alive_urls`
+- Recursive discovery: follow-up passes are now announced on the console (`recursive [n/budget] resolve+probe|crawl ...` and a closing summary); budget exhaustion no longer counts as a failed job nor prints `[n+1/n]`
+- `scanforge resume` forgot `--recursive`/`--recursive-depth`/`--recursive-budget` (now stored in the manifest params), re-ran every follow-up command and appended duplicate `events.jsonl`/`scope-rejections.jsonl` lines; completed follow-ups are now recorded in `07_recursive/done.jsonl` and replayed from their outputs, and the event bus no longer re-writes persisted lines
+
 ### Changed
 
 - `httpx` now soft-depends on `open_ports`: when `naabu` is in the profile (deep, full, ports-based custom profiles), httpx runs after it and also probes the scope-filtered non-standard `host:port` targets (8080, 8443, 3000...), so katana/ffuf/nuclei/whatweb/etc. cover web services beyond 80/443. Targets are deduplicated and merged into the existing `alive_urls` artifact (no new producer); profiles without naabu behave as before
