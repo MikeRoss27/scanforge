@@ -238,7 +238,6 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 	// Global resource limits wrap whichever executor was chosen, so dry-run
 	// and real runs share the same scheduling and modules stay unaware.
 	limits := effectiveLimits(s.cfg, s.opts)
-	rawExecutor := executor
 	executor = scheduler.WrapExecutor(executor, scheduler.Config{
 		Concurrency:    limits.Concurrency,
 		RPS:            limits.RPS,
@@ -258,7 +257,7 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 	orch := orchestrator.New(executor, registry)
 	var toolVersion func(string) string
 	if !s.opts.DryRun {
-		versions := detectToolVersions(ctx, rawExecutor, s.cfg, s.moduleNames)
+		versions := detectToolVersions(ctx, runner.NewRealExecutor(false), s.cfg, s.moduleNames)
 		toolVersion = func(name string) string { return versions[name] }
 	}
 	// Buffered so a module emitting a burst of findings (e.g. nuclei) doesn't
