@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Performance
 
 - `techcve` no longer pays ~2s per run for loading the ~86 MB EPSS cache: EPSS is not parsed at load time any more. On first use a compact CVE-to-line index is built and only the rows of matched CVE IDs are decoded (same JSONL cache, offline, same results). Synthetic 300k-row cache: `vulnintel.Load` 351 ms to 16 us; load plus first match 46 ms
+- Native passive `ctlogs` module: Certificate Transparency subdomain discovery via crt.sh JSON (`https://crt.sh/?q=%25.<domain>&output=json`) with per-request timeout, 64 MiB size cap, retries with exponential backoff and jitter, and `--proxy` support (operator `-H` headers are never sent to crt.sh). Wildcards are stripped, `name_value` is split on newlines, duplicates/e-mails/invalid names are dropped. Names are published as the new scoped `ct_subdomains` artifact (no second producer of `subdomains`): `dnsx` merges it like `brute_subdomains`, the central scope filter drops out-of-scope names and logs them to `scope-rejections.jsonl`, and nothing discovered is ever auto-allowed. In `passive`, `recon`, `web`, `deep` and `full`
+- Native passive `asnmap` module: RDAP attribution (IANA bootstrap `https://data.iana.org/rdap/`, `https://rdap.org/` fallback) of public IPs resolved from in-scope hosts, producing `01_subdomains/asn_info.jsonl` (ip, hosts, asn when known, CIDR, name, org, country, registry handle, source). Shown per asset as "Network Attribution" in `report.md` and as `network` in `report.json`. Annotation only: it never adds CIDRs or neighbouring IPs to the scope and publishes no scan target; private/loopback/CGNAT addresses are never looked up. In `recon`, `web`, `deep` and `full`
+- Shared injectable `modules.Fetcher` / `FetchWithRetry` for native OSINT modules; both dry-run paths record the planned request in `commands.log` and make no network call
 
 ### Changed
 

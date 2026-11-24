@@ -13,6 +13,8 @@ Main chains:
                          ┌→ dnsx (passive input) ───────────┐
 subfinder → subdomains ──┤                                  ├→ resolved_hosts
                          └→ dnsbrute → dnsx (late results) ─┘
+ctlogs → ct_subdomains ⇢ dnsx (merged like brute_subdomains; scope-filtered)
+dnsx_raw + resolved_hosts → asnmap → asn_info (RDAP annotation, report only)
 resolved_hosts → httpx → alive_urls
 resolved_hosts → naabu → open_ports → nmap
 open_ports ⇢ httpx (soft: only when naabu is in the profile)
@@ -36,6 +38,19 @@ DNSX resolves passive discoveries while DNS bruteforce runs. Once the optional
 producer finishes, DNSX resolves only its additional hosts, merges both JSONL
 streams and publishes the final scoped artifact. A failed optional producer
 wakes the waiter so the passive branch can still continue.
+
+`ctlogs` (crt.sh Certificate Transparency lookup) is a native passive module
+that does not produce a second `subdomains` artifact: it publishes the scoped
+`ct_subdomains` artifact, which DNSX waits for and resolves exactly like
+`brute_subdomains` before merging into the single `resolved_hosts`. OSINT
+output is a lead, never an authorization: names pass through the same central
+scope filter and rejected ones land in `scope-rejections.jsonl`. `asnmap`
+queries RDAP (IANA bootstrap, `rdap.org` fallback) for the public IPs of hosts
+already present in the scope-filtered `resolved_hosts` and writes
+`asn_info.jsonl`, which the report attaches to each asset. It only annotates:
+it never extends the scope or emits targets. Both modules use the injectable
+`modules.Fetcher` (timeouts, size caps, retries/backoff, `--proxy`); on a dry
+run they only record the planned request in `commands.log`.
 
 `scanforge plan TARGET --preset deep` displays the validated waves without
 running any tool or creating a run.

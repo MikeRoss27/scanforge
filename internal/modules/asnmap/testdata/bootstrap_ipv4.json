@@ -1,0 +1,9 @@
+{
+  "version": "1.0",
+  "publication": "2024-01-01T00:00:00Z",
+  "services": [
+    [["8.0.0.0/8"], ["https://rdap.arin.example/registry/"]],
+    [["8.8.0.0/16"], ["http://insecure.example/", "https://rdap.specific.example/"]],
+    [["203.0.113.0/24"], ["https://rdap.apnic.example/"]]
+  ]
+}

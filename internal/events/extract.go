@@ -25,6 +25,7 @@ type Extracted struct {
 var extendedArtifacts = map[string]struct{}{
 	"subdomains":       {},
 	"brute_subdomains": {},
+	"ct_subdomains":    {},
 	"resolved_hosts":   {},
 	"open_ports":       {},
 	"alive_urls":       {},
@@ -71,7 +72,7 @@ func ExtractArtifact(name, filePath string) ([]Extracted, error) {
 			continue
 		}
 		switch name {
-		case "subdomains", "brute_subdomains", "resolved_hosts":
+		case "subdomains", "brute_subdomains", "ct_subdomains", "resolved_hosts":
 			if net.ParseIP(line) == nil {
 				out = append(out, Extracted{Type: DNSName, Value: line})
 			}

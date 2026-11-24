@@ -47,6 +47,22 @@ type Asset struct {
 	WAFs            []string         `json:"wafs,omitempty"`
 	Vulnerabilities []*Vulnerability `json:"vulnerabilities,omitempty"`
 	Paths           []PathEntry      `json:"paths,omitempty"`
+	// Network is the RDAP registration data of the asset's resolved IPs
+	// (asnmap). It annotates only: it never adds scope or scan targets.
+	Network []NetworkInfo `json:"network,omitempty"`
+}
+
+// NetworkInfo attributes one resolved IP to its registered network.
+type NetworkInfo struct {
+	IP       string `json:"ip"`
+	ASN      string `json:"asn,omitempty"`
+	ASName   string `json:"as_name,omitempty"`
+	CIDR     string `json:"cidr,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Org      string `json:"org,omitempty"`
+	Country  string `json:"country,omitempty"`
+	Handle   string `json:"handle,omitempty"`
+	Registry string `json:"registry,omitempty"`
 }
 
 // PathEntry is one path discovered under an asset. StatusCode and

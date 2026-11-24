@@ -12,6 +12,8 @@ import (
 var modulePhase = map[string]string{
 	"subfinder":     "DISCOVERY",
 	"dnsbrute":      "DISCOVERY",
+	"ctlogs":        "DISCOVERY",
+	"asnmap":        "RESOLUTION",
 	"gau":           "DISCOVERY",
 	"dnsx":          "RESOLUTION",
 	"naabu":         "PORTS",

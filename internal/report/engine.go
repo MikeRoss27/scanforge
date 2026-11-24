@@ -26,6 +26,7 @@ func GenerateReport(runDir string, manifest *storage.RunManifest) (*Report, erro
 		rep.CompletedAt = t
 	}
 	rep.Status = manifest.Status
+	var asnPath string
 
 	for key, relPath := range manifest.Outputs {
 		// Only ever parse files inside the run directory. relPath comes from
@@ -46,6 +47,10 @@ func GenerateReport(runDir string, manifest *storage.RunManifest) (*Report, erro
 			err = ParseHttpx(absPath, rep)
 		case "dnsx_raw":
 			err = ParseDnsx(absPath, rep)
+		case "asn_info":
+			// Needs the assets built by the other parsers; applied below
+			// so the result never depends on map iteration order.
+			asnPath = absPath
 		case "tls_raw":
 			err = ParseTlsx(absPath, rep)
 		case "nmap_xml":
@@ -89,6 +94,12 @@ func GenerateReport(runDir string, manifest *storage.RunManifest) (*Report, erro
 		}
 		if err != nil {
 			warnings = append(warnings, fmt.Errorf("failed to parse %s: %w", key, err))
+		}
+	}
+
+	if asnPath != "" {
+		if err := ParseASNInfo(asnPath, rep); err != nil {
+			warnings = append(warnings, fmt.Errorf("failed to parse asn_info: %w", err))
 		}
 	}
 
