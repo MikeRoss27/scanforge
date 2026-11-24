@@ -1,5 +1,5 @@
 # Stage 1 : compilation de ScanForge et des outils Go
-FROM golang:1.27-bookworm AS build
+FROM golang:1.27-trixie AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -48,7 +48,7 @@ RUN TOOLS_VERSIONS="$(awk -F= 'BEGIN { sep="" } !/^#/ && NF == 2 { printf "%s%s=
     -o /out/scanforge ./cmd/scanforge
 
 # Stage 2 : image d'exécution minimale
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
