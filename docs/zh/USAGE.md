@@ -38,6 +38,8 @@ make build      # 或：go build -o scanforge ./cmd/scanforge
 
 ## 开发命令
 
+从源码构建需要 Go 1.27.x（见 `go.mod`）。
+
 克隆仓库后，`Makefile` 封装了 Go 工具链。最常用的目标：
 
 | 命令 | 作用 |
@@ -85,6 +87,16 @@ profiles:
 module_timeouts:
   nuclei: 45m
   katana: 20m
+```
+
+全局资源限制在 `limits` 下配置（均为可选，`0`/未设置表示不限制）。它们由所有模块共享的调度器强制执行，统计的是已启动的命令（而非 HTTP 请求），并可被 `run` 的对应参数 `--concurrency`、`--rps`、`--max-requests` 和 `--command-timeout` 覆盖：
+
+```yaml
+limits:
+  concurrency: 4          # 同时运行的命令数
+  rps: 10                 # 每秒启动的命令数（同时降低工具自身的速率参数）
+  max_requests: 500       # 每次运行的命令预算；用尽后后续命令失败
+  command_timeout: 20m    # 每条命令超时的上限
 ```
 
 `ai` 部分配置 `scanforge triage` 使用的 LLM 后端。任何提供 OpenAI 兼容
@@ -149,11 +161,52 @@ scanforge run example.com --scope-mode domain --confirm-scope
 | `scanforge plan TARGET` | 显示范围与 DAG 波次。 |
 | `scanforge run TARGET` | 运行已授权的配置文件。 |
 | `scanforge scan TARGET` | `run` 的别名。 |
+| `scanforge resume RUN-ID` | 恢复被中断的运行，仅重新执行未完成或输入已变化的部分（见 `RESUME.md`）。 |
+| `scanforge status RUN-ID [--json]` | 显示每个模块的检查点状态和范围来源。 |
+| `scanforge runs list [--target T] [--json]` | 按从新到旧列出工作区中的运行。 |
+| `scanforge workflow validate FILE.yaml` | 校验 YAML 工作流而不执行任何内容（见 `WORKFLOWS.md`）。 |
+| `scanforge intel update\|status` | 下载 / 查看 `techcve` 使用的本地 NVD、CISA KEV 和 EPSS 缓存。 |
+| `scanforge mcp` | 通过 stdio 以 MCP 协议向 AI 代理提供 ScanForge（见 `MCP.md`）。 |
+| `scanforge api` | 通过本地 HTTP JSON API 提供运行存储（见 `API.md`）。 |
 | `scanforge triage RUN` | 对一次运行的发现结果去重、分组并（配置 `ai:` 后端时）分析。 |
 | `scanforge auth` | 管理某些工具所需的密钥。 |
 | `scanforge version` | 显示二进制版本。 |
 
 查看 `scanforge <命令> --help` 获取完整选项列表。
+
+## 恢复、工作流、情报与代理访问
+
+详细指南：[RESUME](RESUME.md)、[WORKFLOWS](WORKFLOWS.md)、[MCP](MCP.md)、[API](API.md)（中文译文）。
+
+```bash
+scanforge runs list --target example.com
+scanforge status example.com/2026-08-18_10-00-00
+scanforge resume example.com/2026-08-18_10-00-00
+```
+
+运行状态以检查点形式保存在 `00_meta/manifest.json`；`resume` 会跳过输入未变的已完成模块，复用已保存的有效范围，且绝不会扩大范围。`--proxy` 与 `--header` 不会被保存，请重新传入。
+
+```bash
+scanforge workflow validate workflows/web-recon.yaml
+scanforge plan example.com --workflow workflows/web-recon.yaml
+scanforge run example.com --scope scope.txt --workflow workflows/web-recon.yaml --rps 20
+```
+
+工作流取代配置文件（`--workflow` 与 `--profile`、`--preset`、`--wp` 互斥）；它编译为同一个 DAG，不能执行 shell 命令，并保持相同的范围强制检查。
+
+`scanforge run --events`（实验性，默认关闭）还会把发现事件（子域名变为 `DNS_NAME`）写入 `00_meta/events.jsonl`；每个事件在记录前都要经过范围过滤。
+
+`scanforge intel update` 是唯一会下载漏洞情报（NVD、CISA KEV、EPSS；可用 `--source nvd|kev|epss` 限定）的命令；`scanforge intel status` 离线查看缓存。扫描本身不会为情报访问网络。`techcve` 在缓存存在时使用它，并将匹配标记为 `exact-cpe-range`、`version-range` 或 `name-only`（name-only 永远不会被确认）。设置 `SCANFORGE_NVD_API_KEY` 可获得更高的 NVD 速率限制；缓存位于 `SCANFORGE_INTEL_DIR` 或 `~/.cache/scanforge/vulnintel`。
+
+```bash
+scanforge mcp                                    # 通过 stdio 的只读 MCP
+scanforge mcp --allow-active --scope scope.txt   # 同时允许受范围约束的主动扫描
+scanforge api --listen 127.0.0.1:8787 --token-file ./token
+```
+
+通过 MCP/API 的主动扫描默认禁用，需要 `--allow-active` 并配合严格的 `--scope` 文件；每次主动调用都会写入审计日志。除非使用 `--unsafe-bind`，API 仅监听回环地址。
+
+**密钥规则：** 目标泄露的密钥值（AWS 密钥、JavaScript 中发现的令牌等）在发现结果中保持完整，因为它们是报告的证据。只有操作者自己的凭据（`auth` 的 API 密钥、`ai:` 密钥、传给扫描的代理/请求头值）会在日志以及 API/MCP 输出中被遮蔽。
 
 ## 发现结果分诊
 

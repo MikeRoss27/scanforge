@@ -360,7 +360,8 @@ func normalizeTech(name string) string {
 	switch value {
 	case "apache-tomcat", "apachetomcat", "tomcat":
 		return "tomcat"
-	case "apache":
+	case "apache", "apache-http-server", "apache-httpd", "httpd":
+		// httpx (Wappalyzer) reports "Apache HTTP Server".
 		return "apache"
 	case "jquery-ui", "jqueryui":
 		return "jquery-ui"

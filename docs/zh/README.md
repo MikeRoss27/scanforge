@@ -21,6 +21,9 @@
 - [使用指南](USAGE.md)：安装、配置、命令与示例。
 - [范围管理](SCOPE.md)：隐式模式、文件、排除项与 CI。
 - [架构](ARCHITECTURE.md)：DAG、产物、集中过滤与输出。
+- [恢复与检查点](RESUME.md)：中断并恢复运行。
+- [工作流](WORKFLOWS.md)：YAML 工作流。
+- [MCP 服务器](MCP.md) 与 [本地 API](API.md)：从 AI 代理驱动 ScanForge。
 - [贡献指南](../AGENTS.md)：仓库结构、代码风格与验证。
 
 ## <img src="../../public/icons/tree.png" height="24" alt=""> 核心特性
@@ -35,6 +38,12 @@
 - **可视化截图**：`screenshot` 模块通过 `httpx` 捕获存活 URL 的截图，并列入报告中。
 - **WordPress 对等模式**：`--preset wp`（或在任意预设上加 `--wp`）依次运行 wpdetect（多信号 core 版本）、wpplugins/wpthemes（被动或侵略性枚举）、wpusers（author + REST API）、wpexposure（wp-config 备份、debug.log、目录列表）、wpxmlrpc（方法/multicall/pingback）和 wpcve（漏洞匹配）——覆盖与 wpscan 相同的面，无需新增外部工具。`wpbrute` 仅限可选严格开启（默认关闭）。
 - **技术到 CVE 关联**：`techcve` 将检测到的技术与版本与内置数据集匹配，该数据集包含来自 NVD 的真实 CVSS 基础评分。
+- **增强的技术到 CVE 关联**：运行 `scanforge intel update` 后，`techcve` 还会使用本地 NVD/CISA KEV/EPSS 缓存；仅当版本落在受影响的 CPE 范围内才会被确认，仅名称相似只是未确认的线索。
+- **恢复与检查点**：`scanforge resume <run-id>` 继续被中断的运行，跳过输入相同且已完成的模块；`status` 与 `runs list` 用于查看运行。仅基于文件，无需数据库。
+- **YAML 工作流**：`--workflow file.yaml` 定义步骤、依赖、超时、重试与错误策略；执行前校验（`scanforge workflow validate`），无任意 shell，范围过滤保持不变。
+- **资源限制**：`--concurrency`、`--rps`、`--max-requests` 和 `--command-timeout`（或配置中的 `limits:`）限制一次运行的激进程度。
+- **发现事件（实验性）**：`--events` 将经范围过滤的发现事件（如子域名为 `DNS_NAME`）写入 `00_meta/events.jsonl`。
+- **代理访问（MCP + API）**：`scanforge mcp` 与 `scanforge api` 提供运行、资产、发现结果与证据。主动扫描默认关闭，需要 `--allow-active` 加严格的范围文件；每次主动调用都会被审计。目标泄露的密钥在发现结果中保持完整，仅操作者自己的凭据会在日志及 API/MCP 输出中被遮蔽。
 - **完全可配置的 Nuclei**：通过专用参数控制严重级别、标签、速率限制、整体超时、自定义模板和模板更新。
 - **Nmap 并行化**：有界工作线程池（`--nmap-concurrency`），替代逐主机顺序扫描。
 - **实时控制台**：扫描会流式输出按时间排列、带标签的事件日志（无全屏界面）——流水线阶段、模块生命周期、发现结果即时打印（含泄露的邮箱、密钥或主机）、交互式终端上的可变进度行（默认是 生成的像素锤与铁砧动画，16 列 × 6 行，旁边显示进度；终端窄于 50 列时使用单行指示器；`SCANFORGE_SPINNER=forge|dots|off` 可切换）、high/critical 级别发现的展开严重程度块、去重后计入 `Finding types` 汇总的重复项，以及最终的 `── SCAN COMPLETE ──` 汇总。输出对 grep/tee/CI 友好；`-v/-vv/-vvv` 提升详细程度，`-q` 只保留发现项、错误和汇总。

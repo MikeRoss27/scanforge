@@ -15,6 +15,7 @@ subfinder → subdomains ──┤                                  ├→ resol
                          └→ dnsbrute → dnsx (late results) ─┘
 resolved_hosts → httpx → alive_urls
 resolved_hosts → naabu → open_ports → nmap
+open_ports ⇢ httpx (soft: only when naabu is in the profile)
 alive_urls → tlsx / whatweb / wafw00f / katana / ffuf / nuclei
 target → gau → historical_urls
 crawled_urls/historical_urls/discovered_paths → jssecrets → js_secrets → dbdetect → db_fingerprint → dbenum
@@ -174,8 +175,10 @@ validation sits between them.**
 ## Persistance, reprise et accès agents
 
 - **Persistance par fichiers** : le manifest (`00_meta/manifest.json`) est aussi le store de checkpoints (statut + `input_hash` par module, écriture atomique). Pas de base SQLite : les runs restent lisibles, copiables et versionnables. Voir `docs/RESUME.md`.
+- **Historique d'assets** (`internal/assets`) : `runs/<cible>/assets.jsonl`, append-only, écrit atomiquement en fin de run complet à partir du rapport consolidé (`internal/report`). `--incremental` installe un `modules.InputFocus` sur le `RunContext` ; nuclei, ffuf, katana et jssecrets lisent leur entrée via `RunContext.FocusedInput`, qui ne fait que retirer des lignes d'un artefact déjà filtré par le scope. Le digest du focus entre dans le hash d'entrée des checkpoints (`internal/orchestrator/checkpoint.go`). Voir `docs/INCREMENTAL.md`.
 - **Scheduler** (`internal/scheduler`) : décorateur d'`Executor` (concurrence, req/s, budget de commandes, timeouts).
 - **Événements** (`internal/events`) : bus typé en complément du DAG, scope vérifié en premier, `00_meta/events.jsonl`.
+- **Découverte récursive** (`internal/discovery`, `--recursive`) : les artefacts du DAG sont émis comme événements (`DNS_NAME`, `OPEN_PORT`, `LIVE_URL`, `JS_URL`, `API_ROUTE`) ; des abonnés mettent en file des passes bornées (dnsx -> httpx, katana profondeur 1) exécutées après le DAG via l'`Executor` injecté et `AddArtifact`. Profondeur et budget bornés, hors-scope jamais sondé. Voir `docs/RECURSIVE.md`.
 - **Workflows** (`internal/workflows`) : compilés vers la sélection de modules d'un profil ; le DAG et le filtrage de scope restent inchangés.
 - **Vulnintel** (`internal/vulnintel`) : cache NVD/KEV/EPSS, mis à jour uniquement par `scanforge intel update`.
 - **MCP / API** : lecture des runs, scans actifs désactivés par défaut (`--allow-active` + fichier de scope strict, journal d'audit).

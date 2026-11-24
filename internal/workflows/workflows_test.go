@@ -11,6 +11,7 @@ import (
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/runner"
+	"github.com/MikeRoss27/scanforge/internal/storage"
 )
 
 type fakeModule struct {
@@ -430,5 +431,32 @@ func TestRegistryWrapsPreservingContract(t *testing.T) {
 	}
 	if _, err := reg.Resolve([]string{"nmap"}); err == nil {
 		t.Fatal("registry must only expose workflow modules")
+	}
+}
+
+// Artifact paths are run-relative: the condition must resolve them against the
+// run directory, not the process working directory.
+func TestPolicyWhenResolvesRunRelativeArtifactPath(t *testing.T) {
+	run, err := storage.NewRunStore(t.TempDir()).Create("example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel := "02_http/alive.txt"
+	if err := os.WriteFile(run.Path(rel), []byte("http://example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ran := false
+	m := &fakeModule{name: "m", run: func(context.Context) (*modules.Result, error) {
+		ran = true
+		return &modules.Result{Name: "m", Status: "completed"}, nil
+	}}
+	rc := modules.NewRunContext("t", "p", false, run)
+	rc.Artifacts["a"] = modules.Artifact{Name: "a", Type: "text", Path: rel}
+	when := When{ArtifactNonEmpty: "a"}
+	if _, err := policyFor(t, m, Policy{OnError: OnErrorFail, When: &when}).Run(context.Background(), rc, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !ran {
+		t.Fatal("artifact_nonempty treated a non-empty run-relative artifact as empty")
 	}
 }

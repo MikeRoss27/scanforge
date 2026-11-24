@@ -49,6 +49,11 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	if err != nil {
 		return nil, err
 	}
+	if len(domains) == 0 && runCtx.DryRun && runCtx.Target != "" {
+		// A dry run never executes subfinder, so the artifact has no content:
+		// show the command against the scan target instead of failing.
+		domains = []string{runCtx.Target}
+	}
 	if len(domains) == 0 {
 		return nil, fmt.Errorf("no domains to brute-force (subdomains artifact is empty)")
 	}

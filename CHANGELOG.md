@@ -15,16 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - YAML workflows (`--workflow file.yaml`, `scanforge workflow validate`, `plan --workflow`): validated against the module registry, no shell steps, compiled to the existing DAG (see `docs/WORKFLOWS.md`)
 - Local vulnerability intel (`scanforge intel update|status`): NVD, CISA KEV and EPSS cached as files with provenance; `techcve` uses it when present and labels matches `exact-cpe-range` / `version-range` / `name-only` (name-only is never confirmed)
 - `scanforge mcp` (stdio) and `scanforge api` (loopback HTTP): read-only access to runs, assets, findings and evidence; active scan tools are disabled unless `--allow-active` is given together with a strict `--scope` file, and every active call is audit-logged (see `docs/MCP.md`, `docs/API.md`)
+- Incremental scans: `scanforge run TARGET --incremental` compares the run to a file-based, append-only asset history (`runs/<target>/assets.jsonl`, written atomically after every completed non-dry run from the consolidated report) and lets nuclei, ffuf, katana and jssecrets only look at new or changed URLs; history entries are re-filtered against the current scope before use, and everything is treated as new when the scope hash or tool versions changed. New `scanforge assets <target> [--new|--gone|--json]` inspects the history (see `docs/INCREMENTAL.md`)
+
+- Opt-in recursive discovery (`--recursive`, `--recursive-depth` default 2, `--recursive-budget` default 200, config `recursive:`): artifacts of existing modules are emitted as `DNS_NAME`/`OPEN_PORT`/`LIVE_URL`/`JS_URL`/`API_ROUTE` events; a new in-scope name found late triggers a bounded dnsx -> httpx pass, a new live URL a katana depth-1 pass. Out-of-scope discoveries are dropped and logged to `scope-rejections.jsonl`, never auto-allowed; follow-ups run through the injected executor and `AddArtifact`, outputs go to `07_recursive/` (see `docs/RECURSIVE.md`)
 
 ### Changed
 
+- `httpx` now soft-depends on `open_ports`: when `naabu` is in the profile (deep, full, ports-based custom profiles), httpx runs after it and also probes the scope-filtered non-standard `host:port` targets (8080, 8443, 3000...), so katana/ffuf/nuclei/whatweb/etc. cover web services beyond 80/443. Targets are deduplicated and merged into the existing `alive_urls` artifact (no new producer); profiles without naabu behave as before
 - Go toolchain bumped to 1.27 (`go.mod`, CI, release workflow); CI lint pinned to golangci-lint v2.15.0
 - Go modules updated (chromedp v0.24, cdproto v0.160.8, goja, ws); `jsverify` ported to chromedp's generic API
 - Pinned external tools bumped: subfinder v2.17.0, dnsx v1.3.1, httpx v1.12.0, naabu v2.7.0, katana v1.8.0, nuclei v3.11.1, tlsx v1.5.0, ffuf v2.3.0 (SecLists, gau, shuffledns, massdns, wafw00f unchanged)
 - Fixed existing golangci-lint findings (unchecked errors, unused types)
 
+- Docs: `docs/USAGE.md`, `docs/fr/*` and `docs/zh/*` (usage guide and README) now cover resume/status/runs list, `--workflow` and `workflow validate`, the `limits:` config and scheduler flags, `intel update|status`, `scanforge mcp`/`scanforge api`, `--events`, the secrets rule and Go 1.27; Chinese translations of `docs/RESUME.md`, `WORKFLOWS.md`, `MCP.md` and `API.md` added under `docs/zh/`
+- SecLists DNS wordlist pin bumped to `2026.2` (the file is byte-identical to 2026.1, so `SECLISTS_DNS_SHA256` is unchanged; hash recomputed from the real download)
+- Docker image base moved from Debian 12 (bookworm) to Debian 13 (trixie): `golang:1.27-trixie` build stage, `debian:trixie-slim` runtime stage
+
 ### Fixed
 
+- Tool versions recorded in checkpoints and the asset history are now reduced to a stable version token (raw banners such as wafw00f's random ASCII art changed every run, so `--incremental` always restarted from scratch and `resume` hashes were unstable)
+- Asset history: `host:port` keys (assets on non-standard ports) are checked against the scope by their host part instead of being dropped and re-added as new every run
 - `nuclei` no longer fails when a WAF is detected: it was passed `-random-agent`, a flag that does not exist in nuclei v3 ("flag provided but not defined"). It now sets a random browser-like `User-Agent` header, as `ffuf` and `katana` do
 
 ### Notes

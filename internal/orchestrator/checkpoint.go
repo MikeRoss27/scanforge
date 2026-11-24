@@ -146,6 +146,14 @@ func moduleParams(name string, opts Options) any {
 	case strings.HasPrefix(name, "wp"):
 		params["wordpress"] = opts.WordPress
 	}
+	if opts.InputFocus != nil {
+		switch name {
+		case "nuclei", "ffuf", "katana", "jssecrets":
+			// A result computed under another incremental focus (or none)
+			// must not be reused on resume.
+			params["incremental_focus"] = opts.InputFocus.Digest()
+		}
+	}
 	if opts.Config != nil {
 		if timeout := opts.Config.ModuleTimeouts[name]; timeout > 0 {
 			params["timeout"] = timeout.String()
@@ -279,7 +287,7 @@ func (cp *checkpointer) finished(m modules.Module, result *modules.Result, err e
 		InputHash:   cp.hashes[m.Name()],
 		FinishedAt:  time.Now().Format(time.RFC3339),
 		Reason:      result.Reason,
-		OutputFiles: result.OutputFiles,
+		OutputFiles: cp.existingOutputs(result.OutputFiles),
 	}
 	if started, ok := cp.starts[m.Name()]; ok {
 		rec.StartedAt = started.Format(time.RFC3339)
@@ -302,6 +310,27 @@ func (cp *checkpointer) finished(m modules.Module, result *modules.Result, err e
 		rec.StartedAt, rec.FinishedAt = prior.StartedAt, prior.FinishedAt
 	}
 	_ = cp.run.UpdateModule(rec)
+}
+
+// existingOutputs drops declared output files that were never written (a
+// stderr log of a command that was skipped, an empty payload list...). They
+// would otherwise make restore() consider the checkpoint damaged and re-run a
+// perfectly complete module on every resume. Dry runs write nothing, so their
+// declarations are kept as is.
+func (cp *checkpointer) existingOutputs(files map[string]string) map[string]string {
+	if cp.opts.DryRun || len(files) == 0 {
+		return files
+	}
+	kept := make(map[string]string, len(files))
+	for key, rel := range files {
+		if rel != "" && !filepath.IsAbs(rel) && !strings.Contains(rel, "..") {
+			if _, err := os.Stat(cp.run.Path(rel)); err != nil {
+				continue
+			}
+		}
+		kept[key] = rel
+	}
+	return kept
 }
 
 // manifestStatus maps an orchestrator result status to a checkpoint state.

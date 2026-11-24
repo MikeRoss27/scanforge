@@ -9,6 +9,7 @@ import (
 
 	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/console"
+	"github.com/MikeRoss27/scanforge/internal/discovery"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/orchestrator"
 	"github.com/MikeRoss27/scanforge/internal/report"
@@ -70,6 +71,7 @@ func (s *runSession) executeAndFinish(ctx context.Context) error {
 
 	manifestErr := s.finalizeManifest(results, runErr)
 	rep := s.generateReports()
+	s.recordAssets(rep)
 	s.printSummary(results, rep, runErr)
 
 	if !s.opts.DryRun {
@@ -108,6 +110,12 @@ func (a *App) prepareRun(opts RunOptions) (*runSession, error) {
 	}
 	if err := effectiveLimits(cfg, opts).Validate(); err != nil {
 		// Reject before anything touches the network or the run directory.
+		return nil, err
+	}
+	if opts.RecursiveDepth < 0 || opts.RecursiveBudget < 0 {
+		return nil, fmt.Errorf("--recursive-depth and --recursive-budget must not be negative")
+	}
+	if err := cfg.Recursive.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -238,7 +246,6 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 	// Global resource limits wrap whichever executor was chosen, so dry-run
 	// and real runs share the same scheduling and modules stay unaware.
 	limits := effectiveLimits(s.cfg, s.opts)
-	rawExecutor := executor
 	executor = scheduler.WrapExecutor(executor, scheduler.Config{
 		Concurrency:    limits.Concurrency,
 		RPS:            limits.RPS,
@@ -258,9 +265,11 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 	orch := orchestrator.New(executor, registry)
 	var toolVersion func(string) string
 	if !s.opts.DryRun {
-		versions := detectToolVersions(ctx, rawExecutor, s.cfg, s.moduleNames)
+		versions := detectToolVersions(ctx, runner.NewRealExecutor(false), s.cfg, s.moduleNames)
 		toolVersion = func(name string) string { return versions[name] }
+		s.incremental.toolVersions = versions
 	}
+	focus := s.prepareIncremental()
 	// Buffered so a module emitting a burst of findings (e.g. nuclei) doesn't
 	// block on the renderer catching up.
 	eventChan := make(chan orchestrator.Event, 64)
@@ -282,21 +291,24 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 	go func() {
 		defer close(done)
 		results, runErr = orch.Run(runCtx, s.scanRun, orchestrator.Options{
-			Target:          s.opts.Target,
-			Profile:         s.profile,
-			Modules:         s.moduleNames,
-			Config:          s.cfg,
-			DryRun:          s.opts.DryRun,
-			Scope:           s.effective.value,
-			Proxy:           s.opts.Proxy,
-			Headers:         s.opts.Headers,
-			Nuclei:          s.opts.Nuclei,
-			Ffuf:            s.opts.Ffuf,
-			NmapConcurrency: s.opts.NmapConcurrency,
-			WordPress:       s.opts.WordPress,
-			Resume:          s.resume,
-			ToolVersion:     toolVersion,
-			Events:          s.opts.Events,
+			Target:           s.opts.Target,
+			Profile:          s.profile,
+			Modules:          s.moduleNames,
+			Config:           s.cfg,
+			DryRun:           s.opts.DryRun,
+			Scope:            s.effective.value,
+			Proxy:            s.opts.Proxy,
+			Headers:          s.opts.Headers,
+			Nuclei:           s.opts.Nuclei,
+			Ffuf:             s.opts.Ffuf,
+			NmapConcurrency:  s.opts.NmapConcurrency,
+			WordPress:        s.opts.WordPress,
+			Resume:           s.resume,
+			ToolVersion:      toolVersion,
+			InputFocus:       focus,
+			Events:           s.opts.Events,
+			Recursive:        s.opts.Recursive || s.cfg.Recursive.Enabled,
+			RecursiveOptions: s.recursiveOptions(),
 		}, eventChan)
 	}()
 
@@ -351,4 +363,23 @@ func (s *runSession) commandSink() runner.CommandSink {
 			}
 		}
 	}
+}
+
+// recursiveOptions overlays the --recursive-depth/--recursive-budget flags
+// on the config `recursive:` section and the configured tool binaries.
+func (s *runSession) recursiveOptions() discovery.Options {
+	o := discovery.Options{
+		MaxDepth: s.cfg.Recursive.Depth,
+		Budget:   s.cfg.Recursive.Budget,
+		Dnsx:     s.cfg.Tools.Dnsx,
+		Httpx:    s.cfg.Tools.Httpx,
+		Katana:   s.cfg.Tools.Katana,
+	}
+	if s.opts.RecursiveDepth != 0 {
+		o.MaxDepth = s.opts.RecursiveDepth
+	}
+	if s.opts.RecursiveBudget != 0 {
+		o.Budget = s.opts.RecursiveBudget
+	}
+	return o
 }

@@ -15,6 +15,7 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 - [Scope management](docs/SCOPE.md): implicit modes, files, exclusions and CI.
 - [Architecture](docs/ARCHITECTURE.md): DAG, artifacts, central filtering and outputs.
 - [Resume & checkpoints](docs/RESUME.md): interrupt and resume runs (French).
+- [Incremental scans](docs/INCREMENTAL.md): asset history and `--incremental` (French).
 - [Workflows](docs/WORKFLOWS.md): YAML workflows (French).
 - [MCP server](docs/MCP.md) and [local API](docs/API.md): drive ScanForge from agents (French).
 - [Contribution guide](AGENTS.md): repository structure, style and validations.
@@ -39,6 +40,7 @@ Thanks to its artifact-driven architecture, ScanForge chains well-known security
 - **Resume & checkpoints**: `scanforge resume <run-id>` continues an interrupted run, skipping modules already completed with identical inputs; `status` and `runs list` inspect runs. File-based, no database.
 - **YAML workflows**: `--workflow file.yaml` defines steps, dependencies, timeouts, retries and error policy; validated before execution, no arbitrary shell, same scope enforcement.
 - **Resource limits**: `--concurrency`, `--rps`, `--max-requests` and `--command-timeout` (or `limits:` in the config) cap how hard a run hits targets.
+- **Discovery events (experimental)**: `--events` emits scope-gated discovery events (e.g. subdomains as `DNS_NAME`) to `00_meta/events.jsonl`.
 - **Agent access (MCP + API)**: `scanforge mcp` and `scanforge api` expose runs, assets, findings and evidence. Active scans are off by default and require `--allow-active` plus a strict scope file; every active call is audited.
 - **Fully configurable Nuclei**: severity, tags, rate-limit, overall timeout, custom templates and template updates via dedicated flags.
 - **Parallelized Nmap**: bounded worker pool (`--nmap-concurrency`) instead of sequential host-by-host scans.

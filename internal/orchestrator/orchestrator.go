@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/config"
+	"github.com/MikeRoss27/scanforge/internal/discovery"
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/runner"
 	scanScope "github.com/MikeRoss27/scanforge/internal/scope"
@@ -45,6 +46,11 @@ type Options struct {
 	WordPress modules.WordPressOptions
 	// Events enables the experimental discovery event bus (off by default).
 	Events bool
+	// Recursive enables the bounded recursive discovery loop (off by
+	// default; implies the event bus). RecursiveOptions carries its depth,
+	// budget and tool binaries; see internal/discovery.
+	Recursive        bool
+	RecursiveOptions discovery.Options
 	// ModuleStallTimeout overrides the default module stall detection
 	// window (how long a module may run without output before the console is
 	// warned that it appears stalled). Zero means the orchestrator default.
@@ -61,6 +67,10 @@ type Options struct {
 	// module; it is folded into the module's input hash. Empty means
 	// unknown.
 	ToolVersion func(module string) string
+	// InputFocus, when set (scanforge run --incremental), narrows the URL
+	// inputs of nuclei, ffuf, katana and jssecrets to new or changed URLs.
+	// It never widens anything: inputs stay scope-filtered.
+	InputFocus modules.InputFocus
 }
 
 // ErrRunAborted is returned when the run was intentionally aborted by the
@@ -132,7 +142,22 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 	runCtx.Ffuf = opts.Ffuf
 	runCtx.NmapConcurrency = opts.NmapConcurrency
 	runCtx.WordPress = opts.WordPress
-	if opts.Events {
+	if opts.InputFocus != nil {
+		runCtx.SetInputFocus(opts.InputFocus)
+	}
+	var recursiveEngine *discovery.Engine
+	if opts.Recursive {
+		ro := opts.RecursiveOptions.Defaults()
+		if err := runCtx.EnableEventsWith(modules.EventsOptions{MaxDepth: ro.MaxDepth, Extended: true}); err != nil {
+			return nil, fmt.Errorf("enable recursive discovery: %w", err)
+		}
+		// Subscribe before any module runs: handlers only enqueue jobs.
+		if runCtx.EventBus() != nil {
+			if recursiveEngine, err = discovery.New(runCtx, o.executor, opts.RecursiveOptions); err != nil {
+				return nil, fmt.Errorf("start recursive discovery: %w", err)
+			}
+		}
+	} else if opts.Events {
 		if err := runCtx.EnableEvents(); err != nil {
 			return nil, fmt.Errorf("enable events: %w", err)
 		}
@@ -458,6 +483,14 @@ func (o *Orchestrator) Run(ctx context.Context, scanRun *storage.Run, opts Optio
 			if outChan != nil {
 				outChan <- ModuleDoneEvent{Name: m.Name(), Status: "skipped"}
 			}
+		}
+	}
+
+	// Recursive discovery: bounded follow-ups for NEW in-scope discoveries,
+	// run through the same (scheduler-wrapped) executor after the DAG.
+	if recursiveEngine != nil && ctx.Err() == nil {
+		if derr := recursiveEngine.Process(ctx); derr != nil && ctx.Err() == nil {
+			runCtx.EmitWarning(fmt.Sprintf("recursive discovery: %v", derr))
 		}
 	}
 

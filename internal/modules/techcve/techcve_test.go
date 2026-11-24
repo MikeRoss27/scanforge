@@ -134,6 +134,27 @@ func TestRunFlagsVulnerableVersions(t *testing.T) {
 	}
 }
 
+// httpx names the technology "Apache HTTP Server"; the bundled dataset keys it
+// "apache".
+func TestRunMatchesHttpxApacheHTTPServerName(t *testing.T) {
+	run := testRun(t)
+	writeFile(t, run.Path("02_http", "httpx.jsonl"),
+		`{"host":"example.com","tech":["Apache HTTP Server:2.4.49","UNIX"]}`+"\n")
+	runCtx := modules.NewRunContext("example.com", "web", false, run)
+	if err := runCtx.AddArtifact("httpx_raw", modules.Artifact{Name: "httpx_raw", Type: "jsonl", Path: "02_http/httpx.jsonl"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewWithIntel(nil).Run(context.Background(), runCtx, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range readFindings(t, run.Path(outputRel)) {
+		if f.CVEID == "CVE-2023-25690" {
+			return
+		}
+	}
+	t.Fatal("Apache HTTP Server 2.4.49 did not match the bundled apache entry")
+}
+
 func TestRunIgnoresPatchedVersions(t *testing.T) {
 	run := testRun(t)
 	writeFile(t, run.Path("02_http", "httpx.jsonl"),

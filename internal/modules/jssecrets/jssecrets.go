@@ -242,7 +242,7 @@ func (m *Module) Produces() []string { return []string{"js_secrets", "js_payload
 func (m *Module) SoftRequires() []string { return []string{"historical_urls", "discovered_paths"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.Executor) (*modules.Result, error) {
-	inputArt, err := runCtx.MustArtifact("crawled_urls")
+	inputArt, focus, err := runCtx.FocusedInput("crawled_urls")
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +253,11 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 		return nil, fmt.Errorf("failed to read crawled URLs: %w", err)
 	}
 
-	if len(urls) == 0 && !runCtx.DryRun {
+	if len(urls) == 0 && !runCtx.DryRun && focus.Empty() {
+		// Incremental run: nothing crawled is new or changed, so zero JS
+		// files is expected and not a scope-filtering symptom.
+		runCtx.EmitWarning("jssecrets: " + focus.SkipReason())
+	} else if len(urls) == 0 && !runCtx.DryRun {
 		// A real site with zero in-scope JS files is usually a scope-filtering
 		// artifact (assets on CDNs/subdomains) rather than a JS-less site.
 		// Surface it loudly instead of silently completing the stage.

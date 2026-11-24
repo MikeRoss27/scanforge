@@ -29,11 +29,18 @@ func (m *Module) Name() string {
 }
 
 func (m *Module) Description() string {
-	return "Fast and multi-purpose HTTP toolkit"
+	return "Fast and multi-purpose HTTP toolkit (also probes open non-standard ports when naabu ran)"
 }
 
 func (m *Module) Requires() []string {
 	return []string{"resolved_hosts"}
+}
+
+// SoftRequires makes httpx wait for naabu, when naabu is part of the profile,
+// so web services on non-standard ports (8080, 8443, 3000...) are probed too.
+// Without naabu in the profile httpx runs as soon as resolved_hosts exists.
+func (m *Module) SoftRequires() []string {
+	return []string{"open_ports"}
 }
 
 func (m *Module) Produces() []string {
@@ -46,6 +53,19 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		return nil, err
 	}
 	inputFile := runCtx.Run.Path(inputArt.Path)
+
+	// Merge the scope-filtered naabu results (host:port) into the probe list.
+	// open_ports was already filtered by the artifact scope choke point.
+	if portsArt, ok := runCtx.GetArtifact("open_ports"); ok && !runCtx.DryRun {
+		merged := runCtx.Run.Path("02_http", "httpx-input.txt")
+		n, err := writeProbeTargets(inputFile, runCtx.Run.Path(portsArt.Path), merged)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build httpx input: %w", err)
+		}
+		if n > 0 {
+			inputFile = merged
+		}
+	}
 
 	rawOutputFile := runCtx.Run.Path("02_http", "httpx.jsonl")
 	aliveOutputFile := runCtx.Run.Path("02_http", "alive.txt")

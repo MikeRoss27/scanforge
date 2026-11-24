@@ -4,6 +4,7 @@ package katana
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
@@ -31,7 +32,7 @@ func (m *Module) Produces() []string  { return []string{"crawled_urls"} }
 func (m *Module) SoftRequires() []string { return []string{"waf_raw"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
-	inputArt, err := runCtx.MustArtifact("alive_urls")
+	inputArt, focus, err := runCtx.FocusedInput("alive_urls")
 	if err != nil {
 		return nil, err
 	}
@@ -39,6 +40,23 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 
 	outputFile := runCtx.Run.Path("05_content", "katana.txt")
 	stderrFile := runCtx.Run.Path("00_meta", "katana.stderr.log")
+
+	if focus.Empty() {
+		// Incremental run with nothing new or changed: publish an empty
+		// crawl so downstream modules still resolve their input.
+		if err := os.WriteFile(outputFile, nil, 0o644); err != nil {
+			return nil, fmt.Errorf("failed to write empty crawl: %w", err)
+		}
+		if err := runCtx.AddArtifact("crawled_urls", modules.Artifact{
+			Name: "crawled_urls", Type: "text", Path: "05_content/katana.txt", Scoped: true,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to publish crawled URLs: %w", err)
+		}
+		return &modules.Result{
+			Name: m.Name(), Status: "skipped", Reason: focus.SkipReason(),
+			OutputFiles: map[string]string{"crawled_urls": "05_content/katana.txt"},
+		}, nil
+	}
 
 	args := []string{"-list", inputFile, "-silent", "-depth", "2"}
 	if waf := runCtx.GetWAFInfo(); waf.Detected {

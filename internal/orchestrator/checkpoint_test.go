@@ -25,6 +25,8 @@ type fileModule struct {
 	content  string
 	failOnce *bool
 	counter  *runCounter
+	// ghost is an output file declared but never written.
+	ghost string
 }
 
 type runCounter struct {
@@ -61,7 +63,11 @@ func (m *fileModule) Run(ctx context.Context, runCtx *modules.RunContext, _ runn
 	if err := runCtx.AddArtifact(m.produces, modules.Artifact{Name: m.produces, Type: "test", Path: rel}); err != nil {
 		return nil, err
 	}
-	return &modules.Result{Name: m.name, Status: "completed", OutputFiles: map[string]string{m.produces: rel}}, nil
+	outputs := map[string]string{m.produces: rel}
+	if m.ghost != "" {
+		outputs["ghost"] = m.ghost
+	}
+	return &modules.Result{Name: m.name, Status: "completed", OutputFiles: outputs}, nil
 }
 
 type pipeline struct {
@@ -392,5 +398,27 @@ func TestManifestWrittenAtomicallyOnEveryStateChange(t *testing.T) {
 	rec, ok := reopened.Module("b")
 	if !ok || rec.Status != storage.ModuleCompleted || rec.InputHash == "" || rec.Artifacts["art_b"].Path == "" {
 		t.Fatalf("incomplete checkpoint for b: %+v", rec)
+	}
+}
+
+// A module may declare an output file it never wrote (e.g. dnsx_stderr when
+// every input is an IP literal). That must not make its checkpoint look
+// damaged and force a re-run on every resume.
+func TestResumeReusesModuleWithUnwrittenDeclaredOutput(t *testing.T) {
+	counter := newCounter()
+	reg := modules.NewRegistry()
+	reg.Register(&fileModule{name: "a", produces: "art_a", content: "a-out", counter: counter, ghost: "00_meta/a.stderr.log"})
+	reg.Register(&fileModule{name: "b", requires: []string{"art_a"}, produces: "art_b", content: "b-out", counter: counter})
+	reg.Register(&fileModule{name: "c", requires: []string{"art_b"}, produces: "art_c", content: "c-out", counter: counter})
+	run := newRun(t)
+	if _, err := runPipeline(t, context.Background(), run, reg, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	run = reopen(t, run)
+	if _, err := runPipeline(t, context.Background(), run, reg, Options{Resume: true}); err != nil {
+		t.Fatal(err)
+	}
+	if counter.get("a") != 1 {
+		t.Fatalf("module with an unwritten declared output re-ran on resume: a=%d", counter.get("a"))
 	}
 }

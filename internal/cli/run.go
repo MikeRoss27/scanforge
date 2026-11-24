@@ -28,6 +28,9 @@ func NewRunCommand(application *app.App) *cobra.Command {
 
 	var proxy string
 	var eventsEnabled bool
+	var recursive bool
+	var recursiveDepth int
+	var recursiveBudget int
 	var headers []string
 
 	var nucleiSeverity string
@@ -59,6 +62,7 @@ func NewRunCommand(application *app.App) *cobra.Command {
 	var wpPasswords string
 	var wpBruteMethod string
 	var wpBruteforceMax int
+	var incremental bool
 
 	cmd := &cobra.Command{
 		Use:         "run [target]",
@@ -75,10 +79,17 @@ report (report.json / report.md).
 An interrupted run can be continued with 'scanforge resume'. Use --workflow
 to run a validated YAML workflow instead of a profile, and --concurrency,
 --rps, --max-requests and --command-timeout to cap how hard the run hits
-its targets.`,
+its targets.
+
+With --incremental, the run is compared to the per-target asset history
+(runs/<target>/assets.jsonl, updated after every completed run): nuclei, ffuf,
+katana and jssecrets only look at new or changed URLs. Everything is treated
+as new when the tool versions or the scope changed. Inspect the history with
+'scanforge assets <target>'.`,
 		Example: `  scanforge run example.com
   scanforge run --targets targets.txt --profile web
   scanforge run example.com --dry-run
+  scanforge run example.com --incremental
   scanforge run example.com -s scope.txt --workflow web-recon.yaml
   scanforge run example.com --preset web --rps 10 --concurrency 4`,
 		Args: cobra.MaximumNArgs(1),
@@ -93,20 +104,24 @@ its targets.`,
 				target = args[0]
 			}
 			return application.Run(cmd.Context(), app.RunOptions{
-				Target:       target,
-				TargetsFile:  targetsFile,
-				Profile:      profile,
-				Workflow:     workflowFile,
-				Scope:        scopeFile,
-				ScopeMode:    scopeMode,
-				ScopeAdd:     scopeAdd,
-				Exclusions:   exclusions,
-				ConfirmScope: confirmScope,
-				DryRun:       dryRun,
-				Verbosity:    console.ParseVerbosity(verbosityCount, quiet),
-				Proxy:        proxy,
-				Headers:      headers,
-				Events:       eventsEnabled,
+				Target:          target,
+				TargetsFile:     targetsFile,
+				Profile:         profile,
+				Workflow:        workflowFile,
+				Scope:           scopeFile,
+				ScopeMode:       scopeMode,
+				ScopeAdd:        scopeAdd,
+				Exclusions:      exclusions,
+				ConfirmScope:    confirmScope,
+				DryRun:          dryRun,
+				Verbosity:       console.ParseVerbosity(verbosityCount, quiet),
+				Proxy:           proxy,
+				Headers:         headers,
+				Events:          eventsEnabled,
+				Incremental:     incremental,
+				Recursive:       recursive,
+				RecursiveDepth:  recursiveDepth,
+				RecursiveBudget: recursiveBudget,
 				Nuclei: modules.NucleiOptions{
 					Severity:               nucleiSeverity,
 					ExcludeSeverity:        nucleiExcludeSeverity,
@@ -154,10 +169,14 @@ its targets.`,
 	cmd.Flags().StringArrayVar(&exclusions, "exclude", nil, "Exclude an entry from implicit scope (repeatable)")
 	cmd.Flags().BoolVar(&confirmScope, "confirm-scope", false, "Confirm the effective scope non-interactively (required in CI)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print commands without executing them")
+	cmd.Flags().BoolVar(&incremental, "incremental", false, "Only run nuclei, ffuf, katana and jssecrets on new or changed URLs compared to runs/<target>/assets.jsonl (everything is new when tool versions or scope changed; see docs/INCREMENTAL.md)")
 	cmd.Flags().CountVarP(&verbosityCount, "verbose", "v", "Increase verbosity: -v detailed modules, -vv commands, -vvv redirections")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Only findings, warnings, errors and the summary")
 
 	cmd.Flags().BoolVar(&eventsEnabled, "events", false, "Experimental: emit discovery events (subdomains -> DNS_NAME) to 00_meta/events.jsonl, scope-gated")
+	cmd.Flags().BoolVar(&recursive, "recursive", false, "Bounded recursive discovery: new in-scope names/URLs found late (JS, crawl) get a dnsx->httpx pass, new live URLs a katana depth-1 pass; out-of-scope discoveries are dropped and logged, never probed (see docs/RECURSIVE.md). Implies --events")
+	cmd.Flags().IntVar(&recursiveDepth, "recursive-depth", 0, "Recursive discovery: max discovery depth (default 2)")
+	cmd.Flags().IntVar(&recursiveBudget, "recursive-budget", 0, "Recursive discovery: max follow-up commands per run (default 200)")
 	cmd.Flags().StringVar(&proxy, "proxy", "", "Route HTTP-capable modules through a proxy, e.g. Caido/Burp at http://127.0.0.1:8080")
 	cmd.Flags().StringArrayVarP(&headers, "header", "H", nil, "Custom HTTP header sent with every request, e.g. 'Authorization: Bearer <token>' (repeatable)")
 
