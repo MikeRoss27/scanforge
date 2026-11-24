@@ -46,11 +46,28 @@ func (m *Module) Produces() []string {
 func (m *Module) SoftRequires() []string { return []string{"waf_raw"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
-	inputArt, err := runCtx.MustArtifact("attack_surface_urls")
+	inputArt, focus, err := runCtx.FocusedInput("attack_surface_urls")
 	if err != nil {
 		return nil, err
 	}
 	inputFile := runCtx.Run.Path(inputArt.Path)
+
+	if focus.Empty() {
+		// Incremental run with nothing new or changed: publish an empty
+		// result instead of launching a scan without targets.
+		if err := os.WriteFile(runCtx.Run.Path("06_vulns", "nuclei.jsonl"), nil, 0o644); err != nil {
+			return nil, fmt.Errorf("failed to write empty nuclei results: %w", err)
+		}
+		if err := runCtx.AddArtifact("nuclei_raw", modules.Artifact{
+			Name: "nuclei_raw", Type: "jsonl", Path: "06_vulns/nuclei.jsonl",
+		}); err != nil {
+			return nil, fmt.Errorf("failed to publish nuclei results: %w", err)
+		}
+		return &modules.Result{
+			Name: m.Name(), Status: "skipped", Reason: focus.SkipReason(),
+			OutputFiles: map[string]string{"nuclei_raw": "06_vulns/nuclei.jsonl"},
+		}, nil
+	}
 
 	opts := runCtx.Nuclei
 	if opts.UpdateTemplates {

@@ -81,6 +81,7 @@ the evidence); only your own credentials are masked in logs and agent output.`,
 	cmd.AddCommand(NewRunsCommand(application))
 	cmd.AddCommand(NewWorkflowCommand(application))
 	cmd.AddCommand(NewDiffCommand(application))
+	cmd.AddCommand(NewAssetsCommand(application))
 	cmd.AddCommand(NewExportCommand(application))
 	cmd.AddCommand(NewTriageCommand(application))
 	cmd.AddCommand(NewMCPCommand(application))

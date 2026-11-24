@@ -322,6 +322,12 @@ func OpenRun(rootDir string) (*Run, error) {
 	}, nil
 }
 
+// TargetDir returns the per-target directory (workspace/<target>) that holds
+// its runs and its asset history.
+func TargetDir(workspace, target string) string {
+	return filepath.Join(workspace, safeTargetName(target))
+}
+
 // safeTargetName turns a target into a filesystem-safe directory label. The
 // cleaned label must never be "." or ".." or contain a ".." path element,
 // otherwise filepath.Join could escape the workspace.

@@ -54,9 +54,23 @@ func (m *Module) Produces() []string  { return []string{"discovered_paths"} }
 func (m *Module) SoftRequires() []string { return []string{"waf_raw"} }
 
 func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor runner.Executor) (*modules.Result, error) {
-	inputArt, err := runCtx.MustArtifact("alive_urls")
+	inputArt, focus, err := runCtx.FocusedInput("alive_urls")
 	if err != nil {
 		return nil, err
+	}
+	if focus.Empty() {
+		// Incremental run with nothing new or changed: publish an empty
+		// result document instead of fuzzing zero hosts.
+		if err := os.WriteFile(runCtx.Run.Path("05_content", "ffuf.json"), []byte(`{"results":[]}`), 0o644); err != nil {
+			return nil, fmt.Errorf("failed to write empty ffuf results: %w", err)
+		}
+		if err := addArtifact(runCtx); err != nil {
+			return nil, fmt.Errorf("failed to publish discovered paths: %w", err)
+		}
+		return &modules.Result{
+			Name: m.Name(), Status: "skipped", Reason: focus.SkipReason(),
+			OutputFiles: map[string]string{"discovered_paths": "05_content/ffuf.json"},
+		}, nil
 	}
 
 	hosts, err := readHosts(runCtx.Run.Path(inputArt.Path))
