@@ -79,10 +79,13 @@ type RunManifest struct {
 	// ScopeSHA256 is the digest of 00_meta/effective-scope.txt at run
 	// creation; resume refuses to continue if the file no longer matches,
 	// so a resumed run can never use a widened scope.
-	ScopeSHA256 string     `json:"scope_sha256,omitempty"`
-	Params      *RunParams `json:"params,omitempty"`
-	ResumeCount int        `json:"resume_count,omitempty"`
-	UpdatedAt   string     `json:"updated_at,omitempty"`
+	ScopeSHA256 string `json:"scope_sha256,omitempty"`
+	// ToolVersions are the external tool versions detected at run start
+	// (best effort); report provenance reads them.
+	ToolVersions map[string]string `json:"tool_versions,omitempty"`
+	Params       *RunParams        `json:"params,omitempty"`
+	ResumeCount  int               `json:"resume_count,omitempty"`
+	UpdatedAt    string            `json:"updated_at,omitempty"`
 }
 
 type Run struct {

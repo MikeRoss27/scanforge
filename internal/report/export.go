@@ -90,10 +90,63 @@ type sarifConfiguration struct {
 }
 
 type sarifResult struct {
-	RuleID    string          `json:"ruleId"`
-	Level     string          `json:"level"`
-	Message   sarifText       `json:"message"`
-	Locations []sarifLocation `json:"locations"`
+	RuleID  string    `json:"ruleId"`
+	Level   string    `json:"level"`
+	Kind    string    `json:"kind,omitempty"`
+	Message sarifText `json:"message"`
+	// Rank is SARIF's 0..100 priority; here it only carries the finding
+	// confidence (low 20, medium 50, high 90), omitted when unknown.
+	Rank       float64         `json:"rank,omitempty"`
+	Locations  []sarifLocation `json:"locations"`
+	Properties map[string]any  `json:"properties,omitempty"`
+}
+
+// sarifKind maps an evidence status onto SARIF's result kind: only a
+// validated finding is a plain "fail"; everything else still needs a human
+// ("review"). Findings without a status keep SARIF's default (kind omitted).
+func sarifKind(status string) string {
+	switch status {
+	case "":
+		return ""
+	case StatusValidated:
+		return "fail"
+	default:
+		return "review"
+	}
+}
+
+func sarifRank(confidence string) float64 {
+	switch confidence {
+	case ConfidenceLow:
+		return 20
+	case ConfidenceMedium:
+		return 50
+	case ConfidenceHigh:
+		return 90
+	}
+	return 0
+}
+
+// evidenceProperties is the SARIF property bag carrying the exact scanforge
+// status/confidence/provenance/evidence (SARIF has no native equivalents).
+func evidenceProperties(v *Vulnerability) map[string]any {
+	if v.Status == "" && v.Confidence == "" && v.Provenance == nil && len(v.EvidenceItems) == 0 {
+		return nil
+	}
+	props := map[string]any{}
+	if v.Status != "" {
+		props["scanforge/status"] = v.Status
+	}
+	if v.Confidence != "" {
+		props["scanforge/confidence"] = v.Confidence
+	}
+	if v.Provenance != nil {
+		props["scanforge/provenance"] = v.Provenance
+	}
+	if len(v.EvidenceItems) > 0 {
+		props["scanforge/evidence"] = v.EvidenceItems
+	}
+	return props
 }
 
 type sarifLocation struct {
@@ -122,9 +175,12 @@ func (r *Report) WriteSARIF(path string) error {
 	for _, name := range sortedAssets(r) {
 		for _, v := range r.Assets[name].Vulnerabilities {
 			results = append(results, sarifResult{
-				RuleID:  v.TemplateID,
-				Level:   sarifLevel(v.Severity),
-				Message: sarifText{Text: firstNonEmpty(v.Title, v.TemplateID)},
+				RuleID:     v.TemplateID,
+				Level:      sarifLevel(v.Severity),
+				Kind:       sarifKind(v.Status),
+				Rank:       sarifRank(v.Confidence),
+				Properties: evidenceProperties(v),
+				Message:    sarifText{Text: firstNonEmpty(v.Title, v.TemplateID)},
 				Locations: []sarifLocation{{
 					PhysicalLocation: sarifPhysicalLocation{
 						ArtifactLocation: sarifArtifactLocation{URI: v.MatchedAt},
@@ -182,6 +238,49 @@ type defectDojoFinding struct {
 	References  string   `json:"references,omitempty"`
 	Endpoint    string   `json:"endpoint,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
+
+	// Evidence layer. Verified is true only for status "validated";
+	// UnderReview marks findings that carry a non-validated status.
+	Verified              bool   `json:"verified,omitempty"`
+	UnderReview           bool   `json:"under_review,omitempty"`
+	SeverityJustification string `json:"severity_justification,omitempty"`
+	StepsToReproduce      string `json:"steps_to_reproduce,omitempty"`
+}
+
+// defectDojoEvidence fills the DefectDojo verification fields from the
+// evidence layer. It never sets Verified unless the finding is validated.
+func defectDojoEvidence(f *defectDojoFinding, v *Vulnerability) {
+	if v.Status == "" {
+		return
+	}
+	f.Verified = v.Status == StatusValidated
+	f.UnderReview = v.Status != StatusValidated
+	f.Tags = append(append([]string(nil), f.Tags...), "status:"+v.Status)
+	just := "status=" + v.Status
+	if v.Confidence != "" {
+		just += ", confidence=" + v.Confidence
+		f.Tags = append(f.Tags, "confidence:"+v.Confidence)
+	}
+	if v.Provenance != nil {
+		src := v.Provenance.Module
+		if v.Provenance.ToolVersion != "" {
+			src += "@" + v.Provenance.ToolVersion
+		}
+		just += ", source=" + src
+	}
+	f.SeverityJustification = just
+	var steps []string
+	for _, ev := range v.EvidenceItems {
+		line := ev.Kind + ": " + ev.Summary
+		if ev.VerifiedBy != "" {
+			line += " (verified by: " + ev.VerifiedBy + ")"
+		}
+		if ev.Excerpt != "" {
+			line += "\n" + ev.Excerpt
+		}
+		steps = append(steps, line)
+	}
+	f.StepsToReproduce = strings.Join(steps, "\n\n")
 }
 
 // cweNumber extracts the numeric id from "CWE-79" or "CWE-79.1".
@@ -225,6 +324,7 @@ func (r *Report) WriteDefectDojo(path string) error {
 				Endpoint:    v.MatchedAt,
 				Tags:        v.Tags,
 			}
+			defectDojoEvidence(&finding, v)
 			if finding.Description == "" {
 				finding.Description = v.Title
 			}

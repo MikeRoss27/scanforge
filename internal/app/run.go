@@ -268,6 +268,9 @@ func (s *runSession) execute(ctx context.Context) ([]*modules.Result, error) {
 		versions := detectToolVersions(ctx, runner.NewRealExecutor(false), s.cfg, s.moduleNames)
 		toolVersion = func(name string) string { return versions[name] }
 		s.incremental.toolVersions = versions
+		if len(versions) > 0 {
+			s.scanRun.Manifest.ToolVersions = versions
+		}
 	}
 	focus := s.prepareIncremental()
 	// Buffered so a module emitting a burst of findings (e.g. nuclei) doesn't

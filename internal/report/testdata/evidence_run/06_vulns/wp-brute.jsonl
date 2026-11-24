@@ -1,0 +1,2 @@
+{"url":"https://wp.example.com/wp-login.php","username":"admin","method":"login","success":true}
+{"url":"https://wp.example.com/wp-login.php","username":"editor","method":"login","success":false}

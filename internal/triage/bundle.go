@@ -26,6 +26,10 @@ type TriageFinding struct {
 	EPSS       float64  `json:"epss,omitempty"`
 	KEV        bool     `json:"kev,omitempty"`
 	MatchedAt  string   `json:"matched_at"`
+	// Status and Confidence are the module-set verification facts. They are
+	// inputs for the model; triage never changes them.
+	Status     string `json:"status,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
 }
 
 // TriageBundle is the complete, safe context handed to the analyzer. It
@@ -65,6 +69,8 @@ func BuildBundle(target string, findings []finding.Finding, relations []finding.
 			EPSS:       f.EPSS,
 			KEV:        f.KEV,
 			MatchedAt:  f.MatchedAt,
+			Status:     f.Status,
+			Confidence: f.Confidence,
 		})
 	}
 

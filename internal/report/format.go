@@ -117,6 +117,7 @@ func (r *Report) WriteMarkdown(path string) error {
 					markdownCell(v.MatchedAt), markdownCell(v.Evidence), markdownCell(priorityHint(v)))
 			}
 			b.WriteString("\n")
+			writeEvidenceLines(&b, asset.Vulnerabilities)
 		}
 	}
 
@@ -141,6 +142,60 @@ func (r *Report) WriteMarkdown(path string) error {
 	}
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
+}
+
+// EvidenceLine renders the compact one-line evidence summary of a
+// vulnerability (status, confidence, source, what was verified). It returns ""
+// for findings that carry no evidence layer (reports from older runs).
+func EvidenceLine(v *Vulnerability) string {
+	if v.Status == "" && v.Confidence == "" && v.Provenance == nil && len(v.EvidenceItems) == 0 {
+		return ""
+	}
+	parts := []string{}
+	if v.Status != "" {
+		parts = append(parts, "status "+v.Status)
+	}
+	if v.Confidence != "" {
+		parts = append(parts, "confidence "+v.Confidence)
+	}
+	if v.Provenance != nil {
+		src := v.Provenance.Module
+		if v.Provenance.ToolVersion != "" {
+			src += " " + v.Provenance.ToolVersion
+		}
+		parts = append(parts, "source "+src)
+	}
+	line := strings.Join(parts, ", ")
+	for _, ev := range v.EvidenceItems {
+		line += "; " + ev.Kind
+		if ev.Artifact != "" {
+			line += " in " + ev.Artifact
+		}
+		if ev.VerifiedBy != "" {
+			line += " (verified: " + ev.VerifiedBy + ")"
+		}
+	}
+	return line
+}
+
+// writeEvidenceLines emits one "Evidence" bullet per annotated finding under
+// the vulnerability table.
+func writeEvidenceLines(b *strings.Builder, vulns []*Vulnerability) {
+	wrote := false
+	for _, v := range vulns {
+		line := EvidenceLine(v)
+		if line == "" {
+			continue
+		}
+		if !wrote {
+			b.WriteString("**Evidence:**\n\n")
+			wrote = true
+		}
+		_, _ = fmt.Fprintf(b, "- %s: %s\n", mdInline(v.TemplateID), mdInline(line))
+	}
+	if wrote {
+		b.WriteString("\n")
+	}
 }
 
 func markdownCell(value string) string {
