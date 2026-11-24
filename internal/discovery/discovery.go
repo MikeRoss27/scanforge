@@ -155,6 +155,7 @@ func (e *Engine) Stats() Stats {
 var dagResolved = map[string]struct{}{
 	"subdomains":       {},
 	"brute_subdomains": {},
+	"ct_subdomains":    {},
 	"resolved_hosts":   {},
 	"alive_urls":       {},
 	"target":           {},

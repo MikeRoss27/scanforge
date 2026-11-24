@@ -105,20 +105,32 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	// DNS bruteforce is optional, but when selected its producer lifecycle is
 	// tracked by RunContext. Passive DNS resolution has already completed while
 	// shuffledns was running; only the late brute-force results are resolved now.
-	brute, hasBrute, err := runCtx.WaitArtifact(ctx, "brute_subdomains")
-	if err != nil {
-		return nil, fmt.Errorf("wait for optional brute-force DNS results: %w", err)
-	}
-	if hasBrute {
-		bruteRawFile := runCtx.Run.Path("01_subdomains", "dnsx-brute.jsonl")
-		bruteStderrFile := runCtx.Run.Path("00_meta", "dnsx-brute.stderr.log")
-		bruteResult, runErr := m.runDNSX(ctx, runCtx, executor, runCtx.Run.Path(brute.Path), bruteRawFile, bruteStderrFile)
-		if runErr != nil {
-			return nil, fmt.Errorf("resolve brute-force DNS results: %w", runErr)
+	// Certificate Transparency names (ctlogs) feed the same flow: they are
+	// scope-filtered at publication and resolved here like brute-force hits,
+	// without a second producer of "subdomains".
+	for _, optional := range []struct{ artifact, label, file string }{
+		{"brute_subdomains", "brute-force", "brute"},
+		{"ct_subdomains", "certificate transparency", "ct"},
+	} {
+		art, found, werr := runCtx.WaitArtifact(ctx, optional.artifact)
+		if werr != nil {
+			return nil, fmt.Errorf("wait for optional %s DNS results: %w", optional.label, werr)
 		}
-		rawInputs = append(rawInputs, bruteRawFile)
-		exitCodes = append(exitCodes, bruteResult.ExitCode)
-		outputFiles["dnsx_brute_stderr"] = "00_meta/dnsx-brute.stderr.log"
+		if !found {
+			continue
+		}
+		if info, statErr := os.Stat(runCtx.Run.Path(art.Path)); !runCtx.DryRun && optional.artifact == "ct_subdomains" && (statErr != nil || info.Size() == 0) {
+			continue // nothing left after discovery/scope filtering
+		}
+		rawFile := runCtx.Run.Path("01_subdomains", "dnsx-"+optional.file+".jsonl")
+		stderrName := "dnsx-" + optional.file + ".stderr.log"
+		optResult, runErr := m.runDNSX(ctx, runCtx, executor, runCtx.Run.Path(art.Path), rawFile, runCtx.Run.Path("00_meta", stderrName))
+		if runErr != nil {
+			return nil, fmt.Errorf("resolve %s DNS results: %w", optional.label, runErr)
+		}
+		rawInputs = append(rawInputs, rawFile)
+		exitCodes = append(exitCodes, optResult.ExitCode)
+		outputFiles["dnsx_"+optional.file+"_stderr"] = "00_meta/" + stderrName
 	}
 
 	if !runCtx.DryRun {
