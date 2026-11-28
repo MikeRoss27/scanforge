@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MikeRoss27/scanforge/internal/modules"
 	"github.com/MikeRoss27/scanforge/internal/runner"
@@ -102,6 +103,24 @@ func (m *Module) resolveIntel() IntelMatcher {
 	return nil
 }
 
+// warnVulnintelFreshness surfaces the gap between "CVE correlation looks
+// current" and "it's silently running on a dataset frozen at the last
+// build." Without this, a missing or stale vulnintel cache (never ran
+// `scanforge intel update`, or ran it months ago) falls back to the
+// embedded cves.yaml with no indication to the operator.
+func warnVulnintelFreshness(runCtx *modules.RunContext) {
+	age, ok := vulnintel.CacheFreshness()
+	switch {
+	case !ok:
+		runCtx.EmitWarning("techcve: no vulnintel cache found; CVE correlation uses the embedded dataset only " +
+			"(run `scanforge intel update` for live NVD/KEV/EPSS data)")
+	case age > vulnintel.MaxCacheAge:
+		runCtx.EmitWarning(fmt.Sprintf(
+			"techcve: vulnintel cache is %s old; run `scanforge intel update` to refresh NVD/KEV/EPSS data",
+			age.Round(24*time.Hour)))
+	}
+}
+
 func (m *Module) Name() string { return "techcve" }
 func (m *Module) Description() string {
 	return "Correlates detected technologies and versions with known CVEs from a bundled dataset"
@@ -143,6 +162,11 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, _ runner.E
 	var findings []finding
 	dedup := make(map[string]struct{})
 	intel := m.resolveIntel()
+	if m.intel == nil {
+		// Only warn on the real on-disk cache path: a test-injected
+		// IntelMatcher (m.intel != nil) has no freshness of its own.
+		warnVulnintelFreshness(runCtx)
+	}
 	for _, hit := range hits {
 		if intel != nil && hit.version != "" {
 			named := 0

@@ -86,7 +86,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		runCtx.EmitWarning(fmt.Sprintf("subfinder: %d discovered hosts excluded by scope; the module summary counts retained hosts only (see 00_meta/scope-rejections.jsonl).", rejected))
 	}
 	if res.ExitCode != 0 {
-		status = fmt.Sprintf("failed (exit code %d)", res.ExitCode)
+		status = modules.FailureStatus(res.ExitCode, stderrFile)
 	}
 
 	return &modules.Result{

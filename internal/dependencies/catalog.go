@@ -28,6 +28,7 @@ var catalog = []Dependency{
 	{Name: "subfinder", Binary: "subfinder", Modules: []string{"subfinder"}, VersionKey: "SUBFINDER_VERSION", GoPackage: "github.com/projectdiscovery/subfinder/v2/cmd/subfinder", Compare: true},
 	{Name: "shuffledns", Binary: "shuffledns", Modules: []string{"dnsbrute"}, VersionKey: "SHUFFLEDNS_VERSION", GoPackage: "github.com/projectdiscovery/shuffledns/cmd/shuffledns", Compare: true},
 	{Name: "massdns", Binary: "massdns", Modules: []string{"dnsbrute"}},
+	{Name: "gotator", Binary: "gotator", Modules: []string{"dnspermute"}, GoPackage: "github.com/Josue87/gotator"},
 	{Name: "dnsx", Binary: "dnsx", Modules: []string{"dnsx"}, VersionKey: "DNSX_VERSION", GoPackage: "github.com/projectdiscovery/dnsx/cmd/dnsx", Compare: true},
 	{Name: "httpx", Binary: "httpx", Modules: []string{"httpx", "screenshot"}, VersionKey: "HTTPX_VERSION", GoPackage: "github.com/projectdiscovery/httpx/cmd/httpx", Compare: true},
 	{Name: "naabu", Binary: "naabu", Modules: []string{"naabu"}, VersionKey: "NAABU_VERSION", GoPackage: "github.com/projectdiscovery/naabu/v2/cmd/naabu", Compare: true},
@@ -105,7 +106,12 @@ func InstallHint(dependency Dependency) string {
 	}
 	if dependency.GoPackage != "" {
 		if version == "" {
-			return "go install " + dependency.GoPackage + "@<version from .tools-version>"
+			// No pinned version to fall back on: either .tools-version has
+			// no entry for this tool yet, or (gotator's case) the upstream
+			// module has no semver-compatible tag to pin to in the first
+			// place, so @latest is the only install path that actually
+			// resolves instead of printing an unfillable placeholder.
+			return "go install " + dependency.GoPackage + "@latest"
 		}
 		return "go install " + dependency.GoPackage + "@v" + version
 	}

@@ -217,7 +217,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 			}
 			if res.ExitCode != 0 {
 				mu.Lock()
-				status = fmt.Sprintf("failed (exit code %d)", res.ExitCode)
+				status = modules.FailureStatus(res.ExitCode, cmd.StderrFile)
 				mu.Unlock()
 			}
 		}(i, host)

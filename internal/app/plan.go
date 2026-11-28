@@ -141,13 +141,13 @@ func (a *App) planOne(cfg *config.Config, target, profileName string, opts PlanO
 
 func moduleRisk(name string) string {
 	switch name {
-	case "subfinder", "gau", "techcve", "attacksurface", "ctlogs", "asnmap":
+	case "subfinder", "gau", "techcve", "attacksurface", "ctlogs", "asnmap", "uncover":
 		return "passive"
 	case "dbdetect":
 		return "active-low"
 	case "dbenum":
 		return "active-high"
-	case "dnsbrute":
+	case "dnsbrute", "dnspermute", "alterx":
 		return "active-low"
 	case "dnsx", "httpx", "tlsx", "whatweb", "wafw00f", "jssecrets", "jsverify":
 		return "active-low"

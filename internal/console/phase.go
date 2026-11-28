@@ -10,13 +10,19 @@ import (
 // header is derived from the modules that actually start in each wave of
 // the DAG, so the separators always describe what is really running.
 var modulePhase = map[string]string{
-	"subfinder":     "DISCOVERY",
-	"dnsbrute":      "DISCOVERY",
-	"ctlogs":        "DISCOVERY",
-	"asnmap":        "RESOLUTION",
-	"gau":           "DISCOVERY",
-	"dnsx":          "RESOLUTION",
-	"naabu":         "PORTS",
+	"subfinder":  "DISCOVERY",
+	"dnsbrute":   "DISCOVERY",
+	"dnspermute": "DISCOVERY",
+	"alterx":     "DISCOVERY",
+	"ctlogs":     "DISCOVERY",
+	"asnmap":     "RESOLUTION",
+	"gau":        "DISCOVERY",
+	"dnsx":       "RESOLUTION",
+	"naabu":      "PORTS",
+	// uncover's host:port hits merge straight into naabu's open_ports (see
+	// naabu.go), so it shares naabu/nmap's PORTS phase rather than DISCOVERY,
+	// even though it never probes the target itself.
+	"uncover":       "PORTS",
 	"nmap":          "PORTS",
 	"httpx":         "WEB SURFACE",
 	"tlsx":          "WEB SURFACE",

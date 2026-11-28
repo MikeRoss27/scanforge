@@ -3,6 +3,7 @@ package techcve
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,5 +66,60 @@ func TestRunConsultsIntelAndKeepsBundledFallback(t *testing.T) {
 	}
 	if _, ok := byCVE["CVE-2020-11022"]; !ok {
 		t.Fatalf("bundled dataset fallback finding missing: %+v", byCVE)
+	}
+}
+
+// Without this warning, a missing or stale vulnintel cache silently falls
+// back to the embedded, build-time-frozen dataset with no indication to the
+// operator that CVE correlation isn't using live NVD/KEV/EPSS data.
+func TestRunWarnsWhenVulnintelCacheMissing(t *testing.T) {
+	run := testRun(t)
+	writeFile(t, run.Path("02_http", "httpx.jsonl"),
+		`{"host":"example.com","tech":["jQuery:3.4.1"]}`+"\n")
+	runCtx := modules.NewRunContext("example.com", "deep", false, run)
+	if err := runCtx.AddArtifact("httpx_raw", modules.Artifact{Name: "httpx_raw", Type: "jsonl", Path: "02_http/httpx.jsonl"}); err != nil {
+		t.Fatal(err)
+	}
+	var warnings []string
+	runCtx.SetWarningSink(func(msg string) { warnings = append(warnings, msg) })
+
+	// New() (not NewWithIntel) takes the real on-disk cache path, which
+	// TestMain points at an empty directory for this whole package.
+	if _, err := New().Run(context.Background(), runCtx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "no vulnintel cache found") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a missing-cache warning, got: %v", warnings)
+	}
+}
+
+// A test-injected IntelMatcher (via NewWithIntel) has no freshness of its
+// own, so the on-disk cache warning must not fire for it.
+func TestRunDoesNotWarnWithInjectedIntel(t *testing.T) {
+	run := testRun(t)
+	writeFile(t, run.Path("02_http", "httpx.jsonl"),
+		`{"host":"example.com","tech":["jQuery:3.4.1"]}`+"\n")
+	runCtx := modules.NewRunContext("example.com", "deep", false, run)
+	if err := runCtx.AddArtifact("httpx_raw", modules.Artifact{Name: "httpx_raw", Type: "jsonl", Path: "02_http/httpx.jsonl"}); err != nil {
+		t.Fatal(err)
+	}
+	var warnings []string
+	runCtx.SetWarningSink(func(msg string) { warnings = append(warnings, msg) })
+
+	if _, err := NewWithIntel(fakeIntel{}).Run(context.Background(), runCtx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, w := range warnings {
+		if strings.Contains(w, "vulnintel cache") {
+			t.Fatalf("unexpected cache-freshness warning with an injected matcher: %v", warnings)
+		}
 	}
 }

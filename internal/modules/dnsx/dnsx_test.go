@@ -174,6 +174,70 @@ func TestRunMergesCertificateTransparencyNames(t *testing.T) {
 	}
 }
 
+func TestRunMergesPermutedSubdomains(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"00_meta", "01_subdomains"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := &storage.Run{RootDir: root, MetaDir: filepath.Join(root, "00_meta"), CommandsLog: filepath.Join(root, "00_meta", "commands.log")}
+	writeFile(t, run.Path("01_subdomains", "subfinder.txt"), "example.com\n")
+	writeFile(t, run.Path("01_subdomains", "permute.txt"), "example.com\ndev.example.com\n")
+	runCtx := modules.NewRunContext("example.com", "deep", false, run)
+	runCtx.ExpectArtifact("permuted_subdomains")
+	if err := runCtx.AddArtifact("subdomains", modules.Artifact{Name: "subdomains", Type: "text", Path: "01_subdomains/subfinder.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCtx.AddArtifact("permuted_subdomains", modules.Artifact{Name: "permuted_subdomains", Type: "text", Path: "01_subdomains/permute.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	executor := &stagedExecutor{firstRun: make(chan struct{})}
+	if _, err := New("dnsx").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := os.ReadFile(run.Path("01_subdomains", "dnsx.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "example.com\ndev.example.com\n"; string(resolved) != want {
+		t.Fatalf("resolved hosts = %q, want %q", resolved, want)
+	}
+	if len(executor.inputs) != 2 || executor.inputs[1] != run.Path("01_subdomains", "permute.txt") {
+		t.Fatalf("dnsx inputs = %v", executor.inputs)
+	}
+}
+
+// TestRunSkipsEmptyPermutedSubdomains mirrors the ct_subdomains case: a
+// permutation run that found nothing new after scope filtering must not
+// trigger a second, pointless dnsx invocation on an empty file.
+func TestRunSkipsEmptyPermutedSubdomains(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"00_meta", "01_subdomains"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := &storage.Run{RootDir: root, MetaDir: filepath.Join(root, "00_meta"), CommandsLog: filepath.Join(root, "00_meta", "commands.log")}
+	writeFile(t, run.Path("01_subdomains", "subfinder.txt"), "example.com\n")
+	writeFile(t, run.Path("01_subdomains", "permute.txt"), "")
+	runCtx := modules.NewRunContext("example.com", "deep", false, run)
+	runCtx.ExpectArtifact("permuted_subdomains")
+	if err := runCtx.AddArtifact("subdomains", modules.Artifact{Name: "subdomains", Type: "text", Path: "01_subdomains/subfinder.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCtx.AddArtifact("permuted_subdomains", modules.Artifact{Name: "permuted_subdomains", Type: "text", Path: "01_subdomains/permute.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	executor := &stagedExecutor{firstRun: make(chan struct{})}
+	if _, err := New("dnsx").Run(context.Background(), runCtx, executor); err != nil {
+		t.Fatal(err)
+	}
+	if len(executor.inputs) != 1 {
+		t.Fatalf("dnsx must not be invoked a second time on an empty permutation file, got inputs = %v", executor.inputs)
+	}
+}
+
 // TestRunPublishesIPLiteralWithoutInvokingDNSX reproduces the real bug: a
 // bare-IP target (e.g. DVWA at http://127.0.0.1:4280) used to vanish
 // silently - dnsx has nothing to resolve on an address that is already an

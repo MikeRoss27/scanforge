@@ -26,3 +26,32 @@ func TestExpectedVersionUsesInjectedManifest(t *testing.T) {
 		t.Fatalf("unexpected version: %q", got)
 	}
 }
+
+// A GoPackage dependency with no pinned version (either .tools-version has
+// no entry for it yet, or - gotator's actual case - the upstream module has
+// no semver-compatible tag to pin to at all) must fall back to @latest
+// instead of printing the unfillable "@<version from .tools-version>"
+// placeholder as if it were a real install command.
+func TestInstallHintFallsBackToLatestWithoutPinnedVersion(t *testing.T) {
+	previous := PinnedVersions
+	PinnedVersions = ""
+	t.Cleanup(func() { PinnedVersions = previous })
+
+	hint := InstallHint(Dependency{Name: "gotator", GoPackage: "github.com/Josue87/gotator"})
+	if want := "go install github.com/Josue87/gotator@latest"; hint != want {
+		t.Fatalf("InstallHint() = %q, want %q", hint, want)
+	}
+}
+
+func TestInstallHintUsesPinnedVersionWhenPresent(t *testing.T) {
+	previous := PinnedVersions
+	PinnedVersions = "SUBFINDER_VERSION=v2.17.0"
+	t.Cleanup(func() { PinnedVersions = previous })
+
+	hint := InstallHint(Dependency{
+		Name: "subfinder", GoPackage: "github.com/projectdiscovery/subfinder/v2/cmd/subfinder", VersionKey: "SUBFINDER_VERSION",
+	})
+	if want := "go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.17.0"; hint != want {
+		t.Fatalf("InstallHint() = %q, want %q", hint, want)
+	}
+}

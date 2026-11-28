@@ -101,16 +101,20 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		"dnsx_stderr":    "00_meta/dnsx.stderr.log",
 	}
 	exitCodes := []int{passiveResult.ExitCode}
+	exitStderrFiles := []string{stderrFile}
 
 	// DNS bruteforce is optional, but when selected its producer lifecycle is
 	// tracked by RunContext. Passive DNS resolution has already completed while
 	// shuffledns was running; only the late brute-force results are resolved now.
-	// Certificate Transparency names (ctlogs) feed the same flow: they are
+	// Certificate Transparency names (ctlogs) and both permutation engines
+	// (dnspermute/gotator, alterx/alterx) feed the same flow: they are
 	// scope-filtered at publication and resolved here like brute-force hits,
 	// without a second producer of "subdomains".
 	for _, optional := range []struct{ artifact, label, file string }{
 		{"brute_subdomains", "brute-force", "brute"},
 		{"ct_subdomains", "certificate transparency", "ct"},
+		{"permuted_subdomains", "permutation", "permute"},
+		{"altered_subdomains", "alterx permutation", "alterx"},
 	} {
 		art, found, werr := runCtx.WaitArtifact(ctx, optional.artifact)
 		if werr != nil {
@@ -119,17 +123,24 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		if !found {
 			continue
 		}
-		if info, statErr := os.Stat(runCtx.Run.Path(art.Path)); !runCtx.DryRun && optional.artifact == "ct_subdomains" && (statErr != nil || info.Size() == 0) {
+		// ct_subdomains, permuted_subdomains and altered_subdomains
+		// legitimately end up empty after discovery/scope filtering (unlike
+		// brute-force, which always has a wordlist's worth of attempts);
+		// skip resolving an empty file instead of treating it as an error.
+		emptyIsOK := optional.artifact == "ct_subdomains" || optional.artifact == "permuted_subdomains" || optional.artifact == "altered_subdomains"
+		if info, statErr := os.Stat(runCtx.Run.Path(art.Path)); !runCtx.DryRun && emptyIsOK && (statErr != nil || info.Size() == 0) {
 			continue // nothing left after discovery/scope filtering
 		}
 		rawFile := runCtx.Run.Path("01_subdomains", "dnsx-"+optional.file+".jsonl")
 		stderrName := "dnsx-" + optional.file + ".stderr.log"
-		optResult, runErr := m.runDNSX(ctx, runCtx, executor, runCtx.Run.Path(art.Path), rawFile, runCtx.Run.Path("00_meta", stderrName))
+		optStderrFile := runCtx.Run.Path("00_meta", stderrName)
+		optResult, runErr := m.runDNSX(ctx, runCtx, executor, runCtx.Run.Path(art.Path), rawFile, optStderrFile)
 		if runErr != nil {
 			return nil, fmt.Errorf("resolve %s DNS results: %w", optional.label, runErr)
 		}
 		rawInputs = append(rawInputs, rawFile)
 		exitCodes = append(exitCodes, optResult.ExitCode)
+		exitStderrFiles = append(exitStderrFiles, optStderrFile)
 		outputFiles["dnsx_"+optional.file+"_stderr"] = "00_meta/" + stderrName
 	}
 
@@ -163,9 +174,9 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 
 	status := "completed"
-	for _, exitCode := range exitCodes {
+	for i, exitCode := range exitCodes {
 		if exitCode != 0 {
-			status = fmt.Sprintf("failed (exit code %d)", exitCode)
+			status = modules.FailureStatus(exitCode, exitStderrFiles[i])
 			break
 		}
 	}

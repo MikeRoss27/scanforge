@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/MikeRoss27/scanforge/internal/report"
 	"github.com/MikeRoss27/scanforge/internal/storage"
@@ -32,13 +33,17 @@ func (a *App) Diff(ctx context.Context, opts DiffOptions) (*report.RunDelta, str
 		return nil, "", fmt.Errorf("runs target different assets (%q vs %q), diff requires the same target", before.Target, after.Target)
 	}
 
+	// GenerateReport downgrades a corrupt/truncated artifact to a warning
+	// internally and still returns the rest of the parsed report; treating
+	// that warning as fatal here would abort the diff over one bad file in
+	// either run even though every other module's data parsed fine.
 	reportBefore, err := report.GenerateReport(opts.Run1, &before.Manifest)
 	if err != nil {
-		return nil, "", fmt.Errorf("generate report for %s: %w", opts.Run1, err)
+		fmt.Fprintf(os.Stderr, "warning: report has incomplete data for %s: %v\n", opts.Run1, err)
 	}
 	reportAfter, err := report.GenerateReport(opts.Run2, &after.Manifest)
 	if err != nil {
-		return nil, "", fmt.Errorf("generate report for %s: %w", opts.Run2, err)
+		fmt.Fprintf(os.Stderr, "warning: report has incomplete data for %s: %v\n", opts.Run2, err)
 	}
 
 	delta := report.CompareReports(reportBefore, reportAfter)

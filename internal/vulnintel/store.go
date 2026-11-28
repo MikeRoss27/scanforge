@@ -133,6 +133,36 @@ func OpenDefault() (*Store, error) {
 	return &Store{Dir: dir}, nil
 }
 
+// MaxCacheAge is how long a vulnintel cache is considered fresh before
+// CacheFreshness reports it as stale.
+const MaxCacheAge = 30 * 24 * time.Hour
+
+// CacheFreshness reports how long ago the default on-disk vulnintel cache's
+// oldest source was fetched. ok is false when no cache exists yet (never
+// run `scanforge intel update`) or it has no recorded sources, so callers
+// can distinguish "missing" from "stale" and warn accordingly instead of
+// silently falling back to an embedded, build-time-frozen dataset.
+func CacheFreshness() (age time.Duration, ok bool) {
+	store, err := OpenDefault()
+	if err != nil || !store.HasData() {
+		return 0, false
+	}
+	meta, err := store.ReadMeta()
+	if err != nil || len(meta.Sources) == 0 {
+		return 0, false
+	}
+	var oldest time.Time
+	for _, sm := range meta.Sources {
+		if oldest.IsZero() || sm.FetchedAt.Before(oldest) {
+			oldest = sm.FetchedAt
+		}
+	}
+	if oldest.IsZero() {
+		return 0, false
+	}
+	return time.Since(oldest), true
+}
+
 func (s *Store) file(source string) string { return filepath.Join(s.Dir, source+".jsonl") }
 func (s *Store) metaFile() string          { return filepath.Join(s.Dir, "meta.json") }
 
@@ -206,7 +236,13 @@ func replace[T any](s *Store, sm *SourceMeta, records []T) error {
 	return nil
 }
 
-// readAll streams a source file; a missing file is not an error.
+// readAll streams a source file; a missing file is not an error. A single
+// malformed line (partial write, truncated download, bit rot) is skipped
+// rather than failing the whole read: epssFor's line index already treats
+// the EPSS cache this way, and Load/OpenIfPresent otherwise turn one bad
+// line anywhere in an ~86 MB NVD/KEV feed into a silent, total loss of CVE
+// correlation for the run (OpenIfPresent swallows Load's error and returns
+// nil, so techcve/wpcve run with zero intel and no warning).
 func readAll[T any](s *Store, source string, fn func(T)) error {
 	f, err := os.Open(s.file(source))
 	if errors.Is(err, os.ErrNotExist) {
@@ -224,7 +260,7 @@ func readAll[T any](s *Store, source string, fn func(T)) error {
 		}
 		var rec T
 		if err := json.Unmarshal(sc.Bytes(), &rec); err != nil {
-			return fmt.Errorf("corrupt %s cache: %w", source, err)
+			continue
 		}
 		fn(rec)
 	}

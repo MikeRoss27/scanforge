@@ -84,7 +84,7 @@ logging stay centralized.
 ### Newer subsystems
 
 - `internal/scheduler`: `WrapExecutor` decorates the `runner.Executor` with concurrency, rps, command budget and timeouts (config `limits:`). Version probes use the unwrapped executor.
-- `internal/events`: typed discovery bus complementing the DAG; scope check is mandatory and first; dedup by deterministic ID. Only demo-wired (`--events`).
+- `internal/events`: typed discovery bus complementing the DAG; scope check is mandatory and first; dedup by deterministic ID. Enabled standalone with `--events` (writes `00_meta/events.jsonl`); `--recursive` (implies `--events`) additionally drives `internal/discovery`'s bounded follow-up loop — a late in-scope DNS name or live URL found by JS/crawl/CT triggers a real dnsx→httpx (and katana depth-1) pass, scope-gated and resume-aware (see `docs/RECURSIVE.md`).
 - `internal/workflows`: YAML → validated compile to the same module selection as a profile; step policy (retries/timeout/on_error/when) is a module wrapper, the orchestrator is unchanged. No shell steps.
 - `internal/vulnintel`: NVD/KEV/EPSS file cache (`~/.cache/scanforge/vulnintel`, network only on `scanforge intel update`); consumed by `techcve`.
 - `internal/runindex`, `internal/active`, `internal/mcp`, `internal/api`: read access to runs plus gated active scans. Active mode needs `--allow-active` and a strict `--scope` file; scans run as child processes; audit log is JSONL.
@@ -136,7 +136,8 @@ Persistence is file-based by design (no SQLite).
 
 ## Notes
 
-- The README and `docs/*.md` are written in French; this repo's user-facing docs are French-first.
+- `README.md` and `docs/*.md` are English-first, for GitHub discoverability; `docs/fr/*.md` is the
+  French mirror (kept in sync, not the primary copy).
 - Runtime scan output under `runs/` is gitignored and must not be committed.
 - `docker compose run scanforge ...` and any live run must only target hosts explicitly present in
   the mounted/confirmed scope — this is a safety-critical tool for authorized engagements only.

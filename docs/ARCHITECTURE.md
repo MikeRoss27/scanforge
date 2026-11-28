@@ -10,13 +10,15 @@ independent module therefore does not hold back another ready branch.
 Main chains:
 
 ```text
-                         ┌→ dnsx (passive input) ───────────┐
-subfinder → subdomains ──┤                                  ├→ resolved_hosts
-                         └→ dnsbrute → dnsx (late results) ─┘
+                         ┌→ dnsx (passive input) ────────────────┐
+subfinder → subdomains ──┼→ dnsbrute → dnsx (late results) ──────┤→ resolved_hosts
+                         └→ dnspermute → dnsx (late results) ────┘
 ctlogs → ct_subdomains ⇢ dnsx (merged like brute_subdomains; scope-filtered)
+subdomains → alterx → altered_subdomains ⇢ dnsx (merged like ct_subdomains; scope-filtered)
 dnsx_raw + resolved_hosts → asnmap → asn_info (RDAP annotation, report only)
 resolved_hosts → httpx → alive_urls
 resolved_hosts → naabu → open_ports → nmap
+target → uncover → uncover_hosts ⇢ naabu (merged into open_ports; scope-filtered)
 open_ports ⇢ httpx (soft: only when naabu is in the profile)
 alive_urls → tlsx / whatweb / wafw00f / katana / ffuf / nuclei
 target → gau → historical_urls
@@ -34,10 +36,14 @@ wins. `jssecrets` also soft-depends on `historical_urls` and
 `discovered_paths` so it can scan JS URLs gau/ffuf found that the crawl missed
 (`collectJSURLs`).
 
-DNSX resolves passive discoveries while DNS bruteforce runs. Once the optional
-producer finishes, DNSX resolves only its additional hosts, merges both JSONL
-streams and publishes the final scoped artifact. A failed optional producer
-wakes the waiter so the passive branch can still continue.
+DNSX resolves passive discoveries while DNS bruteforce and permutation run.
+`dnspermute` wraps gotator: it permutes the subdomains already discovered
+with a small built-in wordlist (env/infra words: `dev`, `staging`, `internal`,
+`vpn`, ...) and publishes the scoped `permuted_subdomains` artifact, resolved
+by DNSX exactly like `brute_subdomains`. Once each optional producer finishes,
+DNSX resolves only its additional hosts, merges all JSONL streams and
+publishes the final scoped artifact. A failed optional producer wakes the
+waiter so the passive branch can still continue.
 
 `ctlogs` (crt.sh Certificate Transparency lookup) is a native passive module
 that does not produce a second `subdomains` artifact: it publishes the scoped
@@ -51,6 +57,19 @@ already present in the scope-filtered `resolved_hosts` and writes
 it never extends the scope or emits targets. Both modules use the injectable
 `modules.Fetcher` (timeouts, size caps, retries/backoff, `--proxy`); on a dry
 run they only record the planned request in `commands.log`.
+
+`alterx` wraps ProjectDiscovery's own permutation engine: same job as
+`dnsbrute`'s wordlist-driven bruteforce, deliberately kept side by side
+because its pattern library and built-in enrichment (`-enrich`) surface
+different candidates than a wordlist does. It publishes the scoped
+`altered_subdomains` artifact, which DNSX waits for and resolves exactly like
+`ct_subdomains`. `uncover` wraps ProjectDiscovery's internet-wide asset
+search (Shodan/Censys/Fofa/Hunter/ZoomEye, selected by whichever
+`internal/auth` provider keys are configured); it queries only those search
+engines, never the target itself, and is skipped when no provider key is
+configured. It publishes the scoped `uncover_hosts` artifact, which `naabu`
+folds into its own `open_ports` output the same way DNSX merges optional
+subdomain producers - naabu's own exit status stays authoritative.
 
 `scanforge plan TARGET --preset deep` displays the validated waves without
 running any tool or creating a run.
