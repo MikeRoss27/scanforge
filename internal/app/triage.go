@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/MikeRoss27/scanforge/internal/finding"
@@ -31,9 +32,13 @@ func (a *App) Triage(ctx context.Context, opts TriageOptions) (*triage.Result, e
 	if err != nil {
 		return nil, fmt.Errorf("open run %q: %w", opts.Run, err)
 	}
+	// GenerateReport downgrades a corrupt/truncated artifact to a warning
+	// internally and still returns the rest of the parsed report; treating
+	// that warning as fatal here would abort triage over one bad file even
+	// though every other module's data parsed fine.
 	rep, err := report.GenerateReport(opts.Run, &run.Manifest)
 	if err != nil {
-		return nil, fmt.Errorf("generate report for %s: %w", opts.Run, err)
+		fmt.Fprintf(os.Stderr, "warning: report has incomplete data for %s: %v\n", opts.Run, err)
 	}
 
 	findings := finding.FromReport(rep)
