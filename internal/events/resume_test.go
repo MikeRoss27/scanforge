@@ -42,3 +42,30 @@ func TestResumedBusDeliversButDoesNotRewritePersistedLines(t *testing.T) {
 		t.Fatalf("scope-rejections.jsonl has %d lines, want 1", n)
 	}
 }
+
+// A resumed bus must still be able to resolve ParentID against an event
+// accepted by an earlier invocation, even when that parent is not
+// republished in this invocation: depths, not just IDs, must survive resume.
+func TestResumedBusResolvesParentFromEarlierInvocation(t *testing.T) {
+	b1, dir := newTestBus(t, Options{})
+	root, err := b1.Publish(Event{Type: DNSName, Value: "a.example.com", Source: "t"})
+	if err != nil || root != Delivered {
+		t.Fatalf("seed publish: disp=%v err=%v", root, err)
+	}
+	parentID := MakeID(DNSName, Normalize(DNSName, "a.example.com"))
+
+	b2, err := New(Options{MetaDir: dir, Scope: b1.opts.Scope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Child event derived from a parent accepted only in b1's invocation,
+	// never republished through b2 in this one.
+	child := Event{Type: JSURL, Value: "https://a.example.com/app.js", Source: "t", ParentID: parentID}
+	disp, err := b2.Publish(child)
+	if err != nil {
+		t.Fatalf("publish child of a prior-invocation parent: %v", err)
+	}
+	if disp != Delivered {
+		t.Fatalf("child disposition = %v, want Delivered", disp)
+	}
+}

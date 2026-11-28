@@ -111,7 +111,11 @@ func New(opts Options) (*Bus, error) {
 		depths:   make(map[string]int),
 		rejected: make(map[string]struct{}),
 	}
-	b.persisted, b.persistedRej = loadPersisted(opts.MetaDir)
+	var depths map[string]int
+	b.persisted, b.persistedRej, depths = loadPersisted(opts.MetaDir)
+	for id, d := range depths {
+		b.depths[id] = d
+	}
 	b.cond = sync.NewCond(&b.mu)
 	return b, nil
 }
@@ -300,18 +304,25 @@ func (b *Bus) logRejection(e Event) error {
 	return nil
 }
 
-// loadPersisted reads the event IDs and event scope rejections left in
-// metaDir by an earlier invocation of the same run (resume). Unreadable or
-// malformed lines are ignored: at worst a line is written twice.
-func loadPersisted(metaDir string) (ids, rejections map[string]struct{}) {
+// loadPersisted reads the event IDs, depths and scope rejections left in
+// metaDir by an earlier invocation of the same run (resume). depths lets a
+// resumed bus resolve events.ParentID for a child event whose parent was
+// accepted in that earlier invocation and is not republished in this one;
+// without it, admit would reject such a child with "unknown parent event"
+// even though the parent genuinely exists in this run's history. Unreadable
+// or malformed lines are ignored: at worst a line is written twice.
+func loadPersisted(metaDir string) (ids, rejections map[string]struct{}, depths map[string]int) {
 	ids = make(map[string]struct{})
 	rejections = make(map[string]struct{})
+	depths = make(map[string]int)
 	scanJSONL(filepath.Join(metaDir, eventsFile), func(line []byte) {
 		var rec struct {
-			ID string `json:"id"`
+			ID    string `json:"id"`
+			Depth int    `json:"depth"`
 		}
 		if json.Unmarshal(line, &rec) == nil && rec.ID != "" {
 			ids[rec.ID] = struct{}{}
+			depths[rec.ID] = rec.Depth
 		}
 	})
 	scanJSONL(filepath.Join(metaDir, rejectionsFile), func(line []byte) {
@@ -320,7 +331,7 @@ func loadPersisted(metaDir string) (ids, rejections map[string]struct{}) {
 			rejections[rec.Artifact+"|"+rec.Value] = struct{}{}
 		}
 	})
-	return ids, rejections
+	return ids, rejections, depths
 }
 
 func scanJSONL(path string, fn func([]byte)) {
