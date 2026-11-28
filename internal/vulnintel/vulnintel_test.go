@@ -299,6 +299,51 @@ func TestMissingCacheIsEmpty(t *testing.T) {
 	}
 }
 
+// A single malformed line in the NVD or KEV cache (partial write, truncated
+// download, bit rot) must not discard every other record in that ~86 MB
+// feed, and must not make OpenIfPresent fall back to nil (silently running
+// techcve/wpcve with zero CVE intel and no warning).
+func TestLoadSkipsCorruptLineInsteadOfFailingWholeCache(t *testing.T) {
+	dir := t.TempDir()
+	good := `{"id":"CVE-2099-0001","matches":[{"criteria":"cpe:2.3:a:f5:nginx:*:*:*:*:*:*:*:*","vendor":"f5","product":"nginx"}]}`
+	nvd := strings.Join([]string{
+		good,
+		`{"id":"CVE-2099-0002", this is not valid json`,
+		good,
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(dir, "nvd.jsonl"), []byte(nvd), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	kev := strings.Join([]string{
+		`not json at all`,
+		`{"cve_id":"CVE-2099-0001"}`,
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(dir, "kev.jsonl"), []byte(kev), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	meta := `{"sources":{"nvd":{"source":"nvd","records":2},"kev":{"source":"kev","records":1}}}`
+	if err := os.WriteFile(filepath.Join(dir, "meta.json"), []byte(meta), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := Load(&Store{Dir: dir})
+	if err != nil {
+		t.Fatalf("Load must tolerate a corrupt line, got: %v", err)
+	}
+	cands := db.Match(Query{Product: "nginx", CPE: "cpe:2.3:a:f5:nginx:1.0:*:*:*:*:*:*:*"})
+	if len(cands) != 1 || cands[0].CVEID != "CVE-2099-0001" {
+		t.Fatalf("good records must survive a corrupt sibling line: %+v", cands)
+	}
+	if !cands[0].KEV {
+		t.Fatalf("KEV flag must survive a corrupt sibling line in kev.jsonl: %+v", cands[0])
+	}
+
+	t.Setenv(EnvDir, dir)
+	if OpenIfPresent() == nil {
+		t.Fatal("OpenIfPresent must not fall back to nil over one corrupt line")
+	}
+}
+
 func TestParseCPE(t *testing.T) {
 	c, ok := ParseCPE(`cpe:2.3:a:vendor\:x:prod_1:1.2:*:*:*:*:*:*:*`)
 	if !ok || c.Vendor != "vendor:x" || c.Product != "prod_1" || c.Version != "1.2" {
