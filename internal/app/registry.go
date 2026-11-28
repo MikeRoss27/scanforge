@@ -9,6 +9,7 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/modules/dbdetect"
 	"github.com/MikeRoss27/scanforge/internal/modules/dbenum"
 	"github.com/MikeRoss27/scanforge/internal/modules/dnsbrute"
+	"github.com/MikeRoss27/scanforge/internal/modules/dnspermute"
 	"github.com/MikeRoss27/scanforge/internal/modules/dnsx"
 	"github.com/MikeRoss27/scanforge/internal/modules/ffuf"
 	"github.com/MikeRoss27/scanforge/internal/modules/gau"
@@ -45,6 +46,7 @@ func buildRegistry(cfg *config.Config) *modules.Registry {
 	registry.Register(ctlogs.New())
 	registry.Register(asnmap.New())
 	registry.Register(dnsbrute.New(cfg.ToolPath("shuffledns")))
+	registry.Register(dnspermute.New(cfg.ToolPath("gotator")))
 	registry.Register(dnsx.New(cfg.ToolPath("dnsx")))
 	registry.Register(httpx.New(cfg.ToolPath("httpx")))
 	registry.Register(naabu.New(cfg.ToolPath("naabu")))

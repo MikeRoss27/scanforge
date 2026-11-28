@@ -10,9 +10,9 @@ independent module therefore does not hold back another ready branch.
 Main chains:
 
 ```text
-                         ┌→ dnsx (passive input) ───────────┐
-subfinder → subdomains ──┤                                  ├→ resolved_hosts
-                         └→ dnsbrute → dnsx (late results) ─┘
+                         ┌→ dnsx (passive input) ────────────────┐
+subfinder → subdomains ──┼→ dnsbrute → dnsx (late results) ──────┤→ resolved_hosts
+                         └→ dnspermute → dnsx (late results) ────┘
 ctlogs → ct_subdomains ⇢ dnsx (merged like brute_subdomains; scope-filtered)
 dnsx_raw + resolved_hosts → asnmap → asn_info (RDAP annotation, report only)
 resolved_hosts → httpx → alive_urls
@@ -34,10 +34,14 @@ wins. `jssecrets` also soft-depends on `historical_urls` and
 `discovered_paths` so it can scan JS URLs gau/ffuf found that the crawl missed
 (`collectJSURLs`).
 
-DNSX resolves passive discoveries while DNS bruteforce runs. Once the optional
-producer finishes, DNSX resolves only its additional hosts, merges both JSONL
-streams and publishes the final scoped artifact. A failed optional producer
-wakes the waiter so the passive branch can still continue.
+DNSX resolves passive discoveries while DNS bruteforce and permutation run.
+`dnspermute` wraps gotator: it permutes the subdomains already discovered
+with a small built-in wordlist (env/infra words: `dev`, `staging`, `internal`,
+`vpn`, ...) and publishes the scoped `permuted_subdomains` artifact, resolved
+by DNSX exactly like `brute_subdomains`. Once each optional producer finishes,
+DNSX resolves only its additional hosts, merges all JSONL streams and
+publishes the final scoped artifact. A failed optional producer wakes the
+waiter so the passive branch can still continue.
 
 `ctlogs` (crt.sh Certificate Transparency lookup) is a native passive module
 that does not produce a second `subdomains` artifact: it publishes the scoped

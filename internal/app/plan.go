@@ -147,7 +147,7 @@ func moduleRisk(name string) string {
 		return "active-low"
 	case "dbenum":
 		return "active-high"
-	case "dnsbrute":
+	case "dnsbrute", "dnspermute":
 		return "active-low"
 	case "dnsx", "httpx", "tlsx", "whatweb", "wafw00f", "jssecrets", "jsverify":
 		return "active-low"

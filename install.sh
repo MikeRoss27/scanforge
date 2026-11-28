@@ -308,6 +308,9 @@ install_go_tools() {
         "github.com/lc/gau/v2/cmd/gau@${GAU_VERSION}"
         "github.com/ffuf/ffuf/v2@${FFUF_VERSION}"
         "github.com/projectdiscovery/shuffledns/cmd/shuffledns@${SHUFFLEDNS_VERSION}"
+        # gotator has no semver-compatible tag, so it can't be pinned like
+        # the tools above; @latest is the only install path that resolves.
+        "github.com/Josue87/gotator@latest"
     )
     command -v go >/dev/null 2>&1 || err "Go is required for --full; see https://go.dev/dl/"
     ok "Go is installed: $(go version)"
@@ -369,7 +372,7 @@ has_browser() {
 
 verify_full_install() {
     local tool missing=0
-    local -a required=(subfinder shuffledns dnsx httpx naabu nmap whatweb wafw00f katana ffuf nuclei gau tlsx massdns)
+    local -a required=(subfinder shuffledns gotator dnsx httpx naabu nmap whatweb wafw00f katana ffuf nuclei gau tlsx massdns)
     info "Verifying external dependencies..."
     for tool in "${required[@]}"; do
         if command -v "$tool" >/dev/null 2>&1; then ok "${tool}: installed"

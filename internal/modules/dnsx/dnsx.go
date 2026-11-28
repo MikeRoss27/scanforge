@@ -112,6 +112,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	for _, optional := range []struct{ artifact, label, file string }{
 		{"brute_subdomains", "brute-force", "brute"},
 		{"ct_subdomains", "certificate transparency", "ct"},
+		{"permuted_subdomains", "permutation", "permute"},
 	} {
 		art, found, werr := runCtx.WaitArtifact(ctx, optional.artifact)
 		if werr != nil {
@@ -120,7 +121,8 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		if !found {
 			continue
 		}
-		if info, statErr := os.Stat(runCtx.Run.Path(art.Path)); !runCtx.DryRun && optional.artifact == "ct_subdomains" && (statErr != nil || info.Size() == 0) {
+		emptyIsOK := optional.artifact == "ct_subdomains" || optional.artifact == "permuted_subdomains"
+		if info, statErr := os.Stat(runCtx.Run.Path(art.Path)); !runCtx.DryRun && emptyIsOK && (statErr != nil || info.Size() == 0) {
 			continue // nothing left after discovery/scope filtering
 		}
 		rawFile := runCtx.Run.Path("01_subdomains", "dnsx-"+optional.file+".jsonl")

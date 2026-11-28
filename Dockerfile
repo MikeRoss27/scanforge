@@ -21,7 +21,8 @@ RUN . /tmp/tools-version && \
     GOBIN=/out go install github.com/projectdiscovery/tlsx/cmd/tlsx@${TLSX_VERSION} && \
     GOBIN=/out go install github.com/lc/gau/v2/cmd/gau@${GAU_VERSION} && \
     GOBIN=/out go install github.com/ffuf/ffuf/v2@${FFUF_VERSION} && \
-    GOBIN=/out go install github.com/projectdiscovery/shuffledns/cmd/shuffledns@${SHUFFLEDNS_VERSION}
+    GOBIN=/out go install github.com/projectdiscovery/shuffledns/cmd/shuffledns@${SHUFFLEDNS_VERSION} && \
+    GOBIN=/out go install github.com/Josue87/gotator@latest
 
 # Wordlist DNS minimale requise par shuffledns, épinglée et vérifiée.
 RUN . /tmp/tools-version && \

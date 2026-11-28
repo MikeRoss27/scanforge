@@ -178,7 +178,10 @@ function Install-GoTools {
         "github.com/projectdiscovery/tlsx/cmd/tlsx@$($ToolsVersion.TLSX_VERSION)",
         "github.com/lc/gau/v2/cmd/gau@$($ToolsVersion.GAU_VERSION)",
         "github.com/ffuf/ffuf/v2@$($ToolsVersion.FFUF_VERSION)",
-        "github.com/projectdiscovery/shuffledns/cmd/shuffledns@$($ToolsVersion.SHUFFLEDNS_VERSION)"
+        "github.com/projectdiscovery/shuffledns/cmd/shuffledns@$($ToolsVersion.SHUFFLEDNS_VERSION)",
+        # gotator has no semver-compatible tag, so it can't be pinned like
+        # the tools above; @latest is the only install path that resolves.
+        "github.com/Josue87/gotator@latest"
     )
     foreach ($tool in $goTools) {
         Write-Info "Installing $tool"
