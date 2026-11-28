@@ -101,6 +101,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		"dnsx_stderr":    "00_meta/dnsx.stderr.log",
 	}
 	exitCodes := []int{passiveResult.ExitCode}
+	exitStderrFiles := []string{stderrFile}
 
 	// DNS bruteforce is optional, but when selected its producer lifecycle is
 	// tracked by RunContext. Passive DNS resolution has already completed while
@@ -124,12 +125,14 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		}
 		rawFile := runCtx.Run.Path("01_subdomains", "dnsx-"+optional.file+".jsonl")
 		stderrName := "dnsx-" + optional.file + ".stderr.log"
-		optResult, runErr := m.runDNSX(ctx, runCtx, executor, runCtx.Run.Path(art.Path), rawFile, runCtx.Run.Path("00_meta", stderrName))
+		optStderrFile := runCtx.Run.Path("00_meta", stderrName)
+		optResult, runErr := m.runDNSX(ctx, runCtx, executor, runCtx.Run.Path(art.Path), rawFile, optStderrFile)
 		if runErr != nil {
 			return nil, fmt.Errorf("resolve %s DNS results: %w", optional.label, runErr)
 		}
 		rawInputs = append(rawInputs, rawFile)
 		exitCodes = append(exitCodes, optResult.ExitCode)
+		exitStderrFiles = append(exitStderrFiles, optStderrFile)
 		outputFiles["dnsx_"+optional.file+"_stderr"] = "00_meta/" + stderrName
 	}
 
@@ -163,9 +166,9 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	}
 
 	status := "completed"
-	for _, exitCode := range exitCodes {
+	for i, exitCode := range exitCodes {
 		if exitCode != 0 {
-			status = fmt.Sprintf("failed (exit code %d)", exitCode)
+			status = modules.FailureStatus(exitCode, exitStderrFiles[i])
 			break
 		}
 	}

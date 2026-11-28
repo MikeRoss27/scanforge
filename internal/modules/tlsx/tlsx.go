@@ -59,7 +59,7 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	} else {
 		status := "completed"
 		if res.ExitCode != 0 {
-			status = fmt.Sprintf("failed (exit code %d)", res.ExitCode)
+			status = modules.FailureStatus(res.ExitCode, stderrFile)
 		}
 		return &modules.Result{
 			Name:   m.Name(),
