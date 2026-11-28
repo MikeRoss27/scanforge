@@ -68,7 +68,7 @@ continuité (diff entre runs, scheduling, notifications).
 |---|---|---|
 | H3.1 | Triage IA des findings : résumé LLM + déduplication | ✅ implémenté |
 | H3.2 | Report HTML type nuclei (compte rendu client) | |
-| H3.3 | Données live : fetch EPSS/KEV/NVD à jour plutôt que dataset embarqué | |
+| H3.3 | Données live : fetch EPSS/KEV/NVD à jour plutôt que dataset embarqué | ✅ implémenté (`scanforge intel update`) ; techcve avertit maintenant si le cache est absent ou a plus de 30 jours au lieu de retomber silencieusement sur le dataset embarqué |
 
 ## 4. Hors périmètre (anti-scope creep)
 

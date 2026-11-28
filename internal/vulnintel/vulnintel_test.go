@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -342,6 +343,71 @@ func TestLoadSkipsCorruptLineInsteadOfFailingWholeCache(t *testing.T) {
 	if OpenIfPresent() == nil {
 		t.Fatal("OpenIfPresent must not fall back to nil over one corrupt line")
 	}
+}
+
+func TestCacheFreshness(t *testing.T) {
+	writeMeta := func(t *testing.T, dir string, sources map[string]SourceMeta) {
+		t.Helper()
+		m := Meta{Sources: sources}
+		data, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "meta.json"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "nvd.jsonl"), []byte(""), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("no cache directory at all", func(t *testing.T) {
+		t.Setenv(EnvDir, filepath.Join(t.TempDir(), "none"))
+		if _, ok := CacheFreshness(); ok {
+			t.Fatal("expected ok=false when the cache directory doesn't exist")
+		}
+	})
+
+	t.Run("cache directory exists but meta.json has no sources", func(t *testing.T) {
+		dir := t.TempDir()
+		writeMeta(t, dir, map[string]SourceMeta{})
+		t.Setenv(EnvDir, dir)
+		if _, ok := CacheFreshness(); ok {
+			t.Fatal("expected ok=false when meta.json records no sources")
+		}
+	})
+
+	t.Run("fresh cache", func(t *testing.T) {
+		dir := t.TempDir()
+		writeMeta(t, dir, map[string]SourceMeta{
+			"nvd": {Source: "nvd", FetchedAt: time.Now().Add(-time.Hour)},
+			"kev": {Source: "kev", FetchedAt: time.Now().Add(-2 * time.Hour)},
+		})
+		t.Setenv(EnvDir, dir)
+		age, ok := CacheFreshness()
+		if !ok {
+			t.Fatal("expected ok=true")
+		}
+		if age < 2*time.Hour || age > 3*time.Hour {
+			t.Fatalf("expected age around the oldest source (~2h), got %v", age)
+		}
+	})
+
+	t.Run("stale cache reports the oldest source's age", func(t *testing.T) {
+		dir := t.TempDir()
+		writeMeta(t, dir, map[string]SourceMeta{
+			"nvd": {Source: "nvd", FetchedAt: time.Now().Add(-40 * 24 * time.Hour)},
+			"kev": {Source: "kev", FetchedAt: time.Now().Add(-time.Hour)},
+		})
+		t.Setenv(EnvDir, dir)
+		age, ok := CacheFreshness()
+		if !ok {
+			t.Fatal("expected ok=true")
+		}
+		if age <= MaxCacheAge {
+			t.Fatalf("expected a stale age over MaxCacheAge (%v), got %v", MaxCacheAge, age)
+		}
+	})
 }
 
 func TestParseCPE(t *testing.T) {

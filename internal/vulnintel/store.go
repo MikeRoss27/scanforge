@@ -133,6 +133,36 @@ func OpenDefault() (*Store, error) {
 	return &Store{Dir: dir}, nil
 }
 
+// MaxCacheAge is how long a vulnintel cache is considered fresh before
+// CacheFreshness reports it as stale.
+const MaxCacheAge = 30 * 24 * time.Hour
+
+// CacheFreshness reports how long ago the default on-disk vulnintel cache's
+// oldest source was fetched. ok is false when no cache exists yet (never
+// run `scanforge intel update`) or it has no recorded sources, so callers
+// can distinguish "missing" from "stale" and warn accordingly instead of
+// silently falling back to an embedded, build-time-frozen dataset.
+func CacheFreshness() (age time.Duration, ok bool) {
+	store, err := OpenDefault()
+	if err != nil || !store.HasData() {
+		return 0, false
+	}
+	meta, err := store.ReadMeta()
+	if err != nil || len(meta.Sources) == 0 {
+		return 0, false
+	}
+	var oldest time.Time
+	for _, sm := range meta.Sources {
+		if oldest.IsZero() || sm.FetchedAt.Before(oldest) {
+			oldest = sm.FetchedAt
+		}
+	}
+	if oldest.IsZero() {
+		return 0, false
+	}
+	return time.Since(oldest), true
+}
+
 func (s *Store) file(source string) string { return filepath.Join(s.Dir, source+".jsonl") }
 func (s *Store) metaFile() string          { return filepath.Join(s.Dir, "meta.json") }
 
