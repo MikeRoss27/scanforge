@@ -136,7 +136,8 @@ Persistence is file-based by design (no SQLite).
 
 ## Notes
 
-- The README and `docs/*.md` are written in French; this repo's user-facing docs are French-first.
+- `README.md` and `docs/*.md` are English-first, for GitHub discoverability; `docs/fr/*.md` is the
+  French mirror (kept in sync, not the primary copy).
 - Runtime scan output under `runs/` is gitignored and must not be committed.
 - `docker compose run scanforge ...` and any live run must only target hosts explicitly present in
   the mounted/confirmed scope — this is a safety-critical tool for authorized engagements only.
