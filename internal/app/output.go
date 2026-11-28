@@ -25,11 +25,16 @@ func (s *runSession) generateReports() *report.Report {
 		s.console.Info("generating report")
 	}
 
+	// GenerateReport is best-effort: a corrupt or truncated artifact is
+	// downgraded to a warning inside it, not a fatal error, specifically so
+	// one bad artifact never discards everything the other modules parsed
+	// cleanly. Treating err as fatal here would mean report.json/report.md
+	// never get written for the whole run over one bad file, even though
+	// rep already holds every other module's data — so we still write them.
 	rep, err := report.GenerateReport(s.scanRun.RootDir, &s.scanRun.Manifest)
 	if err != nil {
-		s.console.Warn("failed to generate report: %v", err)
+		s.console.Warn("report has incomplete data: %v", err)
 		s.reportErr = err
-		return rep
 	}
 
 	jsonPath := filepath.Join(s.scanRun.RootDir, "report.json")

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -35,9 +36,13 @@ func (a *App) Export(ctx context.Context, opts ExportOptions) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// GenerateReport downgrades a corrupt/truncated artifact to a warning
+	// internally and still returns the rest of the parsed report; treating
+	// that warning as fatal here would abort the export over one bad file
+	// even though every other module's data parsed fine.
 	rep, err := report.GenerateReport(opts.Run, &run.Manifest)
 	if err != nil {
-		return "", fmt.Errorf("generate report for %s: %w", opts.Run, err)
+		fmt.Fprintf(os.Stderr, "warning: report has incomplete data for %s: %v\n", opts.Run, err)
 	}
 
 	out := opts.Out
