@@ -106,13 +106,15 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 	// DNS bruteforce is optional, but when selected its producer lifecycle is
 	// tracked by RunContext. Passive DNS resolution has already completed while
 	// shuffledns was running; only the late brute-force results are resolved now.
-	// Certificate Transparency names (ctlogs) feed the same flow: they are
+	// Certificate Transparency names (ctlogs) and both permutation engines
+	// (dnspermute/gotator, alterx/alterx) feed the same flow: they are
 	// scope-filtered at publication and resolved here like brute-force hits,
 	// without a second producer of "subdomains".
 	for _, optional := range []struct{ artifact, label, file string }{
 		{"brute_subdomains", "brute-force", "brute"},
 		{"ct_subdomains", "certificate transparency", "ct"},
 		{"permuted_subdomains", "permutation", "permute"},
+		{"altered_subdomains", "alterx permutation", "alterx"},
 	} {
 		art, found, werr := runCtx.WaitArtifact(ctx, optional.artifact)
 		if werr != nil {
@@ -121,7 +123,11 @@ func (m *Module) Run(ctx context.Context, runCtx *modules.RunContext, executor r
 		if !found {
 			continue
 		}
-		emptyIsOK := optional.artifact == "ct_subdomains" || optional.artifact == "permuted_subdomains"
+		// ct_subdomains, permuted_subdomains and altered_subdomains
+		// legitimately end up empty after discovery/scope filtering (unlike
+		// brute-force, which always has a wordlist's worth of attempts);
+		// skip resolving an empty file instead of treating it as an error.
+		emptyIsOK := optional.artifact == "ct_subdomains" || optional.artifact == "permuted_subdomains" || optional.artifact == "altered_subdomains"
 		if info, statErr := os.Stat(runCtx.Run.Path(art.Path)); !runCtx.DryRun && emptyIsOK && (statErr != nil || info.Size() == 0) {
 			continue // nothing left after discovery/scope filtering
 		}

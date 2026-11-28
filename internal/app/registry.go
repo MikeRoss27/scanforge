@@ -3,6 +3,7 @@ package app
 import (
 	"github.com/MikeRoss27/scanforge/internal/config"
 	"github.com/MikeRoss27/scanforge/internal/modules"
+	"github.com/MikeRoss27/scanforge/internal/modules/alterx"
 	"github.com/MikeRoss27/scanforge/internal/modules/asnmap"
 	"github.com/MikeRoss27/scanforge/internal/modules/attacksurface"
 	"github.com/MikeRoss27/scanforge/internal/modules/ctlogs"
@@ -26,6 +27,7 @@ import (
 	"github.com/MikeRoss27/scanforge/internal/modules/subfinder"
 	"github.com/MikeRoss27/scanforge/internal/modules/techcve"
 	"github.com/MikeRoss27/scanforge/internal/modules/tlsx"
+	"github.com/MikeRoss27/scanforge/internal/modules/uncover"
 	"github.com/MikeRoss27/scanforge/internal/modules/wafw00f"
 	"github.com/MikeRoss27/scanforge/internal/modules/whatweb"
 	"github.com/MikeRoss27/scanforge/internal/modules/wpbrute"
@@ -47,9 +49,11 @@ func buildRegistry(cfg *config.Config) *modules.Registry {
 	registry.Register(asnmap.New())
 	registry.Register(dnsbrute.New(cfg.ToolPath("shuffledns")))
 	registry.Register(dnspermute.New(cfg.ToolPath("gotator")))
+	registry.Register(alterx.New(cfg.ToolPath("alterx")))
 	registry.Register(dnsx.New(cfg.ToolPath("dnsx")))
 	registry.Register(httpx.New(cfg.ToolPath("httpx")))
 	registry.Register(naabu.New(cfg.ToolPath("naabu")))
+	registry.Register(uncover.New(cfg.ToolPath("uncover")))
 	registry.Register(nmap.New(cfg.ToolPath("nmap")))
 	registry.Register(whatweb.New(cfg.ToolPath("whatweb")))
 	registry.Register(wafw00f.New(cfg.ToolPath("wafw00f")))

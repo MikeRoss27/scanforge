@@ -311,6 +311,13 @@ install_go_tools() {
         # gotator has no semver-compatible tag, so it can't be pinned like
         # the tools above; @latest is the only install path that resolves.
         "github.com/Josue87/gotator@latest"
+        # alterx and uncover have no confidently-known pinned release tag at
+        # the time these integrations were added (unlike the tools above,
+        # whose exact versions are pinned in .tools-version); @latest avoids
+        # guessing a tag that may not exist. Pin them in .tools-version once
+        # a known-good release has been verified.
+        "github.com/projectdiscovery/alterx/cmd/alterx@latest"
+        "github.com/projectdiscovery/uncover/cmd/uncover@latest"
     )
     command -v go >/dev/null 2>&1 || err "Go is required for --full; see https://go.dev/dl/"
     ok "Go is installed: $(go version)"
@@ -372,7 +379,7 @@ has_browser() {
 
 verify_full_install() {
     local tool missing=0
-    local -a required=(subfinder shuffledns gotator dnsx httpx naabu nmap whatweb wafw00f katana ffuf nuclei gau tlsx massdns)
+    local -a required=(subfinder shuffledns gotator dnsx httpx naabu nmap whatweb wafw00f katana ffuf nuclei gau tlsx massdns alterx uncover)
     info "Verifying external dependencies..."
     for tool in "${required[@]}"; do
         if command -v "$tool" >/dev/null 2>&1; then ok "${tool}: installed"

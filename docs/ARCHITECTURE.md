@@ -14,9 +14,11 @@ Main chains:
 subfinder → subdomains ──┼→ dnsbrute → dnsx (late results) ──────┤→ resolved_hosts
                          └→ dnspermute → dnsx (late results) ────┘
 ctlogs → ct_subdomains ⇢ dnsx (merged like brute_subdomains; scope-filtered)
+subdomains → alterx → altered_subdomains ⇢ dnsx (merged like ct_subdomains; scope-filtered)
 dnsx_raw + resolved_hosts → asnmap → asn_info (RDAP annotation, report only)
 resolved_hosts → httpx → alive_urls
 resolved_hosts → naabu → open_ports → nmap
+target → uncover → uncover_hosts ⇢ naabu (merged into open_ports; scope-filtered)
 open_ports ⇢ httpx (soft: only when naabu is in the profile)
 alive_urls → tlsx / whatweb / wafw00f / katana / ffuf / nuclei
 target → gau → historical_urls
@@ -55,6 +57,19 @@ already present in the scope-filtered `resolved_hosts` and writes
 it never extends the scope or emits targets. Both modules use the injectable
 `modules.Fetcher` (timeouts, size caps, retries/backoff, `--proxy`); on a dry
 run they only record the planned request in `commands.log`.
+
+`alterx` wraps ProjectDiscovery's own permutation engine: same job as
+`dnsbrute`'s wordlist-driven bruteforce, deliberately kept side by side
+because its pattern library and built-in enrichment (`-enrich`) surface
+different candidates than a wordlist does. It publishes the scoped
+`altered_subdomains` artifact, which DNSX waits for and resolves exactly like
+`ct_subdomains`. `uncover` wraps ProjectDiscovery's internet-wide asset
+search (Shodan/Censys/Fofa/Hunter/ZoomEye, selected by whichever
+`internal/auth` provider keys are configured); it queries only those search
+engines, never the target itself, and is skipped when no provider key is
+configured. It publishes the scoped `uncover_hosts` artifact, which `naabu`
+folds into its own `open_ports` output the same way DNSX merges optional
+subdomain producers - naabu's own exit status stays authoritative.
 
 `scanforge plan TARGET --preset deep` displays the validated waves without
 running any tool or creating a run.

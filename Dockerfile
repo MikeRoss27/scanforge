@@ -11,6 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY .tools-version /tmp/tools-version
 
 # Binaires des outils de ProjectDiscovery et ffuf, installés dans un répertoire dédié
+# alterx et uncover n'ont pas de tag de version épinglé fiable connu au moment
+# de l'ajout de ces intégrations ; @latest évite de deviner un tag qui
+# pourrait ne pas exister. À épingler dans .tools-version dès qu'une version
+# fiable aura été vérifiée.
 RUN . /tmp/tools-version && \
     GOBIN=/out go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@${SUBFINDER_VERSION} && \
     GOBIN=/out go install github.com/projectdiscovery/dnsx/cmd/dnsx@${DNSX_VERSION} && \
@@ -22,7 +26,9 @@ RUN . /tmp/tools-version && \
     GOBIN=/out go install github.com/lc/gau/v2/cmd/gau@${GAU_VERSION} && \
     GOBIN=/out go install github.com/ffuf/ffuf/v2@${FFUF_VERSION} && \
     GOBIN=/out go install github.com/projectdiscovery/shuffledns/cmd/shuffledns@${SHUFFLEDNS_VERSION} && \
-    GOBIN=/out go install github.com/Josue87/gotator@latest
+    GOBIN=/out go install github.com/Josue87/gotator@latest && \
+    GOBIN=/out go install github.com/projectdiscovery/alterx/cmd/alterx@latest && \
+    GOBIN=/out go install github.com/projectdiscovery/uncover/cmd/uncover@latest
 
 # Wordlist DNS minimale requise par shuffledns, épinglée et vérifiée.
 RUN . /tmp/tools-version && \

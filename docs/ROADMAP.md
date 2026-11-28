@@ -29,7 +29,7 @@ continuité (diff entre runs, scheduling, notifications).
 
 | Phase | ScanForge | Best-in-class | Écart |
 |---|---|---|---|
-| Enum sous-domaines | subfinder + gau + shuffledns + gotator (permutation) | feeds passifs (Chaos, CDX) | 🟡 — brute + permutation OK, feeds passifs à venir |
+| Enum sous-domaines | subfinder + gau + shuffledns + gotator/alterx (permutation) + ctlogs (CT) + uncover (internet-wide) | feeds passifs (Chaos, CDX) | 🟡 — brute + permutation + CT + asset search OK, feeds Chaos/CDX à venir |
 | Résolution | dnsx | — | ✅ |
 | Ports | naabu + nmap | + masscan (très gros ranges) | 🟡 |
 | HTTP probing | httpx + screenshots | — | ✅ |
@@ -86,4 +86,4 @@ continuité (diff entre runs, scheduling, notifications).
 
 ## 4. ScanForge 2.0 — fondations livrées
 
-Persistance par fichiers (pas de SQLite), reprise (`resume`), scheduler et limites, bus d'événements typés (démo), workflows YAML, vulnintel NVD/KEV/EPSS, serveur MCP et API locale. Reste à faire : brancher réellement les modules sur le bus d'événements (recon récursive), diff/incrémental basé sur l'historique d'actifs, sources de recon supplémentaires (AlterX, CT, Uncover, ASN/RDAP), moteur de preuves, triage IA étendu, benchmarks comparatifs, releases signées. Distribué (workers) : 2.1.
+Persistance par fichiers (pas de SQLite), reprise (`resume`), scheduler et limites, bus d'événements typés, workflows YAML, vulnintel NVD/KEV/EPSS, serveur MCP et API locale. Les modules sont réellement branchés sur le bus d'événements : `--recursive` relance dnsx→httpx→katana en follow-up sur toute découverte tardive en scope (voir `docs/RECURSIVE.md`), scope-gated et resume-aware — ce n'est plus une démo. Sources de recon supplémentaires livrées : Certificate Transparency (`ctlogs`), ASN/RDAP (`asnmap`), permutation DNS via gotator (`dnspermute`) et via AlterX (`alterx`, moteur PD distinct gardé en parallèle), recherche d'actifs internet-wide via Shodan/Censys/Fofa/etc. (`uncover`, gated sur clé API configurée). Reste à faire : diff/incrémental basé sur l'historique d'actifs, moteur de preuves, triage IA étendu, benchmarks comparatifs, releases signées. Distribué (workers) : 2.1.

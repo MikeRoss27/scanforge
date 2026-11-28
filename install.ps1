@@ -181,7 +181,13 @@ function Install-GoTools {
         "github.com/projectdiscovery/shuffledns/cmd/shuffledns@$($ToolsVersion.SHUFFLEDNS_VERSION)",
         # gotator has no semver-compatible tag, so it can't be pinned like
         # the tools above; @latest is the only install path that resolves.
-        "github.com/Josue87/gotator@latest"
+        "github.com/Josue87/gotator@latest",
+        # alterx and uncover have no confidently-known pinned release tag at
+        # the time these integrations were added; @latest avoids guessing a
+        # tag that may not exist. Pin them in .tools-version once a
+        # known-good release has been verified.
+        "github.com/projectdiscovery/alterx/cmd/alterx@latest",
+        "github.com/projectdiscovery/uncover/cmd/uncover@latest"
     )
     foreach ($tool in $goTools) {
         Write-Info "Installing $tool"
